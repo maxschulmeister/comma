@@ -415,3 +415,36 @@ test("look-alikes in cards with the same text: the card's links and images tell 
   await pin(page, "shirt-red")
   await reorderThenRemove(page, "shirt-cards", "shirt-red")
 })
+
+test("look-alike pictures: their responsive sources tell them apart", async ({ page }) => {
+  await open(page)
+  await pin(page, "pic-beach")
+  await reorderThenRemove(page, "photo-cards", "pic-beach")
+})
+
+test("a responsive image keeps its identity when only its size parameters change", async ({ page }) => {
+  await open(page)
+  await pin(page, "pic-lake")
+  await page.evaluate(() =>
+    document
+      .querySelector('[data-fixture="pic-lake"]')
+      ?.setAttribute("srcset", "/img/lake.jpg?w=300 1x, /img/lake.jpg?w=600 2x"),
+  )
+  expect(await resolved(page)).toBe("pic-lake")
+})
+
+test("a short label that was unique: another product in its card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "mug-red")
+  // Nothing changed: found.
+  expect(await resolved(page)).toBe("mug-red")
+  // A filter shows another product in the same DOM: same title and labels, other picture and link.
+  const kept = await page.evaluate(() => {
+    const card = window.target?.closest(".card")
+    card?.querySelector("img")?.setAttribute("src", "/img/mug-blue.png")
+    card?.querySelector("a")?.setAttribute("href", "/p/mug-blue")
+    return window.commaAnchor.resolveAnchor(window.saved, window.target)
+  })
+  expect(kept).toBeNull()
+  expect(await resolved(page)).toBeNull()
+})

@@ -21,5 +21,8 @@
     "@biomejs/biome": "^2.6.5",
     "@playwright/test": "^1.65.0",
     "hono": "^4.13.16"
+  },
+  "patchedDependencies": {
+    "frimousse@0.4.0": "patches/frimousse@0.4.0.patch"
   }
 }

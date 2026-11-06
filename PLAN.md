@@ -162,6 +162,7 @@ window.comma.identify(token) // token from your backend, see "Login"
   - Base UI under `preact/compat`: step 1 checked it in Chromium, Firefox and WebKit. It works, with two fixes:
     - Preact renders after the whole event (`options.debounceRendering`), not in a microtask between listeners.
     - React bubbles events from a portal to its parent; Preact does not. So Base UI sees a press in a nested popup (menu, emoji picker, dialog) as a press outside the parent popover. Top-level popovers ignore presses inside the widget. A press on the page still closes them.
+    - Frimousse 0.4.0 (emoji picker) reads its store at render and subscribes later, in an effect. Preact runs effects after paint, so a change in between was lost: the list showed old rows after a search. `patches/frimousse@0.4.0.patch` reads the store again when it subscribes, as `useSyncExternalStore` does.
   - Base UI, Tailwind CSS and icons add size (see "Size").
 - Composer: [Tiptap](https://tiptap.dev) v3 (MIT), core only, no React binding. Preact mounts it with a ref.
   - Extensions: Document, Paragraph, Text, Bold, Italic, Strike, Code, Link, lists, HardBreak, UndoRedo, Placeholder, Mention. Not StarterKit (it adds what we do not use).
@@ -200,7 +201,9 @@ Find the element again:
 3. Check each candidate: same tag and similar text. Below the threshold: detached.
 4. Changed text and short text also need similar neighbors.
 5. If the page had the same or a similar text more than once when the comment was made (product cards, "Learn more"), only the same text with the same neighbors and the same container (the card it is in: its text start, links and images) is accepted. If the id and the neighbors disagree, the comment is detached.
-6. On the open page, the element found before stays while it keeps its text, also when its neighbors change (not for repeated text).
+6. A short label with no link or image of its own ("Add to cart") also needs the same links and images in its small container (its card). A filter that shows another product in the same card detaches the comment.
+7. Links and images are identified by their URL without tracking, size and signature parameters, also in `srcset`.
+8. On the open page, the element found before stays while it keeps its text, also when its neighbors change (not for repeated text).
 
 Rules:
 

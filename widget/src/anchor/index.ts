@@ -29,6 +29,12 @@ export type Anchor = {
    * `depth`: levels up from the element. `hash`: hash of the start of the container's text and its links and images.
    */
   scope?: { depth: number; hash: string }
+  /**
+   * For a short label with no link or image of its own ("Add to cart"): the small container it is in (its card),
+   * if that has links or images. `hash`: hash of those links and images. A filter that shows another product in the
+   * same card changes them.
+   */
+  card?: { depth: number; hash: string }
   /** Pin: position in % of the element box. */
   point?: { x: number; y: number }
   /** Region: box in % of the element box. Can be < 0 or > 100. */
@@ -47,6 +53,10 @@ const MIN_LEAD = 0.02
 // Containers: how far up we look, and how much of their text we compare (the start: a card's title, not its stock count).
 const MAX_SCOPE_DEPTH = 6
 const SCOPE_LENGTH = 200
+// A card is small: a container with more text is a page section, and its links change for other reasons.
+const MAX_CARD_DEPTH = 3
+const MAX_CARD_TEXT = 300
+const IDENTITY_SELECTOR = "[href],[src],[srcset]"
 
 const normalize = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim()
 
@@ -94,6 +104,17 @@ function scopeOf(el: Element, others: Element[]): Anchor["scope"] {
     if (apart === others.length) break
   }
   return best && { depth: best.depth, hash: best.hash }
+}
+
+// The small container of a short label, with links or images that are not the label's own (see Anchor.card).
+function cardOf(el: Element): Anchor["card"] {
+  if (el.matches(IDENTITY_SELECTOR) || el.querySelector(IDENTITY_SELECTOR)) return undefined
+  for (let depth = 1; depth <= MAX_CARD_DEPTH; depth++) {
+    const node = ancestorAt(el, depth)
+    if (!node || normalize(node.textContent).length > MAX_CARD_TEXT) return undefined
+    if (node.querySelector(IDENTITY_SELECTOR)) return { depth, hash: fingerprintOf(node) }
+  }
+  return undefined
 }
 
 // Ids made by frameworks change between builds or renders: ":r3:", "radix-…", "headlessui-…", "ember123".
@@ -173,6 +194,7 @@ export function createAnchor(el: Element, at: { point: { x: number; y: number } 
     anchor.repeated = true
     anchor.scope = scopeOf(el, lookAlikes)
   }
+  if (anchor.text.length < SHORT_TEXT) anchor.card = cardOf(el)
   const twins = lookAlikesOf(anchor).length
   if (twins > 1) anchor.twins = twins
   if ("point" in at) anchor.point = { x: round(px(at.point.x)), y: round(py(at.point.y)) }
@@ -210,9 +232,13 @@ export function similarity(a: string, b: string) {
   return (2 * common) / (a.length - 1 + (b.length - 1))
 }
 
-// The element is in a container with the same text start as the anchor's (see Anchor.scope).
-const inScope = (anchor: Anchor, el: Element) =>
-  !anchor.scope || scopeHash(ancestorAt(el, anchor.scope.depth)) === anchor.scope.hash
+// The element is in a container like the anchor's (see Anchor.scope and Anchor.card).
+const inScope = (anchor: Anchor, el: Element) => {
+  if (anchor.scope && scopeHash(ancestorAt(el, anchor.scope.depth)) !== anchor.scope.hash) return false
+  if (!anchor.card) return true
+  const card = ancestorAt(el, anchor.card.depth)
+  return !!card && fingerprintOf(card) === anchor.card.hash
+}
 
 // Elements with the same tag, text, context, fingerprint and container.
 function lookAlikesOf(anchor: Anchor) {
@@ -227,8 +253,8 @@ function lookAlikesOf(anchor: Anchor) {
 }
 
 // Attributes that say what an element is or where it goes. Not `title` or `value`: they change often.
-const OWN_IDENTITY = ["href", "src", "alt", "aria-label", "name", "data-testid"]
-const CHILD_IDENTITY = ["href", "src"]
+const OWN_IDENTITY = ["href", "src", "srcset", "alt", "aria-label", "name", "data-testid"]
+const CHILD_IDENTITY = ["href", "src", "srcset"]
 // Query parameters that do not change what a URL points to.
 const TRACKING = /^(utm_\w+|fbclid|gclid|msclkid|mc_cid|mc_eid|_ga|ref)$/i
 // For images also: size, format, cache and signature parameters (image services, signed storage URLs).
@@ -236,7 +262,14 @@ const IMAGE_VOLATILE =
   /^(w|h|width|height|q|quality|fit|fm|format|auto|dpr|crop|ixlib|v|t|ts|cb|_|sig|signature|s|expires|token|policy|key-pair-id|googleaccessid|x-amz-[\w-]+|x-goog-[\w-]+)$/i
 
 // The part of a link or image URL that says what it is: path, query and fragment, without volatile parameters.
-function identityUrl(name: string, value: string) {
+// A `srcset` is a list of image URLs with sizes ("a.jpg 1x, b.jpg 2x"): the identity of each URL.
+function identityUrl(name: string, value: string): string {
+  if (name === "srcset") {
+    return value
+      .split(",")
+      .map((candidate) => identityUrl("src", candidate.trim().split(/\s+/)[0] ?? ""))
+      .join(" ")
+  }
   const [base = "", hash] = value.split("#", 2)
   const [path = "", query] = base.split("?", 2)
   const params = new URLSearchParams(query ?? "")
@@ -252,9 +285,9 @@ function fingerprintOf(el: Element) {
   const parts: string[] = []
   for (const name of OWN_IDENTITY) {
     const value = el.getAttribute(name)
-    if (value !== null) parts.push(`${name}=${name === "href" || name === "src" ? identityUrl(name, value) : value}`)
+    if (value !== null) parts.push(`${name}=${CHILD_IDENTITY.includes(name) ? identityUrl(name, value) : value}`)
   }
-  for (const child of Array.from(el.querySelectorAll("[href],[src]")).slice(0, 50)) {
+  for (const child of Array.from(el.querySelectorAll(IDENTITY_SELECTOR)).slice(0, 50)) {
     for (const name of CHILD_IDENTITY) {
       const value = child.getAttribute(name)
       if (value !== null) parts.push(`>${name}=${identityUrl(name, value)}`)
@@ -295,6 +328,7 @@ export function resolveAnchor(anchor: Anchor, previous?: Element | null): Elemen
     previous.localName === anchor.tag &&
     textOf(previous) === anchor.text &&
     (!anchor.fingerprint || fingerprintOf(previous) === anchor.fingerprint) &&
+    inScope(anchor, previous) &&
     sameAsRepeated(previous)
   ) {
     return previous
@@ -315,6 +349,7 @@ export function resolveAnchor(anchor: Anchor, previous?: Element | null): Elemen
     byId?.localName === anchor.tag &&
     similarity(textOf(byId), anchor.text) >= MIN_TEXT &&
     sameIdentity(byId) &&
+    inScope(anchor, byId) &&
     sameAsRepeated(byId)
   ) {
     return byId
@@ -334,10 +369,9 @@ export function resolveAnchor(anchor: Anchor, previous?: Element | null): Elemen
     if (el.closest("comma-widget")) continue
     const ownText = textOf(el)
     const text = similarity(ownText, anchor.text)
-    if (text < MIN_TEXT || !sameIdentity(el)) continue
+    if (text < MIN_TEXT || !sameIdentity(el) || !inScope(anchor, el)) continue
     const ownContext = contextOf(el)
-    const sameScope = inScope(anchor, el)
-    if (ownText === anchor.text && ownContext === anchor.context && sameScope) exact.push(el)
+    if (ownText === anchor.text && ownContext === anchor.context) exact.push(el)
     const context = anchor.context ? similarity(ownContext, anchor.context) : 1
     // Changed text. Not `text < 1`: "London to Paris" and "Paris to London" have the same letter pairs.
     const changed = ownText !== anchor.text
@@ -346,7 +380,7 @@ export function resolveAnchor(anchor: Anchor, previous?: Element | null): Elemen
     if ((short || changed) && context < MIN_CONTEXT) continue
     // Similar text was on the page more than once: only the exact text, neighbors and container tell the copies apart.
     // "MacBook Pro 14-inch" and "16-inch" are similar neighbors of the same "Free delivery" text.
-    if (anchor.repeated && (changed || ownContext !== anchor.context || !sameScope)) continue
+    if (anchor.repeated && (changed || ownContext !== anchor.context)) continue
     // No neighbors to compare: changed text cannot be checked, and a position is no proof.
     if (!anchor.context && changed) continue
     const score = text * 0.7 + context * 0.3
