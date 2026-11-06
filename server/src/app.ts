@@ -35,6 +35,8 @@ type Env = { Variables: { user: UserRow; project: Project } }
 
 const MAX_FILES = 5
 const UNUSED_FILE_MS = 24 * 60 * 60 * 1000
+// Images that no comment uses yet, per project. New guests cannot get around it.
+const MAX_UNUSED_BYTES = 200 * 1024 * 1024
 
 const Point = z.object({ x: z.number().finite(), y: z.number().finite() })
 const AnchorSchema = z
@@ -50,6 +52,7 @@ const AnchorSchema = z
       .max(64),
     text: z.string().max(300),
     context: z.string().max(300),
+    twins: z.number().int().min(2).max(100_000).optional(),
     point: Point.optional(),
     rect: Point.extend({ width: z.number().finite(), height: z.number().finite() }).optional(),
     viewport: z.number().int().min(0).max(100_000),
@@ -112,6 +115,13 @@ export function createApp(options: AppOptions) {
     db.query("update users set reads_version = reads_version + 1 where id = ?").run(userId)
   }
 
+  // Other clients must see a new name or avatar: a change invalidates their ETag.
+  const appUser = (project: Project, claims: NonNullable<Awaited<ReturnType<typeof verifyAppToken>>>) => {
+    const { user, changed } = upsertAppUser(db, project, claims, now())
+    if (changed) bump(project.id)
+    return user
+  }
+
   const app = new Hono<Env>()
 
   app.onError((err, c) => {
@@ -146,7 +156,7 @@ export function createApp(options: AppOptions) {
       session: async (project, appToken) => {
         const claims = await verifyAppToken(project, appToken)
         if (!claims) return null
-        const user = upsertAppUser(db, project, claims, now())
+        const user = appUser(project, claims)
         return { token: await signSession(secret, user), user: publicUser(user) }
       },
     }),
@@ -199,7 +209,7 @@ export function createApp(options: AppOptions) {
     if (!project.appSecret) throw new HTTPException(404, { message: "This project has no app sign-in" })
     const claims = await verifyAppToken(project, input.appToken)
     if (!claims) throw new HTTPException(401, { message: "Invalid app token" })
-    const user = upsertAppUser(db, project, claims, now())
+    const user = appUser(project, claims)
     return c.json({ token: await signSession(secret, user), user: publicUser(user) })
   })
 
@@ -490,6 +500,14 @@ export function createApp(options: AppOptions) {
     if (!uploadLimit.take(user.id, now()))
       throw new HTTPException(429, { message: "Too many images. Try again later." })
     if (file.size > MAX_IMAGE_BYTES) throw new HTTPException(413, { message: "Images can be up to 5 MB" })
+    const unused = db
+      .query<{ total: number | null }, [string]>(
+        "select sum(size) as total from files where project = ? and comment_id is null",
+      )
+      .get(user.project)
+    if ((unused?.total ?? 0) + file.size > MAX_UNUSED_BYTES) {
+      throw new HTTPException(507, { message: "Too many images waiting. Try again later." })
+    }
     const data = new Uint8Array(await file.arrayBuffer())
     const info = readImage(data)
     if (!info) throw new HTTPException(415, { message: "Use a PNG, JPEG, GIF or WebP image" })

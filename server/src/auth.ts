@@ -74,11 +74,17 @@ export async function verifyAppToken(project: Project, token: string) {
   }
 }
 
+/** `changed`: the public profile (name, avatar, admin) of an existing user changed. */
 export function upsertAppUser(db: Db, project: Project, claims: z.infer<typeof AppClaims>, now: number) {
   const existing = db
     .query<UserRow, [string, string]>("select * from users where project = ? and kind = 'app' and external_id = ?")
     .get(project.id, claims.sub)
   if (existing) {
+    const changed =
+      existing.name !== claims.name ||
+      existing.avatar_url !== (claims.avatar ?? null) ||
+      existing.is_admin !== (claims.admin ? 1 : 0)
+    if (!changed && existing.email === (claims.email ?? null)) return { user: existing, changed }
     db.query("update users set name = ?, email = ?, avatar_url = ?, is_admin = ? where id = ?").run(
       claims.name,
       claims.email ?? null,
@@ -86,13 +92,13 @@ export function upsertAppUser(db: Db, project: Project, claims: z.infer<typeof A
       claims.admin ? 1 : 0,
       existing.id,
     )
-    return getUser(db, existing.id) as UserRow
+    return { user: getUser(db, existing.id) as UserRow, changed }
   }
   const id = newId()
   db.query(
     "insert into users (id, project, kind, external_id, name, email, avatar_url, is_admin, created_at) values (?, ?, 'app', ?, ?, ?, ?, ?, ?)",
   ).run(id, project.id, claims.sub, claims.name, claims.email ?? null, claims.avatar ?? null, claims.admin ? 1 : 0, now)
-  return getUser(db, id) as UserRow
+  return { user: getUser(db, id) as UserRow, changed: false }
 }
 
 export function createGuest(db: Db, project: Project, name: string, now: number) {

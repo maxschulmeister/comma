@@ -334,3 +334,31 @@ describe("upload limit", () => {
     expect((await upload(s, a.token)).status).toBe(429)
   })
 })
+
+describe("unused upload quota", () => {
+  test("a project holds at most 200 MB of images that no comment uses", async () => {
+    const s = setup()
+    // Fill the quota directly: 40 unused files of 5 MB.
+    const g = await s.guest("Filler")
+    const insert = s.db.query(
+      "insert into files (id, project, uploaded_by, mime, size, width, height, data, created_at) values (?, 'acme', ?, 'image/png', ?, 1, 1, x'00', ?)",
+    )
+    for (let i = 0; i < 40; i++) insert.run(`f${i}`, g.user.id, 5 * 1024 * 1024, Date.now())
+    const other = await s.guest("Other")
+    expect((await upload(s, other.token)).status).toBe(507)
+  })
+})
+
+describe("profile changes", () => {
+  test("a new name of an app user changes the ETag", async () => {
+    const s = setup()
+    const grace = await s.appUser({ sub: "g", name: "Grace" })
+    await s.request("POST", "/api/threads", { token: grace.token, body: { page: "/", anchor, body: text("x") } })
+    const b = await s.guest("Bob")
+    const etag = (await s.request("GET", "/api/threads", { token: b.token })).headers.get("etag") ?? ""
+    await s.appUser({ sub: "g", name: "Grace Hopper" })
+    const res = await s.request("GET", "/api/threads", { token: b.token, headers: { "if-none-match": etag } })
+    expect(res.status).toBe(200)
+    expect(res.json.users[grace.user.id].name).toBe("Grace Hopper")
+  })
+})

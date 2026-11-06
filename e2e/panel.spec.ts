@@ -158,6 +158,18 @@ test("a detached thread shows in the panel with a label", async ({ page }) => {
   await expect(threadPopover(page)).toContainText("Detached")
 })
 
+test("the panel takes the focus and gives it back", async ({ page }) => {
+  await signIn(page, await guestSession("Focus"))
+  await openTestPage(page, "focus")
+  const button = toolbar(page).getByRole("button", { name: /^Comments/ })
+  await button.focus()
+  await page.keyboard.press("Enter")
+  await expect(panel(page).getByRole("searchbox", { name: "Search comments" })).toBeFocused()
+  await page.keyboard.press("Escape")
+  await expect(panel(page)).toBeHidden()
+  await expect(button).toBeFocused()
+})
+
 test.describe("narrow screens", () => {
   test.use({ viewport: { width: 400, height: 800 } })
   test("the panel covers the full screen and does not push the page", async ({ page }) => {
@@ -166,6 +178,8 @@ test.describe("narrow screens", () => {
     await openPanel(page)
     expect((await panel(page).boundingBox())?.width).toBe(400)
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).marginRight)).toBe("0px")
+    // The page behind the panel takes no focus and no clicks.
+    expect(await page.evaluate(() => document.body.inert)).toBe(true)
     // Comment mode does not open the panel here.
     await panel(page).getByRole("button", { name: "Close comments" }).click()
     await page.keyboard.press("c")

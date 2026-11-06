@@ -10,6 +10,7 @@ import {
   pins,
   signIn,
   threadPopover,
+  toolbar,
   typeComment,
 } from "./helpers"
 
@@ -74,6 +75,9 @@ test("mention people known to the project", async ({ page }) => {
   await typeComment(page, popover, "ask @hopp")
   const option = popover.getByRole("option", { name: "Grace Hopper" })
   await expect(option).toBeVisible()
+  // Screen readers hear the active option while the focus stays in the text.
+  const id = await option.getAttribute("id")
+  await expect(popover.locator(".ProseMirror")).toHaveAttribute("aria-activedescendant", id ?? "")
   await page.keyboard.press("Enter")
   await page.keyboard.type("please")
   await page.keyboard.press("Enter")
@@ -143,12 +147,37 @@ test("Enter sends, Shift+Enter adds a line", async ({ page }) => {
   await expect(threadPopover(page).locator("article .comma-prose p")).toHaveText(["line one", "line two"])
 })
 
-test("the draft stays when the popover closes", async ({ page }) => {
+test("the draft stays when the popover closes, also after a sent reply", async ({ page }) => {
   const popover = await startComment(page, "draft")
   await typeComment(page, popover, "first")
   await page.keyboard.press("Enter")
+  await typeComment(page, threadPopover(page), "sent reply")
+  await page.keyboard.press("Enter")
+  await expect(threadPopover(page).getByRole("article")).toHaveCount(2)
   await typeComment(page, threadPopover(page), "unsent reply")
   await endCommentMode(page)
   await pins(page).first().click()
   await expect(threadPopover(page).locator("[data-slot=composer] .ProseMirror")).toHaveText("unsent reply")
+})
+
+test("a draft is not shown to the next person who signs in", async ({ page }) => {
+  const popover = await startComment(page, "draft-private")
+  await typeComment(page, popover, "my secret draft")
+  await page.keyboard.press("Escape")
+  await expect(popover).toBeHidden()
+  await page.keyboard.press("Escape")
+  await toolbar(page)
+    .getByRole("button", { name: /^Account/ })
+    .click()
+  await page.getByRole("menuitem", { name: "Sign out" }).click()
+  await toolbar(page).getByRole("button", { name: "Account", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Sign in" }).click()
+  const form = page.getByRole("dialog").filter({ hasText: "Your name" })
+  await form.getByLabel("Your name").fill("Next person")
+  await form.getByRole("button", { name: "Continue as guest" }).click()
+  await page.keyboard.press("c")
+  await clickAt(page, page.getByTestId("lead"))
+  const editor = newCommentPopover(page).locator(".ProseMirror")
+  await expect(editor).toBeVisible()
+  await expect(editor).not.toContainText("my secret draft")
 })

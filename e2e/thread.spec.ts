@@ -139,6 +139,22 @@ test("resolve hides the pin, reopen from the panel shows it", async ({ page }) =
   await expect(pins(page)).toHaveCount(1)
 })
 
+test("the author moves the pin with the keyboard", async ({ page }) => {
+  const thread = await withComment(page, "move-keys", "Keys")
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await page.getByRole("menuitem", { name: "Move" }).click()
+  await expect(page.getByRole("status")).toContainText("Click the new place")
+  await page.getByRole("link", { name: "Home" }).focus()
+  await page.keyboard.press("Enter")
+  await expect(threadPopover(page)).toBeVisible()
+  const link = await page.getByRole("link", { name: "Home" }).boundingBox()
+  await expect
+    .poll(async () =>
+      Math.abs(((await pins(page).first().boundingBox())?.x ?? 0) - ((link?.x ?? 0) + (link?.width ?? 0) / 2)),
+    )
+    .toBeLessThan(2)
+})
+
 test("copy link and mark as unread", async ({ page, context, browserName }) => {
   test.skip(browserName !== "chromium", "Clipboard permissions are a Chromium feature in Playwright")
   await context.grantPermissions(["clipboard-read", "clipboard-write"])

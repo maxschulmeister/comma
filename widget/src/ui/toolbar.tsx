@@ -75,6 +75,7 @@ export function Toolbar() {
               variant={panelOpen ? "secondary" : "ghost"}
               size="icon"
               className="relative rounded-full"
+              data-panel-button
               aria-label={unread ? `Comments, ${unread} unread` : "Comments"}
               aria-pressed={panelOpen}
               onClick={() => setState({ panelOpen: !panelOpen })}

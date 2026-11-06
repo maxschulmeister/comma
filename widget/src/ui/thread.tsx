@@ -1,5 +1,6 @@
 import {
   ArrowCounterClockwiseIcon,
+  ArrowsOutCardinalIcon,
   CheckCircleIcon,
   CheckIcon,
   DotsThreeIcon,
@@ -139,6 +140,12 @@ export function ThreadView({
               <LinkSimpleIcon />
               Copy link
             </DropdownMenuItem>
+            {me?.id === thread.createdBy && (
+              <DropdownMenuItem onClick={() => setState({ moving: thread.id, openThreadId: null })}>
+                <ArrowsOutCardinalIcon />
+                Move
+              </DropdownMenuItem>
+            )}
             {me && (
               <DropdownMenuItem
                 onClick={() =>

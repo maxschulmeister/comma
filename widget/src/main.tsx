@@ -36,6 +36,7 @@ function start({ __queue: queue, __script: script }: Loader) {
     panelOpen: false,
     openThreadId: null,
     draft: null,
+    moving: null,
     filters: { scope: "page", mine: false, resolved: false, sort: "date", query: "" },
     signInOpen: false,
   })

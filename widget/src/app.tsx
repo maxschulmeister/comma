@@ -33,11 +33,11 @@ function useDeepLink() {
 }
 
 export function App() {
-  const commentMode = useStore((s) => s.commentMode)
+  const placing = useStore((s) => s.commentMode || !!s.moving)
   useDeepLink()
   return (
     <TooltipProvider delay={400}>
-      {commentMode && <CommentOverlay />}
+      {placing && <CommentOverlay />}
       <PinsLayer />
       <Panel />
       <Toolbar />

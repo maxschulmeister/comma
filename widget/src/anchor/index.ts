@@ -10,6 +10,11 @@ export type Anchor = {
   text: string
   /** Text of nearby elements. Tells repeated elements apart ("Learn more" in three cards). */
   context: string
+  /**
+   * Number of elements with the same tag, text and context when the comment was made (1 = unique).
+   * Twins can only be told apart by position, so they must all still be there.
+   */
+  twins?: number
   /** Pin: position in % of the element box. */
   point?: { x: number; y: number }
   /** Region: box in % of the element box. Can be < 0 or > 100. */
@@ -111,6 +116,8 @@ export function createAnchor(el: Element, at: { point: { x: number; y: number } 
   if (own) anchor.selectors.anchor = own
   if (el.id && isStableId(el.id)) anchor.selectors.id = el.id
   anchor.selectors.css = cssPath(el)
+  const twins = twinsOf(anchor).length
+  if (twins > 1) anchor.twins = twins
   if ("point" in at) anchor.point = { x: round(px(at.point.x)), y: round(py(at.point.y)) }
   else {
     const { x, y, width, height } = at.rect
@@ -146,6 +153,13 @@ export function similarity(a: string, b: string) {
   return (2 * common) / (a.length - 1 + (b.length - 1))
 }
 
+// Elements with the same tag, text and context.
+function twinsOf(anchor: Pick<Anchor, "tag" | "text" | "context">) {
+  return Array.from(document.getElementsByTagName(anchor.tag)).filter(
+    (el) => !el.closest("comma-widget") && textOf(el) === anchor.text && contextOf(el) === anchor.context,
+  )
+}
+
 function query(selector: string | undefined) {
   if (!selector) return null
   try {
@@ -163,6 +177,14 @@ export function resolveAnchor(anchor: Anchor): Element | null {
   const byId = query(anchor.selectors.id && `#${CSS.escape(anchor.selectors.id)}`)
   const byCss = query(anchor.selectors.css)
 
+  // Twins: only their position tells them apart. If one went away, a position can point to the other.
+  if ((anchor.twins ?? 1) > 1) {
+    const twins = twinsOf(anchor)
+    if (twins.length !== anchor.twins) return null
+    const el = byId ?? byCss
+    return el && twins.includes(el) ? el : null
+  }
+
   // Fast path: the selector finds an element with the same text and context.
   for (const el of [byId, byCss]) {
     if (el?.localName === anchor.tag && textOf(el) === anchor.text && contextOf(el) === anchor.context) return el
@@ -179,8 +201,8 @@ export function resolveAnchor(anchor: Anchor): Element | null {
     const context = anchor.context ? similarity(contextOf(el), anchor.context) : 1
     if (short && context < MIN_CONTEXT) continue
     let score = text * 0.7 + context * 0.3
+    // A stable id is proof. A position (CSS path) is not: it can point to a new look-alike.
     if (el === byId) score += 0.05
-    if (el === byCss) score += 0.03
     if (!best || score > best.score) {
       second = best?.score ?? 0
       best = { el, score }

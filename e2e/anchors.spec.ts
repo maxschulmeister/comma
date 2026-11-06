@@ -166,3 +166,17 @@ test("a long text is found even when its neighbors change", async ({ page }) => 
   })
   expect(await resolved(page)).toBe("lead")
 })
+
+test("identical twins: the pin stays on its twin", async ({ page }) => {
+  await open(page)
+  const anchor = await pin(page, "twin-2")
+  await open(page)
+  expect(await resolved(page, anchor)).toBe("twin-2")
+})
+
+test("identical twins: when one goes away, the pin is detached, not moved to the other", async ({ page }) => {
+  await open(page)
+  await pin(page, "twin-1")
+  await page.evaluate(() => document.querySelector('[data-fixture="twin-1"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})

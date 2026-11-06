@@ -158,10 +158,12 @@ async function requestThreads() {
   })
   if (res.status === 304) return null
   if (res.status === 401) {
-    saveSession(null)
+    // Only this session expired. A new one (identify, sign-in) may have started while this request ran.
+    if (getState().session === session) saveSession(null)
     return null
   }
   if (!res.ok) throw new ApiError(res.status, "Could not load comments")
+  if (getState().session !== session) return null
   etag = res.headers.get("etag")
   return (await res.json()) as { me: User; threads: Thread[]; users: Record<string, User> }
 }
@@ -240,6 +242,7 @@ export async function setStatus(thread: Thread, status: Thread["status"]) {
 
 export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
   // Show the new place at once. The server answer replaces it.
+  changes++
   setState((s) => ({ threads: s.threads.map((t) => (t.id === thread.id ? { ...t, page, anchor } : t)) }))
   try {
     return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { page, anchor }))
@@ -250,8 +253,17 @@ export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
 }
 
 export async function setRead(thread: Thread, read: boolean) {
-  setState((s) => ({ threads: s.threads.map((t) => (t.id === thread.id ? { ...t, unread: !read } : t)) }))
-  return applyThread(await request<ThreadResult>("POST", `/api/threads/${thread.id}/read`, { read }))
+  const setUnread = (unread: boolean) =>
+    setState((s) => ({ threads: s.threads.map((t) => (t.id === thread.id ? { ...t, unread } : t)) }))
+  changes++
+  setUnread(!read)
+  try {
+    return applyThread(await request<ThreadResult>("POST", `/api/threads/${thread.id}/read`, { read }))
+  } catch (error) {
+    etag = null
+    setUnread(thread.unread)
+    throw error
+  }
 }
 
 export async function toggleReaction(comment: Comment, emoji: string) {

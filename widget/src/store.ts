@@ -27,6 +27,8 @@ export type State = {
   panelOpen: boolean
   openThreadId: string | null
   draft: Draft | null
+  /** Thread whose pin the user moves with the keyboard or a click (thread menu, Move). */
+  moving: string | null
   filters: Filters
   /** Set when an action needs a signed-in user. */
   signInOpen: boolean

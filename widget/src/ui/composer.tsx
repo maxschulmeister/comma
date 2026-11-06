@@ -1,12 +1,13 @@
 import { ArrowUpIcon, AtIcon, ImageIcon, LinkIcon, XIcon } from "@phosphor-icons/react"
 import { cn } from "cn"
-import { type DragEvent, useEffect, useRef, useState } from "react"
+import { type DragEvent, useEffect, useId, useRef, useState } from "react"
 import { searchUsers, uploadFile } from "@/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import type { Editor, EditorOptions, JSONContent, SuggestionState } from "@/editor/editor"
 import { initials, userColor } from "@/lib/format"
+import { useStore } from "@/store"
 import type { FileRef } from "@/types"
 import { EmojiButton, searchEmoji } from "./emoji"
 
@@ -25,14 +26,12 @@ export function preloadEditor() {
   return editorModule
 }
 
-type Upload = { key: string; preview: string; ref?: FileRef; error?: string }
+// An upload keeps its request, so a draft that opens again still gets the result.
+type Upload = { key: string; preview: string; ref?: FileRef; error?: string; request?: Promise<FileRef> }
 
-// Drafts stay when the popover closes. Key: "new", "reply:<thread id>".
+// Drafts stay when the popover closes. Key: "<user id>:new", "<user id>:reply:<thread id>".
+// The user id keeps one person's draft from another person who signs in on the same page.
 const drafts = new Map<string, { json: JSONContent; uploads: Upload[] }>()
-
-export function hasDraft(key: string) {
-  return drafts.has(key)
-}
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
@@ -68,6 +67,8 @@ export function Composer({
   onSubmit,
   onCancel,
 }: Props) {
+  const userId = useStore((s) => s.session?.user.id ?? "")
+  const key = useRef(`${userId}:${draftKey}`).current
   const mountRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<Editor | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -75,12 +76,36 @@ export function Composer({
   const [empty, setEmpty] = useState(true)
   const [suggestion, setSuggestion] = useState<SuggestionState | null>(null)
   const [linkOpen, setLinkOpen] = useState(false)
-  const [uploads, setUploads] = useState<Upload[]>(() => drafts.get(draftKey)?.uploads ?? [])
+  const [uploads, setUploads] = useState<Upload[]>(() => drafts.get(key)?.uploads ?? [])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const uploadsRef = useRef(uploads)
   uploadsRef.current = uploads
-  const submittedRef = useRef(false)
+  const listId = useId()
+
+  // The focus stays in the text while arrow keys move in the suggestion list. Tell screen readers the option.
+  useEffect(() => {
+    const dom = editorRef.current?.view.dom
+    if (!dom) return
+    const attrs: Record<string, string | null> = suggestion
+      ? {
+          "aria-autocomplete": "list",
+          "aria-expanded": "true",
+          "aria-controls": listId,
+          "aria-activedescendant": `${listId}-${suggestion.index}`,
+        }
+      : { "aria-autocomplete": null, "aria-expanded": null, "aria-controls": null, "aria-activedescendant": null }
+    for (const [name, value] of Object.entries(attrs)) {
+      if (value === null) dom.removeAttribute(name)
+      else dom.setAttribute(name, value)
+    }
+  }, [suggestion, listId])
+
+  const track = (upload: Upload) =>
+    upload.request?.then(
+      (ref) => setUploads((list) => list.map((u) => (u.key === upload.key ? { ...u, ref } : u))),
+      (e: Error) => setUploads((list) => list.map((u) => (u.key === upload.key ? { ...u, error: e.message } : u))),
+    )
 
   const addFiles = (files: File[]) => {
     const images = files.filter((f) => IMAGE_TYPES.includes(f.type))
@@ -88,15 +113,11 @@ export function Composer({
     const room = MAX_FILES - uploadsRef.current.length
     if (room <= 0 || images.length > room) setError(`You can add up to ${MAX_FILES} images.`)
     for (const file of images.slice(0, Math.max(0, room))) {
-      const key = crypto.randomUUID()
-      const upload: Upload = { key, preview: URL.createObjectURL(file) }
+      const upload: Upload = { key: crypto.randomUUID(), preview: URL.createObjectURL(file) }
       if (file.size > MAX_BYTES) upload.error = "Over 5 MB"
+      else upload.request = uploadFile(file)
       setUploads((list) => [...list, upload])
-      if (upload.error) continue
-      uploadFile(file).then(
-        (ref) => setUploads((list) => list.map((u) => (u.key === key ? { ...u, ref } : u))),
-        (e: Error) => setUploads((list) => list.map((u) => (u.key === key ? { ...u, error: e.message } : u))),
-      )
+      track(upload)
     }
   }
 
@@ -113,15 +134,20 @@ export function Composer({
     if (editor.isEmpty && files.length === 0) return
     setSending(true)
     setError(null)
+    // No typing while it sends: the text is cleared when the server has it.
+    editor.setEditable(false)
     try {
       await onSubmit(editor.isEmpty ? EMPTY_DOC : trimDoc(editor.getJSON()), files)
-      submittedRef.current = true
-      drafts.delete(draftKey)
+      drafts.delete(key)
       editor.commands.clearContent(true)
       setUploads([])
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not send. Try again.")
     } finally {
+      if (!editor.isDestroyed) {
+        editor.setEditable(true)
+        editor.commands.focus()
+      }
       setSending(false)
     }
   }
@@ -134,7 +160,7 @@ export function Composer({
         if (destroyed || !mountRef.current) return
         const options: EditorOptions = {
           element: mountRef.current,
-          content: drafts.get(draftKey)?.json ?? initial ?? null,
+          content: drafts.get(key)?.json ?? initial ?? null,
           placeholder,
           label,
           onChange: (editor) => {
@@ -157,6 +183,7 @@ export function Composer({
         editorRef.current = editor
         setEmpty(editor.isEmpty)
         setReady(true)
+        for (const upload of uploadsRef.current) if (!upload.ref && !upload.error) track(upload)
         if (autoFocus) editor.commands.focus("end")
       },
       () => setError("Could not load the editor. Check your connection and try again."),
@@ -165,8 +192,11 @@ export function Composer({
       destroyed = true
       const editor = editorRef.current
       if (editor) {
-        if (!submittedRef.current && (!editor.isEmpty || uploadsRef.current.length > 0) && !initial) {
-          drafts.set(draftKey, { json: editor.getJSON(), uploads: uploadsRef.current })
+        // Editing a comment keeps no draft.
+        if (!initial) {
+          if (!editor.isEmpty || uploadsRef.current.length > 0) {
+            drafts.set(key, { json: editor.getJSON(), uploads: uploadsRef.current })
+          } else drafts.delete(key)
         }
         editor.destroy()
       }
@@ -199,7 +229,7 @@ export function Composer({
         {!ready && <p className="text-muted-foreground text-xs/relaxed">{placeholder}</p>}
       </div>
 
-      {suggestion && <SuggestionList state={suggestion} />}
+      {suggestion && <SuggestionList state={suggestion} id={listId} />}
 
       {linkOpen && editorRef.current && <LinkInput editor={editorRef.current} onClose={() => setLinkOpen(false)} />}
 
@@ -313,9 +343,10 @@ export function Composer({
   )
 }
 
-function SuggestionList({ state }: { state: SuggestionState }) {
+function SuggestionList({ state, id }: { state: SuggestionState; id: string }) {
   return (
     <div
+      id={id}
       role="listbox"
       aria-label={state.kind === "mention" ? "People" : "Emoji"}
       className="max-h-48 overflow-y-auto rounded-md bg-popover p-1 shadow-md ring-1 ring-foreground/10"
@@ -323,13 +354,13 @@ function SuggestionList({ state }: { state: SuggestionState }) {
       {state.items.map((item, i) => (
         <div
           key={item.id}
+          id={`${id}-${i}`}
           role="option"
           tabIndex={-1}
           aria-selected={i === state.index}
           // Keep the focus in the editor.
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => state.select(i)}
-          onKeyDown={undefined}
           className="flex min-h-7 cursor-default items-center gap-2 rounded-md px-2 py-1 text-xs aria-selected:bg-accent aria-selected:text-accent-foreground"
         >
           {state.kind === "mention" ? (

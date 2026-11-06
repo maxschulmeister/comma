@@ -1,6 +1,6 @@
 import { FunnelSimpleIcon, MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react"
 import { cn } from "cn"
-import { type KeyboardEvent, useEffect, useMemo, useRef } from "react"
+import { type KeyboardEvent, type RefObject, useEffect, useMemo, useRef } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -66,6 +66,40 @@ function usePushPage(active: boolean) {
   }, [active])
 }
 
+/**
+ * Opened from the toolbar, the focus moves into the panel (see `closePanel` for the way back).
+ * On narrow screens the panel covers the page, so the page is inert (no focus, no clicks) while it is open.
+ */
+function useFocusManagement(ref: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const aside = ref.current
+    if (!aside) return
+    const root = aside.getRootNode() as ShadowRoot
+    const opener = root.activeElement instanceof HTMLElement ? root.activeElement : null
+    if (opener?.closest("[data-slot=toolbar]")) aside.querySelector<HTMLElement>("input")?.focus()
+    const media = matchMedia(NARROW)
+    const wasInert = document.body.inert
+    const apply = () => {
+      document.body.inert = wasInert || media.matches
+    }
+    apply()
+    media.addEventListener("change", apply)
+    return () => {
+      media.removeEventListener("change", apply)
+      document.body.inert = wasInert
+    }
+  }, [ref])
+}
+
+/** Closes the panel. If the focus is in it, the focus goes back to the toolbar button. */
+function closePanel(aside: HTMLElement | null) {
+  const root = aside?.getRootNode() as ShadowRoot | undefined
+  if (aside && root && aside.contains(root.activeElement)) {
+    root.querySelector<HTMLElement>("[data-panel-button]")?.focus()
+  }
+  setState({ panelOpen: false })
+}
+
 export function Panel() {
   const open = useStore((s) => s.panelOpen)
   usePushPage(open)
@@ -83,6 +117,8 @@ function PanelContent() {
   const openThreadId = useStore((s) => s.openThreadId)
   const resolved = useResolved()
   const listRef = useRef<HTMLUListElement>(null)
+  const asideRef = useRef<HTMLElement>(null)
+  useFocusManagement(asideRef)
   const list = useMemo(() => visibleThreads(threads, filters, page, me), [threads, filters, page, me])
   const setFilters = (patch: Partial<Filters>) => setState((s) => ({ filters: { ...s.filters, ...patch } }))
 
@@ -107,9 +143,14 @@ function PanelContent() {
   }
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: Escape closes the panel; its controls are buttons.
     <aside
+      ref={asideRef}
       aria-label="Comments"
       data-slot="panel"
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && !e.defaultPrevented) closePanel(asideRef.current)
+      }}
       className="fixed inset-y-0 right-0 flex w-[360px] flex-col border-l bg-background shadow-lg max-[639px]:w-full max-[639px]:border-l-0"
     >
       <header className="flex h-11 shrink-0 items-center gap-1 border-b pr-1.5 pl-3">
@@ -152,12 +193,7 @@ function PanelContent() {
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close comments"
-          onClick={() => setState({ panelOpen: false })}
-        >
+        <Button variant="ghost" size="icon-sm" aria-label="Close comments" onClick={() => closePanel(asideRef.current)}>
           <XIcon />
         </Button>
       </header>
