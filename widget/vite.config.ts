@@ -45,7 +45,7 @@ function shadowCss(): PostcssPlugin {
   }
 }
 
-const fonts = ["instrument-sans-latin-wght-normal.woff2", "instrument-sans-latin-ext-wght-normal.woff2"]
+const fonts = ["public-sans-latin-wght-normal.woff2", "public-sans-latin-ext-wght-normal.woff2"]
 
 const fromModules = (path: string) => readFileSync(resolve(import.meta.dirname, "node_modules", path))
 
@@ -58,7 +58,7 @@ function emitStatic(): Plugin {
         this.emitFile({
           type: "asset",
           fileName: `fonts/${name}`,
-          source: fromModules(`@fontsource-variable/instrument-sans/files/${name}`),
+          source: fromModules(`@fontsource-variable/public-sans/files/${name}`),
         })
       }
       for (const name of ["data.json", "messages.json", "shortcodes/iamcal.json"]) {

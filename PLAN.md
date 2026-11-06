@@ -152,16 +152,16 @@ window.comma.identify(token) // token from your backend, see "Login"
 - Set up with the preset:
 
   ```sh
-  bunx shadcn@latest create --preset bdw1GxIe
+  bunx shadcn@latest create --preset b19FZ2
   ```
 
-  Preset `base-mira`: [Base UI](https://base-ui.com) primitives (`@base-ui/react`), Tailwind v4, `tw-animate-css`, Phosphor icons, Instrument Sans, zinc base, yellow primary, radius `0.45rem`, light and dark tokens.
+  Preset `base-nova`: [Base UI](https://base-ui.com) primitives (`@base-ui/react`), Tailwind v4, `tw-animate-css`, Phosphor icons, Public Sans, neutral base, amber primary, radius `0.45rem`, light and dark tokens.
 - Shadow DOM fixes:
   - Tailwind CSS goes into the shadow root (constructable stylesheet), not `document.head`.
   - Theme variables on `:host`, not `:root`. Dark mode: `.dark` class on the host element.
   - Tailwind v4 `@property` rules do not work inside a shadow root. Add them once to the page document, or give fallback values.
   - Convert `rem` to `px` at build time (the page can change the root font size).
-  - `@font-face` does not work in a shadow root in Chromium. Add the Instrument Sans `@font-face` to the page document.
+  - `@font-face` does not work in a shadow root in Chromium. Add the Public Sans `@font-face` to the page document.
   - Base UI portals: render into a container inside the shadow root.
 - Trade-offs:
   - Base UI under `preact/compat`: step 1 checked it in Chromium, Firefox and WebKit. It works, with two fixes:
@@ -307,7 +307,7 @@ All `/api/*` routes except sessions need a session token. The project comes from
 Each step uses TDD: write a failing test first.
 
 1. **Repo setup**: Bun workspaces, TypeScript strict, Biome, Playwright.
-   - shadcn: `bunx shadcn@latest create --preset bdw1GxIe` in `widget/`. Wire Tailwind CSS into the shadow root (see "UI").
+   - shadcn: `bunx shadcn@latest create --preset b19FZ2` in `widget/`. Wire Tailwind CSS into the shadow root (see "UI").
    - Spike: shadcn Button, Popover, Dropdown Menu and Dialog with `preact/compat` in the Shadow DOM. Focus, keyboard, portals and styles work in Chromium, Firefox and WebKit. Measure the gzip size.
    - Spike: Tiptap in an open Shadow DOM. Typing, selection, shortcuts, input rules and the mention popup work in Chromium, Firefox and WebKit. If a browser fails: fix it, or move only the editor into the page DOM with scoped styles.
 2. **Anchors** (Playwright on fixture pages, real layout):

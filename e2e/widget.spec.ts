@@ -22,8 +22,8 @@ test("the page does not change the widget styles", async ({ page }) => {
   // The page changes the root font size. The widget uses px, so its sizes stay.
   await page.addStyleTag({ content: "html { font-size: 10px !important } * { box-shadow: none }" })
   const button = toolbar(page).getByRole("button", { name: "Comment mode" })
-  await expect(button).toHaveCSS("height", "28px")
-  await expect(button).toHaveCSS("font-family", /Instrument Sans Variable/)
+  await expect(button).toHaveCSS("height", "32px")
+  await expect(button).toHaveCSS("font-family", /Public Sans Variable/)
   await toolbar(page)
     .getByRole("button", { name: /^Account/ })
     .click()
