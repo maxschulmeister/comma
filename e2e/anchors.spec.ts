@@ -714,3 +714,15 @@ test("an image in a control: another record in the card is another element", asy
   const name = `document.querySelector('[data-fixture="contact-icon"] h3').textContent = "Dee Moss"`
   expect(await afterCode(page, name)).toEqual({ kept: false, found: null })
 })
+
+test("an image in an action link: another record in the card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "edit-icon")
+  expect(await resolved(page)).toBe("edit-icon")
+  const other = `(() => {
+    const card = document.querySelector('[data-fixture="contact-link"]')
+    card.querySelector("h3").textContent = "Dee Moss"
+    card.querySelector("a").setAttribute("href", "/contacts/dee/edit")
+  })()`
+  expect(await afterCode(page, other)).toEqual({ kept: false, found: null })
+})

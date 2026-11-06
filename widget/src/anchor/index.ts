@@ -65,6 +65,10 @@ const URL_SELECTOR = "[href]:not([href^='#']),[src],[srcset]"
 const BUTTON_SELECTOR = "button,[role=button]"
 const CONTROL_SELECTOR = "button,[role=button],summary,label,input,select,textarea"
 
+// A control, or a part of one: a label or icon in a button or in a link ("Edit" icon in `<a href="/contacts/ada/edit">`).
+// A link itself is not: its href is its identity.
+const inControl = (el: Element) => !!el.closest(CONTROL_SELECTOR) || !!el.parentElement?.closest("a[href]")
+
 const normalize = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim()
 
 function textOf(el: Element) {
@@ -148,7 +152,7 @@ const cardSet = (node: Element, el: Element, text: boolean) => cardEvidence(node
 // The largest, not the closest: an action row ("Add to cart", "Size guide", a policy link) is the same on every card.
 // A link or image is its own identity: no card. Not an icon in a control: the same trash icon is on every record.
 function cardOf(el: Element): Anchor["card"] {
-  const text = !!el.closest(CONTROL_SELECTOR)
+  const text = inControl(el)
   if (el.matches(URL_SELECTOR) && !text) return undefined
   let card: Anchor["card"]
   for (let depth = 1; depth <= MAX_CARD_DEPTH; depth++) {
@@ -241,7 +245,7 @@ export function createAnchor(el: Element, at: { point: { x: number; y: number } 
     anchor.scope = scopeOf(el, lookAlikes)
   }
   // Short labels and controls (also their icons) say little about which item they belong to: their card does.
-  if (anchor.text.length < SHORT_TEXT || el.closest(CONTROL_SELECTOR)) anchor.card = cardOf(el)
+  if (anchor.text.length < SHORT_TEXT || inControl(el)) anchor.card = cardOf(el)
   const twins = lookAlikesOf(anchor).length
   if (twins > 1) anchor.twins = twins
   if ("point" in at) anchor.point = { x: round(px(at.point.x)), y: round(py(at.point.y)) }
