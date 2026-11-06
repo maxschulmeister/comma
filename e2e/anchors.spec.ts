@@ -557,3 +557,35 @@ test("repeated controls in distinct cards: a sort never moves the pin to another
   await page.evaluate(() => document.querySelector('[data-fixture="sea-1"]')?.closest(".card")?.remove())
   expect(await resolved(page)).toBeNull()
 })
+
+// Shows another product in the card of `name`: its first image and link change.
+function otherProduct(name: string) {
+  return `(() => {
+    const card = document.querySelector('[data-fixture="${name}"]').closest(".card")
+    card.querySelector("img").setAttribute("src", "/img/other.png")
+    card.querySelector("a").setAttribute("href", "/p/other")
+  })()`
+}
+
+async function afterCode(page: Page, code: string) {
+  return page.evaluate((code) => {
+    new Function(code)()
+    const kept = window.commaAnchor.resolveAnchor(window.saved, window.target) === window.target
+    const found = window.commaAnchor.resolveAnchor(window.saved)
+    return { kept, found: found?.getAttribute("data-fixture") ?? null }
+  }, code)
+}
+
+test("twins in one card: another product in the card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "lake-1")
+  expect(await resolved(page)).toBe("lake-1")
+  expect(await afterCode(page, otherProduct("lake-1"))).toEqual({ kept: false, found: null })
+})
+
+test("a control with a longer label: another product in its card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "hill-check")
+  expect(await resolved(page)).toBe("hill-check")
+  expect(await afterCode(page, otherProduct("hill-check"))).toEqual({ kept: false, found: null })
+})
