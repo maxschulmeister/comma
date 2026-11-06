@@ -54,9 +54,11 @@ const MIN_LEAD = 0.02
 const MAX_SCOPE_DEPTH = 6
 const SCOPE_LENGTH = 200
 // A card is small: a container with more text is a page section, and its links change for other reasons.
-const MAX_CARD_DEPTH = 3
+const MAX_CARD_DEPTH = 4
 const MAX_CARD_TEXT = 300
 const IDENTITY_SELECTOR = "[href],[src],[srcset]"
+// Elements that point to a page or show an image. Not `href="#…"`: icons (`<use href="#cart">`) and in-page links.
+const URL_SELECTOR = "[href]:not([href^='#']),[src],[srcset]"
 
 const normalize = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim()
 
@@ -107,13 +109,18 @@ function scopeOf(el: Element, others: Element[]): Anchor["scope"] {
 }
 
 // The small container of a short label, with links or images that are not the label's own (see Anchor.card).
-// A link or image is its own identity. An icon in a button (`<use href="#cart">`) is not: the same icon is on every card.
+// A link or image is its own identity. An icon in a button (`<use href="#cart">`) is not: the same icon is on every
+// card. So the evidence must be a real URL outside the control the label is in (a button, or the label itself).
 function cardOf(el: Element): Anchor["card"] {
-  if (el.matches("a[href]:not([href^='#']), [src], [srcset]")) return undefined
+  if (el.matches(URL_SELECTOR)) return undefined
+  const control = el.closest("button, a, label, summary, [role=button]") ?? el
   for (let depth = 1; depth <= MAX_CARD_DEPTH; depth++) {
     const node = ancestorAt(el, depth)
     if (!node || normalize(node.textContent).length > MAX_CARD_TEXT) return undefined
-    if (node.querySelector(IDENTITY_SELECTOR)) return { depth, hash: fingerprintOf(node) }
+    if (control.contains(node)) continue
+    if (Array.from(node.querySelectorAll(URL_SELECTOR)).some((x) => !control.contains(x))) {
+      return { depth, hash: fingerprintOf(node) }
+    }
   }
   return undefined
 }

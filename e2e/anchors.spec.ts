@@ -480,3 +480,17 @@ test("a picture: another source is another picture", async ({ page }) => {
   })
   expect(after).toEqual({ kept: false, found: null })
 })
+
+for (const name of ["wrapped-buy", "wrapped-label"]) {
+  test(`a control in an action wrapper (${name}): another product in its card is another element`, async ({ page }) => {
+    await open(page)
+    await pin(page, name)
+    expect(await resolved(page)).toBe(name)
+    const after = await afterChange(page, () => {
+      const card = document.querySelector('[data-fixture="wrapped-shop"] article')
+      card?.querySelector("img")?.setAttribute("src", "/img/shirt-black.png")
+      card?.querySelector("a")?.setAttribute("href", "/p/shirt-black")
+    })
+    expect(after).toEqual({ kept: false, found: null })
+  })
+}
