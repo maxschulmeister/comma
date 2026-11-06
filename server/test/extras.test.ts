@@ -213,12 +213,14 @@ describe("files", () => {
     expect(res.status).toBe(415)
   })
 
-  test("images over 5 MB are rejected", async () => {
+  test("images over 4 MB are rejected", async () => {
     const s = setup()
     const a = await s.guest("Ada")
-    const big = new Uint8Array(5 * 1024 * 1024 + 1)
+    const big = new Uint8Array(4 * 1024 * 1024 + 1)
     big.set(PNG)
-    expect((await upload(s, a.token, big)).status).toBe(413)
+    const res = await upload(s, a.token, big)
+    expect(res.status).toBe(413)
+    expect(res.json.error).toBe("Images can be up to 4 MB")
   })
 
   test("a file can be used once, by its uploader only, up to 5 per comment", async () => {

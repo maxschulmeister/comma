@@ -1,6 +1,6 @@
 // Image type and size from the file content. The file name and the browser's type are not trusted.
 
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+export const MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
 export type ImageInfo = { mime: "image/png" | "image/jpeg" | "image/gif" | "image/webp"; width: number; height: number }
 

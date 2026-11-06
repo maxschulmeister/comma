@@ -523,7 +523,7 @@ export function createApp(options: AppOptions) {
     if (!(file instanceof File)) throw new HTTPException(400, { message: "Send the image in the field 'file'" })
     if (!uploadLimit.take(user.id, now()))
       throw new HTTPException(429, { message: "Too many images. Try again later." })
-    if (file.size > MAX_IMAGE_BYTES) throw new HTTPException(413, { message: "Images can be up to 5 MB" })
+    if (file.size > MAX_IMAGE_BYTES) throw new HTTPException(413, { message: "Images can be up to 4 MB" })
     const unused = db
       .query<{ total: number | null }, [string]>(
         "select sum(size) as total from files where project = ? and comment_id is null",

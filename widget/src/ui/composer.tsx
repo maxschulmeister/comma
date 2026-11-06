@@ -7,12 +7,12 @@ import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import type { Editor, EditorOptions, JSONContent, SuggestionState } from "@/editor/editor"
 import { initials, userColor } from "@/lib/format"
+import { shrinkImage } from "@/lib/image"
 import { useStore } from "@/store"
 import type { FileRef } from "@/types"
 import { EmojiButton, searchEmoji } from "./emoji"
 
 const MAX_FILES = 5
-const MAX_BYTES = 5 * 1024 * 1024
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 
 let editorModule: Promise<typeof import("@/editor/editor")> | null = null
@@ -119,8 +119,7 @@ export function Composer({
     if (room <= 0 || images.length > room) setError(`You can add up to ${MAX_FILES} images.`)
     for (const file of images.slice(0, Math.max(0, room))) {
       const upload: Upload = { key: crypto.randomUUID(), preview: URL.createObjectURL(file) }
-      if (file.size > MAX_BYTES) upload.error = "Over 5 MB"
-      else upload.request = uploadFile(file)
+      upload.request = shrinkImage(file).then(uploadFile)
       setUploads((list) => [...list, upload])
       track(upload)
     }

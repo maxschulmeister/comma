@@ -141,6 +141,45 @@ test("images by button, paste and drop", async ({ page, browserName }) => {
   await expect.poll(() => shown.first().evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(2)
 })
 
+test("a large image is made smaller before the upload", async ({ page }) => {
+  const popover = await startComment(page, "large-image")
+  await typeComment(page, popover, "large")
+  // A 4000×3000 PNG with noise, so it is larger than 4 MB. Dropped on the composer text.
+  const size = await page.evaluate(async () => {
+    const canvas = new OffscreenCanvas(4000, 3000)
+    const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D
+    const data = ctx.createImageData(4000, 3000)
+    for (let i = 0; i < data.data.length; i += 65_536) crypto.getRandomValues(data.data.subarray(i, i + 65_536))
+    for (let i = 3; i < data.data.length; i += 4) data.data[i] = 255
+    ctx.putImageData(data, 0, 0)
+    const blob = await canvas.convertToBlob({ type: "image/png" })
+    const transfer = new DataTransfer()
+    transfer.items.add(new File([blob], "large.png", { type: "image/png" }))
+    const editor = document
+      .querySelector("comma-widget")
+      ?.shadowRoot?.querySelector("[data-slot=composer] .ProseMirror") as HTMLElement
+    const r = editor.getBoundingClientRect()
+    editor.dispatchEvent(
+      new DragEvent("drop", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: r.left + 4,
+        clientY: r.top + 4,
+        dataTransfer: transfer,
+      }),
+    )
+    return blob.size
+  })
+  expect(size).toBeGreaterThan(4 * 1024 * 1024)
+  await expect(popover.getByRole("list", { name: "Images" }).locator("li[data-state=done]")).toHaveCount(1)
+  await page.keyboard.press("Enter")
+  const shown = threadPopover(page).getByRole("link", { name: "Open image" }).locator("img")
+  await expect
+    .poll(() => shown.evaluate((img: HTMLImageElement) => [img.naturalWidth, img.naturalHeight]))
+    .toEqual([2560, 1920])
+})
+
 test("Enter sends, Shift+Enter adds a line", async ({ page }) => {
   const popover = await startComment(page, "enter")
   await typeComment(page, popover, "line one")
