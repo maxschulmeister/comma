@@ -531,3 +531,15 @@ test("a product card: a toggled icon in a button does not detach the comment", a
   })
   expect(after).toEqual({ kept: true, found: "wish-buy" })
 })
+
+test("a button next to a shared link: another product in its card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "guide-buy")
+  expect(await resolved(page)).toBe("guide-buy")
+  const after = await afterChange(page, () => {
+    const card = document.querySelector('[data-fixture="guide-shop"] article')
+    card?.querySelector("img")?.setAttribute("src", "/img/hat-blue.png")
+    card?.querySelector("a")?.setAttribute("href", "/p/hat-blue")
+  })
+  expect(after).toEqual({ kept: false, found: null })
+})

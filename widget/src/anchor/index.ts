@@ -30,8 +30,8 @@ export type Anchor = {
    */
   scope?: { depth: number; hash: string }
   /**
-   * For a short label that is not a link or image itself ("Add to cart"): the closest small container with links or
-   * images (a product link around it, or its card). `hash`: hash of those links and images, without icons in buttons.
+   * For a short label that is not a link or image itself ("Add to cart"): the largest small container with links or
+   * images (its card). `hash`: hash of those links and images, without icons in buttons.
    * A filter that shows another product in the same card changes them.
    */
   card?: { depth: number; hash: string }
@@ -125,16 +125,18 @@ function cardUrls(node: Element) {
 
 const cardHash = (node: Element | null) => (node ? hashOf(cardUrls(node).join(";")) : "")
 
-// The small container of a short label with links or images that say which item it is (see Anchor.card).
-// The closest one: a product link around the label, else the card. A link or image is its own identity: no card.
-function cardOf(el: Element): Anchor["card"] {
+// The largest small container of a short label with links or images: they say which item it is (see Anchor.card).
+// The largest, not the closest: an action row ("Add to cart", "Size guide") has links that are on every card.
+// It holds none of the look-alikes: a list of cards is not a card. A link or image is its own identity: no card.
+function cardOf(el: Element, lookAlikes: Element[]): Anchor["card"] {
   if (el.matches(URL_SELECTOR)) return undefined
+  let card: Anchor["card"]
   for (let depth = 1; depth <= MAX_CARD_DEPTH; depth++) {
     const node = ancestorAt(el, depth)
-    if (!node || normalize(node.textContent).length > MAX_CARD_TEXT) return undefined
-    if (cardUrls(node).length > 0) return { depth, hash: cardHash(node) }
+    if (!node || normalize(node.textContent).length > MAX_CARD_TEXT || lookAlikes.some((o) => node.contains(o))) break
+    if (cardUrls(node).length > 0) card = { depth, hash: cardHash(node) }
   }
-  return undefined
+  return card
 }
 
 // Ids made by frameworks change between builds or renders: ":r3:", "radix-…", "headlessui-…", "ember123".
@@ -214,7 +216,7 @@ export function createAnchor(el: Element, at: { point: { x: number; y: number } 
     anchor.repeated = true
     anchor.scope = scopeOf(el, lookAlikes)
   }
-  if (anchor.text.length < SHORT_TEXT) anchor.card = cardOf(el)
+  if (anchor.text.length < SHORT_TEXT) anchor.card = cardOf(el, lookAlikes)
   const twins = lookAlikesOf(anchor).length
   if (twins > 1) anchor.twins = twins
   if ("point" in at) anchor.point = { x: round(px(at.point.x)), y: round(py(at.point.y)) }
