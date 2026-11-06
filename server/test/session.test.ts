@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, setSystemTime, test } from "bun:test"
 import { sign } from "hono/jwt"
-import { ACME, appToken_, OTHER, setup } from "./helpers"
+import { ACME, appToken_, CLOSED, OPEN, OTHER, setup } from "./helpers"
 
 describe("guest session", () => {
   test("a guest gets a session token that works for the API", async () => {
@@ -28,6 +28,18 @@ describe("guest session", () => {
     const { request } = await setup()
     const res = await request("POST", "/api/session/guest", { origin: OTHER, body: { project: "acme", name: "Ada" } })
     expect(res.status).toBe(403)
+  })
+
+  test("a project with app sign-in has no guests, unless it turns them on", async () => {
+    const { request } = await setup()
+    const closed = await request("POST", "/api/session/guest", {
+      origin: CLOSED,
+      body: { project: "closed", name: "Ada" },
+    })
+    expect(closed.status).toBe(403)
+    expect(closed.json.error).toBe("Sign in with your account to comment on this site")
+    const open = await request("POST", "/api/session/guest", { origin: OPEN, body: { project: "open", name: "Ada" } })
+    expect(open.status).toBe(200)
   })
 })
 
@@ -79,6 +91,25 @@ describe("app session", () => {
 })
 
 describe("session token", () => {
+  test("an app session ends after 7 days, a guest session after 90 days", async () => {
+    const { guest, appUser, request } = await setup()
+    const start = Date.now()
+    try {
+      const app = await appUser({ sub: "u-week", name: "Wendy" })
+      const visitor = await guest("Gus")
+      const works = async (token: string) => (await request("GET", "/api/threads", { token })).status
+      setSystemTime(start + 6 * 86_400_000)
+      expect(await works(app.token)).toBe(200)
+      setSystemTime(start + 8 * 86_400_000)
+      expect(await works(app.token)).toBe(401)
+      expect(await works(visitor.token)).toBe(200)
+      setSystemTime(start + 91 * 86_400_000)
+      expect(await works(visitor.token)).toBe(401)
+    } finally {
+      setSystemTime()
+    }
+  })
+
   test("the API needs a session token", async () => {
     const { request } = await setup()
     expect((await request("GET", "/api/threads")).status).toBe(401)
@@ -140,9 +171,11 @@ describe("project info", () => {
     const { request } = await setup()
     const acme = await request("GET", "/api/projects/acme")
     expect(acme.status).toBe(200)
-    expect(acme.json).toEqual({ id: "acme", popupSignIn: true })
+    expect(acme.json).toEqual({ id: "acme", name: "Acme", popupSignIn: true, guests: true, toolbar: "always" })
     const other = await request("GET", "/api/projects/other", { origin: OTHER })
-    expect(other.json).toEqual({ id: "other", popupSignIn: false })
+    expect(other.json).toEqual({ id: "other", popupSignIn: false, guests: true, toolbar: "always" })
+    const closed = await request("GET", "/api/projects/closed", { origin: CLOSED })
+    expect(closed.json).toEqual({ id: "closed", popupSignIn: false, guests: false, toolbar: "signed-in" })
     expect((await request("GET", "/api/projects/acme", { origin: OTHER })).status).toBe(403)
   })
 

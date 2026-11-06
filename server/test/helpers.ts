@@ -7,6 +7,8 @@ import type { FileStore } from "../src/files"
 
 export const ACME = "https://acme.test"
 export const OTHER = "https://other.test"
+export const CLOSED = "https://closed.test"
+export const OPEN = "https://open.test"
 
 export const config: Config = {
   projects: [
@@ -15,8 +17,14 @@ export const config: Config = {
       origins: [ACME, "http://localhost:3000"],
       appSecret: "acme-secret",
       signInUrl: "https://app.acme.test/comma",
+      name: "Acme",
+      guests: true,
     },
-    { id: "other", origins: [OTHER], appSecret: "other-secret" },
+    { id: "other", origins: [OTHER], appSecret: "other-secret", guests: true },
+    // App sign-in without a guest option: guests are off.
+    { id: "closed", origins: [CLOSED], appSecret: "closed-secret", toolbar: "signed-in" },
+    // No app sign-in: guests are on.
+    { id: "open", origins: [OPEN] },
   ],
 }
 

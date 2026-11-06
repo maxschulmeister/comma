@@ -26,7 +26,9 @@ export const publicUser = (u: UserRow): User => ({
   isAdmin: u.is_admin === 1,
 })
 
-const SESSION_DAYS = 90
+// A guest has no account that can be closed. An app user's access ends a week after the last sign-in: someone who
+// left the team cannot sign in to the app again. In the app, `identify` signs in again on each page load.
+const SESSION_DAYS = { guest: 90, app: 7 }
 const APP_TOKEN_MAX_SECONDS = 5 * 60
 const CLOCK_SKEW_SECONDS = 30
 
@@ -34,7 +36,7 @@ export const newId = () => crypto.randomUUID()
 
 export function signSession(secret: string, user: UserRow) {
   const iat = Math.floor(Date.now() / 1000)
-  return sign({ sub: user.id, prj: user.project, iat, exp: iat + SESSION_DAYS * 86_400 }, secret, "HS256")
+  return sign({ sub: user.id, prj: user.project, iat, exp: iat + SESSION_DAYS[user.kind] * 86_400 }, secret, "HS256")
 }
 
 export async function verifySession(secret: string, token: string) {

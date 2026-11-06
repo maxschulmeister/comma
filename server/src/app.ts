@@ -254,12 +254,19 @@ export function createApp(options: AppOptions) {
 
   app.get("/api/projects/:id", (c) => {
     const project = projectFor(c.req.param("id"), c)
-    return c.json({ id: project.id, popupSignIn: !!(project.signInUrl && project.appSecret) })
+    return c.json({
+      id: project.id,
+      name: project.name,
+      popupSignIn: !!(project.signInUrl && project.appSecret),
+      guests: project.guests,
+      toolbar: project.toolbar,
+    })
   })
 
   app.post("/api/session/guest", async (c) => {
     const input = parse(z.object({ project: z.string(), name: z.string().trim().min(1).max(60) }), await json(c))
     const project = projectFor(input.project, c)
+    if (!project.guests) throw new HTTPException(403, { message: "Sign in with your account to comment on this site" })
     const user = await createGuest(db, project, input.name, now())
     return c.json({ token: await signSession(secret, user), user: publicUser(user) })
   })
