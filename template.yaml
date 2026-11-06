@@ -1,0 +1,87 @@
+# comma on AWS Lambda (AWS SAM). See DEPLOY.md.
+# Build first: `bun run build && bun scripts/build-lambda.ts`. Then `sam deploy --guided`.
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: comma, comments pinned to websites
+
+Parameters:
+  PublicUrl:
+    Type: String
+    Default: ""
+    Description: The address of comma, for example https://comma.example.com. Empty on the first deploy.
+  CommaDb:
+    Type: String
+    Description: The Turso database URL (libsql://...).
+  CommaDbToken:
+    Type: String
+    NoEcho: true
+  CommaSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: Signs session tokens. openssl rand -hex 32
+  UseS3:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: Keep images in a private S3 bucket (recommended on Lambda).
+  # One parameter for each `appSecret` in comma.config.ts. Add its env var below.
+  # AcmeSecret:
+  #   Type: String
+  #   NoEcho: true
+
+Conditions:
+  WithS3: !Equals [!Ref UseS3, "true"]
+
+Resources:
+  Files:
+    Type: AWS::S3::Bucket
+    Condition: WithS3
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  Comma:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: dist/lambda
+      Handler: index.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 512
+      Timeout: 15
+      FunctionUrlConfig:
+        AuthType: NONE
+      Environment:
+        Variables:
+          COMMA_URL: !Ref PublicUrl
+          COMMA_DB: !Ref CommaDb
+          COMMA_DB_TOKEN: !Ref CommaDbToken
+          COMMA_SECRET: !Ref CommaSecret
+          COMMA_FILES: !If [WithS3, s3, db]
+          COMMA_S3_BUCKET: !If [WithS3, !Ref Files, ""]
+          # ACME_SECRET: !Ref AcmeSecret
+      Policies:
+        - !If [WithS3, { S3CrudPolicy: { BucketName: !Ref Files } }, !Ref AWS::NoValue]
+      Events:
+        Cleanup:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: rate(1 hour)
+            Input: '{"cleanup": true}'
+
+  # Since October 2025, a public Function URL also needs lambda:InvokeFunction, only through the URL.
+  InvokeThroughUrl:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Comma
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+Outputs:
+  Url:
+    Value: !GetAtt CommaUrl.FunctionUrl

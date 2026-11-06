@@ -10,7 +10,7 @@ const PNG = Uint8Array.from(
 )
 
 // A small S3: objects by path. It accepts only signed requests.
-const objects = new Map<string, Uint8Array>()
+const objects = new Map<string, Uint8Array<ArrayBuffer>>()
 const s3 = Bun.serve({
   port: 0,
   async fetch(req) {

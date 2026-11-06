@@ -9,3 +9,6 @@ playwright-report
 
 # Local secrets
 .env
+
+# Static widget files for Workers and Vercel (scripts/public.ts)
+/public

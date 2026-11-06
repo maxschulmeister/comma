@@ -1,0 +1,14 @@
+# comma with Docker Compose. See DEPLOY.md.
+services:
+  comma:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - comma-data:/data
+      # Projects: edit the file, then `docker compose restart`.
+      - ./comma.config.ts:/app/comma.config.ts:ro
+    ports:
+      - "127.0.0.1:4000:4000"
+volumes:
+  comma-data:

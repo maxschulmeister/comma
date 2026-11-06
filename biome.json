@@ -4,6 +4,7 @@
     "includes": [
       "**",
       "!**/dist",
+      "!public",
       "!**/node_modules",
       "!widget/src/components/ui",
       "!test-results",

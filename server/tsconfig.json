@@ -14,5 +14,5 @@
     "noFallthroughCasesInSwitch": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "test", "../comma.config.ts"]
+  "include": ["src", "test", "../comma.config.ts", "../server.ts", "../scripts"]
 }
