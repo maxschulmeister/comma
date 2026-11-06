@@ -51,6 +51,21 @@ test.describe("comment mode", () => {
     expect(box && lead && Math.abs(box.y + box.height - (lead.y + lead.height * 0.5))).toBeLessThan(2)
   })
 
+  test("with the keyboard: focus a page element and press Enter", async ({ page }) => {
+    await signIn(page, await guestSession("Keyboard"))
+    await openTestPage(page, "keyboard")
+    await page.keyboard.press("c")
+    await expect(overlay(page)).toBeAttached()
+    await page.getByRole("link", { name: "Home" }).focus()
+    await page.keyboard.press("Enter")
+    await typeComment(page, newCommentPopover(page), "Keyboard comment")
+    await page.keyboard.press("Enter")
+    await expect(threadPopover(page)).toContainText("Keyboard comment")
+    const link = await page.getByRole("link", { name: "Home" }).boundingBox()
+    const pin = await pins(page).first().boundingBox()
+    expect(Math.abs((pin?.x ?? 0) - ((link?.x ?? 0) + (link?.width ?? 0) / 2))).toBeLessThan(2)
+  })
+
   test("a drag draws a region", async ({ page }) => {
     await signIn(page, await guestSession("Region"))
     await openTestPage(page, "region")

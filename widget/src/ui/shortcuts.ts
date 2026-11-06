@@ -1,6 +1,7 @@
-import { isTyping } from "@/lib/dom"
+import { HOST_TAG, isTyping } from "@/lib/dom"
 import { getState, setState } from "@/store"
 import { preloadEditor } from "./composer"
+import { startDraft } from "./overlay"
 import { NARROW } from "./panel"
 
 const PINS_KEY = "comma:pins"
@@ -38,6 +39,13 @@ export function startShortcuts() {
     const state = getState()
     if (event.key === "Escape" && state.commentMode && !state.draft && !state.openThreadId) {
       setCommentMode(false)
+    } else if (event.key === "Enter" && state.commentMode && !state.draft) {
+      // Keyboard: comment on the focused page element.
+      const el = document.activeElement
+      if (!el || el === document.body || el.localName === HOST_TAG) return
+      event.preventDefault()
+      const r = el.getBoundingClientRect()
+      startDraft(el, { point: { x: r.left + r.width / 2, y: r.top + r.height / 2 } })
     } else if (event.code === "KeyC" && event.shiftKey) {
       event.preventDefault()
       togglePins()

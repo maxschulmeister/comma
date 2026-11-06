@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { type Box, createAnchor } from "@/anchor"
-import { elementAt } from "@/lib/dom"
+import { elementAt, HOST_TAG } from "@/lib/dom"
 import { getState, setState } from "@/store"
 
 const DRAG_MIN = 6
@@ -14,6 +14,11 @@ const rectOf = (d: Drag): Box => ({
   height: Math.abs(d.y2 - d.y),
 })
 
+/** Opens the composer for a new thread on the element. */
+export function startDraft(el: Element, at: Parameters<typeof createAnchor>[1]) {
+  setState({ draft: { anchor: createAnchor(el, at), element: el, page: getState().page }, openThreadId: null })
+}
+
 // Comment mode: hover outlines the element under the cursor, click pins a comment to it,
 // drag draws a region. On touch, a tap pins a comment and the page still scrolls.
 export function CommentOverlay() {
@@ -22,18 +27,22 @@ export function CommentOverlay() {
 
   useEffect(() => {
     const clear = () => setOutline(null)
+    // Keyboard: the focused page element is the target (Enter comments on it, see shortcuts).
+    const onFocus = (event: FocusEvent) => {
+      const el = event.target
+      if (!(el instanceof Element) || el.localName === HOST_TAG || el === document.body) return
+      const r = el.getBoundingClientRect()
+      setOutline({ x: r.left, y: r.top, width: r.width, height: r.height })
+    }
     window.addEventListener("scroll", clear, { capture: true, passive: true })
-    return () => window.removeEventListener("scroll", clear, true)
+    document.addEventListener("focusin", onFocus)
+    return () => {
+      window.removeEventListener("scroll", clear, true)
+      document.removeEventListener("focusin", onFocus)
+    }
   }, [])
 
-  const target = (x: number, y: number) => {
-    const el = elementAt(x, y)
-    return el && el !== document.body ? el : (el ?? document.body)
-  }
-
-  const startDraft = (el: Element, anchor: ReturnType<typeof createAnchor>) => {
-    setState({ draft: { anchor, element: el, page: getState().page }, openThreadId: null })
-  }
+  const target = (x: number, y: number) => elementAt(x, y) ?? document.body
 
   return (
     <div
@@ -66,12 +75,12 @@ export function CommentOverlay() {
           const rect = rectOf({ ...current, x2: e.clientX, y2: e.clientY })
           if (rect.width >= DRAG_MIN || rect.height >= DRAG_MIN) {
             const el = target(rect.x + rect.width / 2, rect.y + rect.height / 2)
-            startDraft(el, createAnchor(el, { rect }))
+            startDraft(el, { rect })
             return
           }
         }
         const el = target(e.clientX, e.clientY)
-        startDraft(el, createAnchor(el, { point: { x: e.clientX, y: e.clientY } }))
+        startDraft(el, { point: { x: e.clientX, y: e.clientY } })
       }}
       onPointerCancel={() => setDrag(null)}
     >

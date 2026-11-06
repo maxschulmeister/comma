@@ -23,12 +23,12 @@ bun example/app.ts     # the example site on http://localhost:4100
 
 ### Server settings
 
-| Env | Default | |
-|---|---|---|
-| `COMMA_SECRET` | (required) | Signs session tokens. 32 or more random characters. |
-| `COMMA_DB` | `comma.sqlite` | SQLite file. Back up this file. |
-| `COMMA_CONFIG` | `comma.config.ts` | Projects (see below). |
-| `PORT` | `4000` | |
+| Env            | Default           |                                                     |
+| -------------- | ----------------- | --------------------------------------------------- |
+| `COMMA_SECRET` | (required)        | Signs session tokens. 32 or more random characters. |
+| `COMMA_DB`     | `comma.sqlite`    | SQLite file. Back up this file.                     |
+| `COMMA_CONFIG` | `comma.config.ts` | Projects (see below).                               |
+| `PORT`         | `4000`            |                                                     |
 
 ## Add comma to a site
 
@@ -64,13 +64,13 @@ Add `appSecret` to the project. Use the same secret in your app backend.
 
 Add one endpoint that signs a token for the signed-in user. JWT, HS256, signed with the project secret:
 
-| Claim | |
-|---|---|
-| `sub` | User id in your app. Required. |
-| `name` | Display name. Required. |
-| `email`, `avatar` | Optional. `avatar` is an image URL. |
-| `admin` | Optional. `true` lets the user delete any thread. |
-| `exp` | Required. 5 minutes or less from now. |
+| Claim             |                                                   |
+| ----------------- | ------------------------------------------------- |
+| `sub`             | User id in your app. Required.                    |
+| `name`            | Display name. Required.                           |
+| `email`, `avatar` | Optional. `avatar` is an image URL.               |
+| `admin`           | Optional. `true` lets the user delete any thread. |
+| `exp`             | Required. 5 minutes or less from now.             |
 
 ```ts
 import { sign } from "hono/jwt" // or any JWT library
@@ -134,15 +134,16 @@ comma sends the session to the site that opened the popup, only if that site is 
 
 ## Keyboard
 
-| Key | |
-|---|---|
-| `C` | Comment mode on or off |
-| `Esc` | Close the popover, then leave comment mode |
-| `Shift+C` | Show or hide comments |
-| `Enter` / `Shift+Enter` | Send / new line |
+| Key                       |                                                                       |
+| ------------------------- | --------------------------------------------------------------------- |
+| `C`                       | Comment mode on or off                                                |
+| `Tab`, then `Enter`       | In comment mode: comment on the focused element                       |
+| `Esc`                     | Close the popover, then leave comment mode                            |
+| `Shift+C`                 | Show or hide comments                                                 |
+| `Enter` / `Shift+Enter`   | Send / new line                                                       |
 | `⌘B` `⌘I` `⌘⇧X` `⌘E` `⌘K` | Bold, italic, strikethrough, code, link (`Ctrl` on Windows and Linux) |
-| `⌘⇧8` `⌘⇧7` | Bulleted and numbered list |
-| `↑` `↓` | Move between threads in the panel |
+| `⌘⇧8` `⌘⇧7`               | Bulleted and numbered list                                            |
+| `↑` `↓`                   | Move between threads in the panel                                     |
 
 ## Development
 
