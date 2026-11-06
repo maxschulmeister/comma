@@ -274,7 +274,7 @@ test("the server keeps every anchor field the widget sends", async () => {
     fingerprint: "a1b2c3d4",
     repeated: true,
     scope: { depth: 1, hash: "9f8e7d6c" },
-    card: { depth: 2, hash: "1a2b3c4d" },
+    card: { depth: 2, urls: ["1a2b3c4d", "5e6f7a8b"] },
   }
   const res = await s.request("POST", "/api/threads", {
     token: author.token,

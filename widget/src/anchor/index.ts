@@ -31,10 +31,11 @@ export type Anchor = {
   scope?: { depth: number; hash: string }
   /**
    * For a short label or a control that is not a link or image itself ("Add to cart"): the largest small container
-   * with links or images (its card). `hash`: hash of those links and images, without icons in buttons.
-   * A filter that shows another product in the same card changes them.
+   * with links or images (its card). `urls`: hashes of those links and images, without icons in buttons.
+   * They must all still be in the card. A filter that shows another product in the card removes them. A sort, or
+   * another product added to a small list, does not.
    */
-  card?: { depth: number; hash: string }
+  card?: { depth: number; urls: string[] }
   /** Pin: position in % of the element box. */
   point?: { x: number; y: number }
   /** Region: box in % of the element box. Can be < 0 or > 100. */
@@ -56,6 +57,7 @@ const SCOPE_LENGTH = 200
 // A card is small: a container with more text is a page section, and its links change for other reasons.
 const MAX_CARD_DEPTH = 4
 const MAX_CARD_TEXT = 300
+const MAX_CARD_URLS = 50
 const IDENTITY_SELECTOR = "[href],[src],[srcset]"
 // Elements that point to a page or show an image. Not `href="#…"`: icons (`<use href="#cart">`) and in-page links.
 const URL_SELECTOR = "[href]:not([href^='#']),[src],[srcset]"
@@ -127,30 +129,20 @@ function cardUrls(node: Element) {
   return urls
 }
 
-const cardHash = (node: Element | null) => (node ? hashOf(cardUrls(node).join(";")) : "")
+// Hashes of the links and images of a container (see Anchor.card). A set: a sort does not change it.
+const cardSet = (node: Element) => [...new Set(cardUrls(node).map(hashOf))].sort()
 
 // The largest small container of a label with links or images: they say which item it is (see Anchor.card).
-// The largest, not the closest: an action row ("Add to cart", "Size guide") has links that are on every card.
-// It holds no other item: a list of cards is not a card. Another item is a branch with a look-alike and other links or
-// images than the element's own branch. A second row with the same button (and the same policy link) in the same card
-// is not. A link or image is its own identity.
-function cardOf(el: Element, lookAlikes: Element[]): Anchor["card"] {
+// The largest, not the closest: an action row ("Add to cart", "Size guide", a policy link) has links that are on every
+// card. A link or image is its own identity: no card.
+function cardOf(el: Element): Anchor["card"] {
   if (el.matches(URL_SELECTOR)) return undefined
   let card: Anchor["card"]
   for (let depth = 1; depth <= MAX_CARD_DEPTH; depth++) {
     const node = ancestorAt(el, depth)
     if (!node || normalize(node.textContent).length > MAX_CARD_TEXT) break
-    const own = depth === 1 ? el : ancestorAt(el, depth - 1)
-    const ownHash = own ? cardHash(own) : ""
-    const otherItem = Array.from(node.children).some(
-      (child) =>
-        child !== own &&
-        lookAlikes.some((o) => child.contains(o)) &&
-        cardUrls(child).length > 0 &&
-        cardHash(child) !== ownHash,
-    )
-    if (otherItem) break
-    if (cardUrls(node).length > 0) card = { depth, hash: cardHash(node) }
+    const urls = cardSet(node)
+    if (urls.length > 0) card = { depth, urls: urls.slice(0, MAX_CARD_URLS) }
   }
   return card
 }
@@ -233,7 +225,7 @@ export function createAnchor(el: Element, at: { point: { x: number; y: number } 
     anchor.scope = scopeOf(el, lookAlikes)
   }
   // Short labels and controls say little about which item they belong to: their card does.
-  if (anchor.text.length < SHORT_TEXT || el.closest(CONTROL_SELECTOR)) anchor.card = cardOf(el, lookAlikes)
+  if (anchor.text.length < SHORT_TEXT || el.closest(CONTROL_SELECTOR)) anchor.card = cardOf(el)
   const twins = lookAlikesOf(anchor).length
   if (twins > 1) anchor.twins = twins
   if ("point" in at) anchor.point = { x: round(px(at.point.x)), y: round(py(at.point.y)) }
@@ -276,7 +268,9 @@ const inScope = (anchor: Anchor, el: Element) => {
   if (anchor.scope && scopeHash(ancestorAt(el, anchor.scope.depth)) !== anchor.scope.hash) return false
   if (!anchor.card) return true
   const card = ancestorAt(el, anchor.card.depth)
-  return !!card && cardHash(card) === anchor.card.hash
+  if (!card) return false
+  const urls = new Set(cardSet(card))
+  return anchor.card.urls.every((url) => urls.has(url))
 }
 
 // Elements with the same tag, text, context, fingerprint and container.

@@ -615,3 +615,23 @@ test("a stable id with changed text needs the same neighbors", async ({ page }) 
   })
   expect(await resolved(page)).toBeNull()
 })
+
+test("rate rows with a link in only one row: another product in the card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "cliff-1")
+  expect(await resolved(page)).toBe("cliff-1")
+  expect(await afterCode(page, otherProduct("cliff-1"))).toEqual({ kept: false, found: null })
+})
+
+test("a product card in a list: another product added to the list does not detach the comment", async ({ page }) => {
+  await open(page)
+  await pin(page, "shirt-red")
+  await page.evaluate(() => {
+    const list = document.querySelector('[data-fixture="shirt-cards"]') as HTMLElement
+    list.insertAdjacentHTML(
+      "beforeend",
+      '<div class="card"><img src="/img/shirt-green.png" alt="Polo" width="20" height="20"><h3>Polo</h3><a href="/p/polo">Details</a><button type="button">Add to basket</button></div>',
+    )
+  })
+  expect(await resolved(page)).toBe("shirt-red")
+})
