@@ -4,12 +4,12 @@ This file is for agents that deploy comma for a user. Read all of it before you 
 
 ## Targets
 
-| Target | Database | Images | Status |
-| --- | --- | --- | --- |
-| [Docker](#docker) (VPS) | SQLite file | in the database | Ready |
-| [AWS Lambda](#aws-lambda) | Turso | database or S3 | Needs [serverless support](#serverless-support) |
-| [Cloudflare Workers](#cloudflare-workers) | Turso | database or R2 | Needs [serverless support](#serverless-support) |
-| [Vercel](#vercel) | Turso | database or S3 | Needs [serverless support](#serverless-support) |
+| Target                                    | Database    | Images          | Status                                          |
+| ----------------------------------------- | ----------- | --------------- | ----------------------------------------------- |
+| [Docker](#docker) (VPS)                   | SQLite file | in the database | Ready                                           |
+| [AWS Lambda](#aws-lambda)                 | Turso       | database or S3  | Needs [serverless support](#serverless-support) |
+| [Cloudflare Workers](#cloudflare-workers) | Turso       | database or R2  | Needs [serverless support](#serverless-support) |
+| [Vercel](#vercel)                         | Turso       | database or S3  | Needs [serverless support](#serverless-support) |
 
 Do not deploy to a target that is not ready. Tell the user, and offer to implement [serverless support](#serverless-support) first.
 
@@ -32,14 +32,14 @@ Secrets:
 
 ## Settings
 
-| Env | Default | |
-| --- | --- | --- |
-| `COMMA_SECRET` | (required) | Signs session tokens. 32 or more random characters. |
-| `COMMA_DB` | `comma.sqlite` | SQLite file. |
-| `COMMA_CONFIG` | `comma.config.ts` | Projects. |
-| `PORT` | `4000` | |
-| `COMMA_URL` | (the request) | Public address, for example `https://comma.example.com`. Always set it in production. |
-| `<PROJECT>_SECRET` | | One per project with app sign-in. The name is what `comma.config.ts` reads. |
+| Env                | Default           |                                                                                       |
+| ------------------ | ----------------- | ------------------------------------------------------------------------------------- |
+| `COMMA_SECRET`     | (required)        | Signs session tokens. 32 or more random characters.                                   |
+| `COMMA_DB`         | `comma.sqlite`    | SQLite file.                                                                          |
+| `COMMA_CONFIG`     | `comma.config.ts` | Projects.                                                                             |
+| `PORT`             | `4000`            |                                                                                       |
+| `COMMA_URL`        | (the request)     | Public address, for example `https://comma.example.com`. Always set it in production. |
+| `<PROJECT>_SECRET` |                   | One per project with app sign-in. The name is what `comma.config.ts` reads.           |
 
 Planned with [serverless support](#serverless-support): `COMMA_DB` also takes `libsql://` and `https://` URLs, plus `COMMA_DB_TOKEN`, `COMMA_FILES` (`db` or `s3`) and `COMMA_S3_*`.
 
