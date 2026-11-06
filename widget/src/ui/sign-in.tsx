@@ -7,9 +7,9 @@ import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { useStore } from "@/store"
 
-/** Sign in with the app (popup), or as a guest with a name. */
+/** Sign in with the app (popup), or as a guest with a name. The project decides which ones it has. */
 export function SignInForm({ title = "Sign in to comment" }: { title?: string }) {
-  const popupSignIn = useStore((s) => s.popupSignIn)
+  const info = useStore((s) => s.projectInfo)
   const [name, setName] = useState("")
   const [busy, setBusy] = useState<"guest" | "popup" | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -36,37 +36,53 @@ export function SignInForm({ title = "Sign in to comment" }: { title?: string })
     void run("guest", () => signInAsGuest(name.trim()))
   }
 
+  if (!info) {
+    return (
+      <div className="flex justify-center py-4">
+        <Spinner />
+      </div>
+    )
+  }
+
+  const app = info.name ?? "your account"
   return (
     <form className="flex flex-col gap-2.5" onSubmit={onSubmit} noValidate>
       <p className="font-medium text-sm">{title}</p>
-      {popupSignIn && (
+      {info.popupSignIn && (
+        <Button type="button" onClick={() => run("popup", signInWithPopup)} disabled={!!busy}>
+          {busy === "popup" && <Spinner />}
+          Sign in with {app}
+        </Button>
+      )}
+      {info.popupSignIn && info.guests && (
+        <div className="flex items-center gap-2 text-muted-foreground text-xs">
+          <Separator className="flex-1" />
+          or
+          <Separator className="flex-1" />
+        </div>
+      )}
+      {info.guests && (
         <>
-          <Button type="button" onClick={() => run("popup", signInWithPopup)} disabled={!!busy}>
-            {busy === "popup" && <Spinner />}
-            Sign in
-          </Button>
-          <div className="flex items-center gap-2 text-muted-foreground text-xs">
-            <Separator className="flex-1" />
-            or
-            <Separator className="flex-1" />
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={id}>Your name</Label>
+            <Input
+              id={id}
+              value={name}
+              maxLength={60}
+              autoComplete="name"
+              autoFocus={!info.popupSignIn}
+              onChange={(e) => setName(e.currentTarget.value)}
+            />
           </div>
+          <Button type="submit" variant={info.popupSignIn ? "outline" : "default"} disabled={!!busy}>
+            {busy === "guest" && <Spinner />}
+            Continue as guest
+          </Button>
         </>
       )}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={id}>Your name</Label>
-        <Input
-          id={id}
-          value={name}
-          maxLength={60}
-          autoComplete="name"
-          autoFocus={!popupSignIn}
-          onChange={(e) => setName(e.currentTarget.value)}
-        />
-      </div>
-      <Button type="submit" variant={popupSignIn ? "outline" : "default"} disabled={!!busy}>
-        {busy === "guest" && <Spinner />}
-        Continue as guest
-      </Button>
+      {!info.popupSignIn && !info.guests && (
+        <p className="text-muted-foreground text-sm">Sign in to {info.name ?? "the app"} to comment.</p>
+      )}
       {error && (
         <p role="alert" className="text-destructive text-xs">
           {error}

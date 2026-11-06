@@ -11,6 +11,7 @@ import {
   panel,
   pins,
   signIn,
+  testPath,
   threadPopover,
   toolbar,
   typeComment,
@@ -327,6 +328,22 @@ test.describe("touch", () => {
     await page.touchscreen.tap(lead.x + 20, lead.y + 5)
     await expect(newCommentPopover(page)).toBeVisible()
   })
+
+  test("comment actions and reactions show without hover", async ({ browser, browserName }) => {
+    test.skip(browserName === "firefox", "Playwright has no mobile emulation in Firefox")
+    const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } })
+    const page = await context.newPage()
+    await signIn(page, await guestSession("Thumb"))
+    await openTestPage(page, "touch-actions")
+    await addComment(page, page.getByTestId("lead"), "Tapped")
+    const opacity = (name: string) =>
+      threadPopover(page)
+        .getByRole("button", { name })
+        .evaluate((el) => getComputedStyle(el).opacity)
+    expect(await opacity("Comment actions")).toBe("1")
+    expect(await opacity("Add reaction")).toBe("1")
+    await context.close()
+  })
 })
 
 test("polling stops after 5 minutes with no input, the next input polls at once", async ({ page }) => {
@@ -358,6 +375,34 @@ test("polling stops after 5 minutes with no input, the next input polls at once"
   // Polling runs again.
   await wait(1)
   expect(polls).toBeGreaterThanOrEqual(idle + 3)
+})
+
+test.describe("shortcut", () => {
+  const commentMode = (page: import("@playwright/test").Page) =>
+    toolbar(page).getByRole("button", { name: "Comment mode" })
+
+  test("the shortcut follows the letter on the key, not its place", async ({ page }) => {
+    await signIn(page, await guestSession("Dvorak"))
+    await openTestPage(page, "shortcut-letter")
+    // On a Dvorak keyboard, the C letter is where QWERTY has I.
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "c", code: "KeyI" })))
+    await expect(commentMode(page)).toHaveAttribute("aria-pressed", "true")
+  })
+
+  test("the site sets another key, or none", async ({ page }) => {
+    await signIn(page, await guestSession("Keys"))
+    await page.goto(`${testPath("shortcut-m")}?shortcut=m`)
+    await expect(toolbar(page)).toBeVisible()
+    await page.keyboard.press("c")
+    await expect(commentMode(page)).toHaveAttribute("aria-pressed", "false")
+    await page.keyboard.press("m")
+    await expect(commentMode(page)).toHaveAttribute("aria-pressed", "true")
+
+    await page.goto(`${testPath("shortcut-none")}?shortcut=none`)
+    await expect(toolbar(page)).toBeVisible()
+    await page.keyboard.press("c")
+    await expect(commentMode(page)).toHaveAttribute("aria-pressed", "false")
+  })
 })
 
 test("the widget says it is English, and keeps still with reduced motion", async ({ page }) => {

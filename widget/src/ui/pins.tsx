@@ -2,19 +2,23 @@ import { cn } from "cn"
 import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef, useState } from "react"
 import type { Box } from "@/anchor"
 import { createThread, moveThread } from "@/client"
+import { Button } from "@/components/ui/button"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { Popover, PopoverContent } from "@/components/ui/popover"
+import { closeDraft, loadDraft, newDraft, newDraftKey, saveDraft } from "@/drafts"
 import { pressInsideWidget } from "@/lib/dom"
+import { pageContext } from "@/lib/env"
 import { plural, timeAgo } from "@/lib/format"
 import { NARROW, useMedia } from "@/lib/media"
 import { pageBox, useLayoutTick, useResolved } from "@/live"
-import { type Draft, getState, setState, useStore } from "@/store"
+import { type Draft, getState, type State, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
 import { Composer } from "./composer"
 import { movedAnchor } from "./overlay"
 import { SignInForm } from "./sign-in"
-import { ThreadView } from "./thread"
+import { type Placement, ThreadView } from "./thread"
 import { UserAvatar } from "./user-avatar"
+import { nameOf, UserName } from "./user-name"
 
 /** Elements a thread popover can attach to: pins and clusters on the page, items in the panel. */
 export const pinElements = new Map<string, HTMLElement>()
@@ -44,7 +48,11 @@ function cluster(items: Item[], keep: string | null) {
   return groups
 }
 
-export const openThread = (id: string) => setState({ openThreadId: id, draft: null })
+/** Opens a thread. A draft with text stays as a pin. */
+export const openThread = (id: string) => {
+  closeDraft()
+  setState({ openThreadId: id, draftMove: null })
+}
 
 export function PinsLayer() {
   const threads = useStore((s) => s.threads)
@@ -52,6 +60,7 @@ export function PinsLayer() {
   const pinsVisible = useStore((s) => s.pinsVisible)
   const openThreadId = useStore((s) => s.openThreadId)
   const draft = useStore((s) => s.draft)
+  const draftMove = useStore((s) => s.draftMove)
   // On narrow screens the panel covers the page: pins behind it take no focus.
   const panelOpen = useStore((s) => s.panelOpen)
   const narrow = useMedia(NARROW)
@@ -73,12 +82,16 @@ export function PinsLayer() {
   }
   const groups = cluster(items, openThreadId)
   const regions = items.filter((i) => i.thread.anchor.rect && (i.thread.id === openThreadId || i.thread.id === hovered))
+  // An open element pin outlines its element, so readers see what the comment is about.
+  const open = items.find((i) => i.thread.id === openThreadId && !i.thread.anchor.rect)
+  const openElement = open && resolved.get(open.thread.id)
 
   return (
     <div className="absolute top-0 left-0" data-slot="pins" inert={covered}>
       {regions.map(({ thread, box }) => (
         <Region key={thread.id} box={box} />
       ))}
+      {openElement && <ElementOutline el={openElement} />}
       {groups.map((group) =>
         group.items.length === 1 && group.items[0] ? (
           <Pin
@@ -93,6 +106,7 @@ export function PinsLayer() {
         ),
       )}
       {draft && <DraftComposer draft={draft} />}
+      {draftMove && <DraftMovePrompt move={draftMove} />}
       <ThreadPopover />
     </div>
   )
@@ -104,6 +118,18 @@ function Region({ box }: { box: Box }) {
       aria-hidden
       className="pointer-events-none absolute rounded-sm border-2 border-primary bg-primary/10"
       style={{ left: box.x, top: box.y, width: box.width, height: box.height }}
+    />
+  )
+}
+
+function ElementOutline({ el }: { el: Element }) {
+  const r = el.getBoundingClientRect()
+  return (
+    <div
+      aria-hidden
+      data-slot="anchor-outline"
+      className="pointer-events-none absolute rounded-[2px] outline-2 outline-primary outline-offset-2 outline-solid"
+      style={{ left: r.left + window.scrollX, top: r.top + window.scrollY, width: r.width, height: r.height }}
     />
   )
 }
@@ -156,7 +182,7 @@ function Pin({
     window.addEventListener("pointercancel", up)
   }
 
-  const label = `Comment by ${author?.name ?? "Unknown"}${thread.unread ? ", unread" : ""}: ${first?.text.slice(0, 80) ?? ""}`
+  const label = `Comment by ${nameOf(author)}${thread.unread ? ", unread" : ""}: ${first?.text.slice(0, 80) ?? ""}`
 
   // No preview while the thread is open: it would also take the Escape key.
   return (
@@ -201,7 +227,7 @@ function Pin({
       {!open && first && (
         <HoverCardContent side="right" align="start" sideOffset={8} className="w-64">
           <div className="flex items-center gap-1.5">
-            <span className="truncate font-medium">{author?.name ?? "Unknown"}</span>
+            <UserName user={author} className="font-medium" />
             <span className="shrink-0 text-muted-foreground">{timeAgo(first.createdAt)}</span>
           </div>
           <p className="line-clamp-3 text-muted-foreground">{first.text || "Image"}</p>
@@ -273,10 +299,8 @@ function Cluster({ x, y, items }: { x: number; y: number; items: Item[] }) {
                   >
                     <UserAvatar user={users[thread.createdBy]} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium text-xs">
-                        {users[thread.createdBy]?.name ?? "Unknown"}
-                      </span>
-                      <span className="line-clamp-2 text-muted-foreground text-xs">{first?.text || "Image"}</span>
+                      <UserName user={users[thread.createdBy]} className="font-medium text-sm" />
+                      <span className="line-clamp-2 text-muted-foreground text-sm">{first?.text || "Image"}</span>
                     </span>
                     {thread.unread && (
                       <span className="mt-1.5 size-2 shrink-0 rounded-full bg-blue-500">
@@ -308,7 +332,13 @@ function ThreadPopover() {
     if (el !== anchor) setAnchor(el)
   })
 
-  const detached = !!thread && (thread.page !== page || !resolved.get(thread.id))
+  const placement: Placement = !thread
+    ? "here"
+    : thread.page !== page
+      ? "elsewhere"
+      : resolved.get(thread.id)
+        ? "here"
+        : "missing"
   return (
     <Popover
       open={!!thread && !!anchor}
@@ -327,36 +357,44 @@ function ThreadPopover() {
         initialFocus={listRef}
         finalFocus={anchor?.isConnected ? { current: anchor } : true}
       >
-        {thread && <ThreadView thread={thread} detached={detached} listRef={listRef} />}
+        {thread && <ThreadView thread={thread} placement={placement} listRef={listRef} />}
       </PopoverContent>
     </Popover>
   )
 }
 
+/** The draft pin and its composer. Closed, the pin stays while the draft has text: a click opens it again. */
 function DraftComposer({ draft }: { draft: Draft }) {
   const me = useStore((s) => s.session?.user)
-  const [el, setEl] = useState<HTMLDivElement | null>(null)
+  const [el, setEl] = useState<HTMLButtonElement | null>(null)
   useLayoutTick()
   const box = pageBox(draft.anchor, draft.element)
   if (!box) return null
   const point = tip(box)
   return (
     <>
-      {draft.anchor.rect && <Region box={box} />}
-      <div
+      {draft.anchor.rect ? <Region box={box} /> : draft.open && <ElementOutline el={draft.element} />}
+      <button
         ref={setEl}
-        aria-hidden
+        type="button"
+        aria-label="Unsent comment"
+        aria-expanded={draft.open}
         data-slot="draft-pin"
-        className={cn(pinShape, "ring-2 ring-primary")}
+        className={cn(
+          pinShape,
+          "pointer-events-auto cursor-pointer ring-2 ring-primary outline-none focus-visible:ring-ring",
+          !draft.open && "opacity-75",
+        )}
         style={{ left: point.x, top: point.y - PIN, width: PIN, height: PIN }}
+        // Only opens: on touch, the click of the tap that placed the draft lands on this new pin.
+        onClick={() => !draft.open && setState({ draft: { ...draft, open: true }, openThreadId: null })}
       >
         <UserAvatar user={me} className="size-full" />
-      </div>
+      </button>
       <Popover
-        open={!!el}
+        open={draft.open && !!el}
         onOpenChange={(open, details) => {
-          // The text stays as a draft (see Composer).
-          if (!open && !pressInsideWidget(details)) setState({ draft: null })
+          if (!open && !pressInsideWidget(details)) closeDraft()
         }}
       >
         <PopoverContent
@@ -370,21 +408,88 @@ function DraftComposer({ draft }: { draft: Draft }) {
         >
           {me ? (
             <Composer
-              // A new user gets a new composer with their own draft.
-              key={me.id}
-              draftKey="new"
+              // A new user, or a discarded draft: a new composer.
+              key={`${me.id}:${draft.id}`}
+              draftKind={`new:${draft.page}`}
+              anchor={draft.anchor}
               placeholder="Add a comment"
               label="Comment"
               submitLabel="Post comment"
+              onDiscard={() => setState({ draft: null })}
               onSubmit={async (body, files) => {
-                const thread = await createThread({ page: draft.page, anchor: draft.anchor, body, files })
+                const thread = await createThread({
+                  page: draft.page,
+                  anchor: draft.anchor,
+                  body,
+                  files,
+                  context: pageContext(),
+                })
                 // A slow answer: the user may be on another page or writing another comment by now.
-                if (getState().draft === draft) setState({ draft: null, openThreadId: thread.id })
+                if (getState().draft?.id === draft.id) setState({ draft: null, openThreadId: thread.id })
               }}
             />
           ) : (
             <SignInForm />
           )}
+        </PopoverContent>
+      </Popover>
+    </>
+  )
+}
+
+/** A click on another place while the draft has text: the draft moves there, or a new one starts. */
+function DraftMovePrompt({ move }: { move: NonNullable<State["draftMove"]> }) {
+  const [el, setEl] = useState<HTMLDivElement | null>(null)
+  useLayoutTick()
+  const box = pageBox(move.anchor, move.element)
+  if (!box) return null
+  const point = tip(box)
+  const key = newDraftKey(move.page)
+  const moveHere = () => {
+    const saved = key && loadDraft(key)
+    if (key && saved) saveDraft(key, { ...saved, anchor: move.anchor })
+    setState((s) => ({
+      draft: s.draft ? { ...s.draft, ...move, open: true } : newDraft(move.anchor, move.element, move.page),
+      draftMove: null,
+    }))
+  }
+  const startNew = () => {
+    if (key) saveDraft(key, null)
+    setState({ draft: newDraft(move.anchor, move.element, move.page), draftMove: null })
+  }
+  return (
+    <>
+      {move.anchor.rect && <Region box={box} />}
+      <div
+        ref={setEl}
+        aria-hidden
+        className={cn(pinShape, "border-2 border-primary border-dashed")}
+        style={{ left: point.x, top: point.y - PIN, width: PIN, height: PIN }}
+      />
+      <Popover
+        open={!!el}
+        onOpenChange={(open, details) => {
+          if (!open && !pressInsideWidget(details)) setState({ draftMove: null })
+        }}
+      >
+        <PopoverContent
+          anchor={el}
+          side="right"
+          align="start"
+          sideOffset={8}
+          collisionPadding={8}
+          className="w-64"
+          aria-label="Unsent comment"
+        >
+          <p className="font-medium text-sm">Move your unsent comment here?</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={moveHere}>
+              Move here
+            </Button>
+            <Button size="sm" variant="outline" onClick={startNew}>
+              Discard and start new
+            </Button>
+          </div>
         </PopoverContent>
       </Popover>
     </>

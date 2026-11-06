@@ -2,6 +2,7 @@ import { options } from "preact"
 import { createRoot } from "react-dom/client"
 import { App } from "./app"
 import { identify, loadProject, loadSession, refresh, signOut, startPolling } from "./client"
+import { restoreDraft } from "./drafts"
 import { PortalContainer } from "./lib/portal"
 import { startTracking, watchPage } from "./live"
 import { createShadowHost } from "./shadow"
@@ -9,7 +10,11 @@ import { getState, initStore, setState } from "./store"
 import { preloadEditor } from "./ui/composer"
 import { loadPinsVisible, startShortcuts } from "./ui/shortcuts"
 
-type Loader = { __queue: [string, unknown[]][]; __script: { src: string; project: string } }
+type Loader = { __queue: [string, unknown[]][]; __script: { src: string; project: string; shortcut?: string } }
+
+// `data-shortcut` on the script tag: one letter, or "none". Default: C.
+const parseShortcut = (value?: string) =>
+  value === "none" ? null : value && /^[a-z]$/i.test(value) ? value.toLowerCase() : "c"
 
 const loader = (window as unknown as { comma?: Loader }).comma
 if (loader?.__script) start(loader)
@@ -25,7 +30,9 @@ function start({ __queue: queue, __script: script }: Loader) {
   initStore({
     server,
     project: script.project,
-    popupSignIn: false,
+    projectInfo: null,
+    revealed: new URLSearchParams(location.search).has("comma"),
+    pendingLink: null,
     session: null,
     loaded: false,
     threads: [],
@@ -36,11 +43,16 @@ function start({ __queue: queue, __script: script }: Loader) {
     panelOpen: false,
     openThreadId: null,
     draft: null,
+    draftMove: null,
     moving: null,
-    filters: { scope: "page", mine: false, resolved: false, sort: "date", query: "" },
+    filters: { scope: "page", mine: false, assigned: false, resolved: false, sort: "date", query: "" },
     signInOpen: false,
+    notice: null,
+    shortcut: parseShortcut(script.shortcut),
   })
   setState({ session: loadSession() })
+  // `?comma`: a visitor wants to sign in (the toolbar can be hidden for visitors).
+  if (getState().revealed && !getState().session) setState({ panelOpen: true })
 
   // The page API. Calls made before this module loaded wait in the queue.
   const api = {
@@ -72,10 +84,11 @@ function start({ __queue: queue, __script: script }: Loader) {
     </PortalContainer.Provider>,
   )
 
-  // Client-side navigation: a draft or an open thread belongs to the old page.
+  // Client-side navigation: an open thread belongs to the old page. Each page has its own draft.
   watchPage((page) => {
-    if (page !== getState().page) setState({ page, draft: null, openThreadId: null })
+    if (page !== getState().page) setState({ page, draft: restoreDraft(page), draftMove: null, openThreadId: null })
   })
+  setState({ draft: restoreDraft(getState().page) })
   startTracking()
   startShortcuts()
   startPolling()

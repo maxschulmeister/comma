@@ -2,11 +2,24 @@ import { useSyncExternalStore } from "react"
 import type { Anchor } from "./anchor"
 import type { Session, Thread, User } from "./types"
 
-export type Draft = { anchor: Anchor; element: Element; page: string }
+/** A new thread that is not sent yet. `open`: the composer shows. Else only its pin. */
+export type Draft = { id: number; anchor: Anchor; element: Element; page: string; open: boolean }
+
+/** A short message about what an action did, with an optional action ("Undo"). */
+export type Notice = { id: number; text: string; action?: { label: string; run: () => void } }
+
+/** From the server: how people sign in, and who sees the toolbar. */
+export type ProjectInfo = {
+  name?: string
+  popupSignIn: boolean
+  guests: boolean
+  toolbar: "always" | "signed-in"
+}
 
 export type Filters = {
   scope: "page" | "all"
   mine: boolean
+  assigned: boolean
   resolved: boolean
   sort: "date" | "unread"
   query: string
@@ -15,7 +28,12 @@ export type Filters = {
 export type State = {
   server: string
   project: string
-  popupSignIn: boolean
+  /** null until it loads. */
+  projectInfo: ProjectInfo | null
+  /** A visitor asked for the widget: `?comma` in the URL, or a link to a thread. */
+  revealed: boolean
+  /** Thread in the URL hash (#comma=<id>) that opens after sign-in and load. */
+  pendingLink: string | null
   session: Session | null
   loaded: boolean
   threads: Thread[]
@@ -27,17 +45,25 @@ export type State = {
   panelOpen: boolean
   openThreadId: string | null
   draft: Draft | null
+  /** A click on another place while a draft has text: asks if the draft moves there. */
+  draftMove: { anchor: Anchor; element: Element; page: string } | null
   /** Thread whose pin the user moves with the keyboard or a click (thread menu, Move). */
   moving: string | null
   filters: Filters
   /** Set when an action needs a signed-in user. */
   signInOpen: boolean
+  notice: Notice | null
+  /** The key for comment mode (with Shift: show or hide comments). null: no shortcut. */
+  shortcut: string | null
 }
 
 type Listener = () => void
 
 let state: State
 const listeners = new Set<Listener>()
+
+/** The toolbar and the shortcuts are there for signed-in people, and for everyone unless the project hides them. */
+export const widgetVisible = (s: State) => !!s.session || s.projectInfo?.toolbar === "always" || s.revealed
 
 export function initStore(initial: State) {
   state = initial

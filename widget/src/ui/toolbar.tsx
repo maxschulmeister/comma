@@ -24,6 +24,7 @@ import {
 import { Kbd } from "@/components/ui/kbd"
 import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { NARROW, useMedia } from "@/lib/media"
 import { setState, useStore } from "@/store"
 import { PANEL_WIDTH } from "./panel"
 import { setCommentMode, togglePins } from "./shortcuts"
@@ -35,18 +36,22 @@ export function Toolbar() {
   const commentMode = useStore((s) => s.commentMode)
   const panelOpen = useStore((s) => s.panelOpen)
   const pinsVisible = useStore((s) => s.pinsVisible)
+  const key = useStore((s) => s.shortcut?.toUpperCase())
   const me = useStore((s) => s.session?.user)
   const unread = useStore((s) => s.threads.filter((t) => t.unread && t.status === "open").length)
+  const narrow = useMedia(NARROW)
   const [signInAnchor, setSignInAnchor] = useState<HTMLElement | null>(null)
   const [signInOpen, setSignInOpen] = useState(false)
 
+  // On narrow screens the open panel covers the screen and has its own close button.
+  if (narrow && panelOpen) return null
   return (
     <div
       role="toolbar"
       aria-label="Comments"
       data-slot="toolbar"
       className="fixed bottom-4 flex items-center gap-0.5 rounded-full bg-background p-1 shadow-lg ring-1 ring-foreground/10 max-[639px]:left-1/2 max-[639px]:-translate-x-1/2"
-      style={{ right: panelOpen ? PANEL_WIDTH + 16 : 16 }}
+      style={{ right: narrow ? undefined : panelOpen ? PANEL_WIDTH + 16 : 16 }}
     >
       <Tooltip>
         <TooltipTrigger
@@ -63,9 +68,7 @@ export function Toolbar() {
         >
           <ChatCircleIcon weight={commentMode ? "fill" : "regular"} />
         </TooltipTrigger>
-        <TooltipContent>
-          Comment <Kbd>C</Kbd>
-        </TooltipContent>
+        <TooltipContent>Comment {key && <Kbd>{key}</Kbd>}</TooltipContent>
       </Tooltip>
 
       <Tooltip>
@@ -122,7 +125,7 @@ export function Toolbar() {
           <DropdownMenuItem onClick={togglePins}>
             {pinsVisible ? <EyeSlashIcon /> : <EyeIcon />}
             {pinsVisible ? "Hide comments" : "Show comments"}
-            <DropdownMenuShortcut>⇧C</DropdownMenuShortcut>
+            {key && <DropdownMenuShortcut>⇧{key}</DropdownMenuShortcut>}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           {me ? (

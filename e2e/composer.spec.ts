@@ -240,3 +240,43 @@ test("a draft is not shown to the next person who signs in", async ({ page }) =>
   await expect(editor).toBeVisible()
   await expect(editor).not.toContainText("my secret draft")
 })
+
+test("a draft keeps its place: a click elsewhere asks before it moves", async ({ page }) => {
+  const popover = await startComment(page, "draft-place")
+  await typeComment(page, popover, "About the lead")
+  await page.keyboard.press("Escape")
+  await expect(popover).toBeHidden()
+  const draftPin = page.getByRole("button", { name: "Unsent comment" })
+  await expect(draftPin).toBeVisible()
+
+  await clickAt(page, page.getByTestId("title"))
+  const prompt = page.getByRole("dialog", { name: "Unsent comment" })
+  await expect(prompt).toContainText("Move your unsent comment here?")
+  await prompt.getByRole("button", { name: "Move here" }).click()
+  await expect(newCommentPopover(page).locator(".ProseMirror")).toHaveText("About the lead")
+  const title = await page.getByTestId("title").boundingBox()
+  const pin = await draftPin.boundingBox()
+  expect(Math.abs((pin?.y ?? 0) + (pin?.height ?? 0) - ((title?.y ?? 0) + (title?.height ?? 0) / 2))).toBeLessThan(4)
+
+  await page.keyboard.press("Escape")
+  await clickAt(page, page.getByTestId("lead"))
+  await page
+    .getByRole("dialog", { name: "Unsent comment" })
+    .getByRole("button", { name: "Discard and start new" })
+    .click()
+  await expect(newCommentPopover(page).locator(".ProseMirror")).toHaveText("")
+})
+
+test("a draft stays after a reload, and Discard removes it", async ({ page }) => {
+  const popover = await startComment(page, "draft-reload")
+  await typeComment(page, popover, "Half a thought")
+  await page.reload()
+  await page.getByRole("button", { name: "Unsent comment" }).click()
+  await expect(newCommentPopover(page).locator(".ProseMirror")).toHaveText("Half a thought")
+  await newCommentPopover(page).getByRole("button", { name: "Discard" }).click()
+  await expect(newCommentPopover(page)).toBeHidden()
+  await expect(page.getByRole("button", { name: "Unsent comment" })).toHaveCount(0)
+  await page.reload()
+  await expect(toolbar(page)).toBeVisible()
+  await expect(page.getByRole("button", { name: "Unsent comment" })).toHaveCount(0)
+})

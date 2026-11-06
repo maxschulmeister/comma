@@ -1,6 +1,6 @@
-import { expect, test } from "@playwright/test"
+import { expect, request, test } from "@playwright/test"
 import { sign } from "hono/jwt"
-import { panel, signIn, testPath, toolbar } from "./helpers"
+import { COMMA, guestSession, panel, SITE, signIn, testPath, toolbar } from "./helpers"
 
 test("on another site, people sign in with the app in a popup", async ({ page }) => {
   // 127.0.0.1 is another site than the app (localhost).
@@ -9,7 +9,7 @@ test("on another site, people sign in with the app in a popup", async ({ page })
     .getByRole("button", { name: /^Comments/ })
     .click()
   const popupPromise = page.waitForEvent("popup")
-  await panel(page).getByRole("button", { name: "Sign in", exact: true }).click()
+  await panel(page).getByRole("button", { name: "Sign in with Example" }).click()
   const popup = await popupPromise
   await expect(popup.getByRole("heading", { name: "Sign in to Example" })).toBeVisible()
   await popup.getByLabel("Name").fill("Grace")
@@ -148,4 +148,50 @@ test("a guest signs in with a name", async ({ page }) => {
   await form.getByLabel("Your name").fill("Gus")
   await form.getByRole("button", { name: "Continue as guest" }).click()
   await expect(toolbar(page).getByRole("button", { name: "Account: Gus" })).toBeVisible()
+})
+
+test("members only: visitors see no toolbar; ?comma shows the sign-in, without a guest option", async ({ page }) => {
+  const info = page.waitForResponse("**/api/projects/members")
+  await page.goto(`${testPath("members")}?project=members`)
+  await info
+  await expect(page.locator("comma-widget")).toBeAttached()
+  await expect(toolbar(page)).toHaveCount(0)
+  // The shortcut does nothing for visitors either.
+  await page.keyboard.press("c")
+  await expect(page.locator("[data-slot=comment-overlay]")).toHaveCount(0)
+
+  await page.goto(`${testPath("members")}?project=members&comma`)
+  await expect(panel(page).getByRole("button", { name: "Sign in with Example" })).toBeVisible()
+  await expect(panel(page).getByLabel("Your name")).toHaveCount(0)
+})
+
+test("a shared link asks a signed-out teammate to sign in, then opens the thread", async ({ page }) => {
+  const author = await guestSession("Linker")
+  const path = testPath("shared-link")
+  const api = await request.newContext()
+  const res = await api.post(`${COMMA}/api/threads`, {
+    headers: { origin: SITE, authorization: `Bearer ${author.token}` },
+    data: {
+      page: path,
+      anchor: {
+        selectors: { css: "body > main > section > h1" },
+        tag: "h1",
+        text: "Test page title",
+        context: "",
+        point: { x: 10, y: 50 },
+        viewport: 1280,
+      },
+      body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Look at this title" }] }] },
+    },
+  })
+  const { thread } = await res.json()
+  await api.dispose()
+
+  await page.goto(`${path}#comma=${thread.id}`)
+  await expect(panel(page)).toContainText("Sign in to see this comment")
+  await panel(page).getByLabel("Your name").fill("Teammate")
+  await panel(page).getByRole("button", { name: "Continue as guest" }).click()
+  await expect(page.getByRole("dialog", { name: "Comment thread" })).toContainText("Look at this title")
+  // Guests are marked as guests for everyone.
+  await expect(page.getByRole("dialog", { name: "Comment thread" }).getByRole("article")).toContainText("Linker Guest")
 })

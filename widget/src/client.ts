@@ -1,6 +1,8 @@
 // Talks to the comma server and keeps the store up to date.
 import type { Anchor } from "./anchor"
-import { getState, setState } from "./store"
+import { clearDrafts } from "./drafts"
+import type { PageContext } from "./lib/env"
+import { getState, type ProjectInfo, setState } from "./store"
 import type { Comment, FileRef, Session, Thread, ThreadResult, User } from "./types"
 
 export class ApiError extends Error {
@@ -66,13 +68,15 @@ async function request<T>(method: string, path: string, body?: unknown, signedIn
 
 export async function loadProject() {
   const { project } = getState()
-  const info = await request<{ popupSignIn: boolean }>(
-    "GET",
-    `/api/projects/${encodeURIComponent(project)}`,
-    undefined,
-    false,
-  )
-  setState({ popupSignIn: info.popupSignIn })
+  const info = await request<ProjectInfo>("GET", `/api/projects/${encodeURIComponent(project)}`, undefined, false)
+  setState({
+    projectInfo: {
+      name: info.name,
+      popupSignIn: info.popupSignIn,
+      guests: info.guests,
+      toolbar: info.toolbar === "signed-in" ? "signed-in" : "always",
+    },
+  })
 }
 
 // --- Sign-in ---
@@ -93,6 +97,10 @@ export const identify = (appToken: string) => signIn("/api/session/app", { appTo
 
 export function signOut() {
   authAttempt++
+  // The next person on this tab must not see the drafts.
+  const user = getState().session?.user.id
+  if (user) clearDrafts(user)
+  setState({ draft: null, draftMove: null })
   saveSession(null)
 }
 
@@ -262,7 +270,13 @@ function removeThread(id: string) {
   }))
 }
 
-export async function createThread(input: { page: string; anchor: Anchor; body: unknown; files: string[] }) {
+export async function createThread(input: {
+  page: string
+  anchor: Anchor
+  body: unknown
+  files: string[]
+  context: PageContext
+}) {
   return applyThread(await request<ThreadResult>("POST", "/api/threads", input))
 }
 
@@ -290,6 +304,10 @@ export async function deleteThread(thread: Thread) {
 
 export async function setStatus(thread: Thread, status: Thread["status"]) {
   return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { status }))
+}
+
+export async function setAssignee(thread: Thread, assignee: string | null) {
+  return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { assignee }))
 }
 
 export async function moveThread(thread: Thread, page: string, anchor: Anchor) {

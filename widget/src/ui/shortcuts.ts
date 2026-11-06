@@ -1,6 +1,7 @@
+import { closeDraft } from "@/drafts"
 import { fromWidgetPart, isTyping } from "@/lib/dom"
 import { NARROW } from "@/lib/media"
-import { getState, setState } from "@/store"
+import { getState, setState, widgetVisible } from "@/store"
 import { preloadEditor } from "./composer"
 
 const PINS_KEY = "comma:pins"
@@ -23,15 +24,27 @@ export function togglePins() {
   }
 }
 
-/** Comment mode. The panel opens with it, except on narrow screens where it covers the page. */
+/** Comment mode. The panel opens with it. On narrow screens the panel covers the page, so it closes. */
 export function setCommentMode(on: boolean) {
   if (on) {
     void preloadEditor().catch(() => {})
-    setState({ commentMode: true, pinsVisible: true, panelOpen: getState().panelOpen || !matchMedia(NARROW).matches })
-  } else setState({ commentMode: false, draft: null })
+    setState({ commentMode: true, pinsVisible: true, panelOpen: !matchMedia(NARROW).matches })
+  } else {
+    // A draft with text stays as a pin.
+    closeDraft()
+    setState({ commentMode: false, draftMove: null })
+  }
 }
 
-/** `C`: comment mode. `Esc`: exit. `Shift+C`: show or hide comments. */
+// The letter on the key, also on Dvorak or AZERTY. Without a Latin letter (Cyrillic, Greek): the key's place.
+const letterOf = (event: KeyboardEvent) =>
+  /^[a-z]$/i.test(event.key)
+    ? event.key.toLowerCase()
+    : /^Key[A-Z]$/.test(event.code)
+      ? event.code.slice(3).toLowerCase()
+      : ""
+
+/** `C` (or the site's key): comment mode. `Esc`: exit. `Shift+C`: show or hide comments. */
 export function startShortcuts() {
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTyping(event)) return
@@ -40,14 +53,21 @@ export function startShortcuts() {
       return
     }
     const state = getState()
+    if (!widgetVisible(state)) return
     if (event.key === "Escape" && state.moving) {
       setState({ moving: null })
-    } else if (event.key === "Escape" && state.commentMode && !state.draft && !state.openThreadId) {
+    } else if (
+      event.key === "Escape" &&
+      state.commentMode &&
+      !state.draft?.open &&
+      !state.draftMove &&
+      !state.openThreadId
+    ) {
       setCommentMode(false)
-    } else if (event.code === "KeyC" && event.shiftKey) {
+    } else if (state.shortcut && letterOf(event) === state.shortcut && event.shiftKey) {
       event.preventDefault()
       togglePins()
-    } else if (event.code === "KeyC" && !event.shiftKey) {
+    } else if (state.shortcut && letterOf(event) === state.shortcut) {
       event.preventDefault()
       setCommentMode(!state.commentMode)
     }

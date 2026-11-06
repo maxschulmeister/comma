@@ -1,4 +1,5 @@
 import type { Anchor } from "./anchor"
+import type { PageContext } from "./lib/env"
 
 export type User = { id: string; name: string; kind: "guest" | "app"; avatarUrl: string | null; isAdmin: boolean }
 
@@ -27,6 +28,9 @@ export type Thread = {
   updatedAt: number
   resolvedAt: number | null
   resolvedBy: string | null
+  /** Where the comment was made. null: made before comma kept it. */
+  context: PageContext | null
+  assigneeId: string | null
   unread: boolean
   comments: Comment[]
 }

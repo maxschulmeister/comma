@@ -98,7 +98,19 @@ Bun.serve({
     }
 
     // Test pages: any /t/<name> path serves the same page, so each test has its own page.
-    if (url.pathname.startsWith("/t/")) return html(await Bun.file(resolve(pages, "fixtures/test.html")).text())
+    // `?project=<id>` and `?shortcut=<key>` change the script tag.
+    if (url.pathname.startsWith("/t/")) {
+      const attr = (name: string) => url.searchParams.get(name)?.replace(/[^\w-]/g, "")
+      const page = await Bun.file(resolve(pages, "fixtures/test.html")).text()
+      const project = attr("project") ?? "example"
+      const shortcut = attr("shortcut")
+      return html(
+        page.replace(
+          'data-project="example"',
+          `data-project="${project}"${shortcut === undefined ? "" : ` data-shortcut="${shortcut}"`}`,
+        ),
+      )
+    }
 
     let path = url.pathname.endsWith("/") ? `${url.pathname}index` : url.pathname
     if (!path.includes(".")) path += ".html"

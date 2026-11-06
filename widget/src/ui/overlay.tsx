@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { anchorBox, type Box, createAnchor } from "@/anchor"
 import { moveThread } from "@/client"
+import { hasDraft, newDraft, newDraftKey } from "@/drafts"
+import { describe, kindOf } from "@/lib/describe"
 import { elementAt, fromWidgetPart, HOST_TAG, isTyping } from "@/lib/dom"
 import { resolvedElement, useLayoutTick } from "@/live"
 import { getState, setState, useStore } from "@/store"
@@ -34,9 +36,12 @@ export function movedAnchor(thread: Thread, x: number, y: number, el?: Element) 
   return createAnchor(el ?? elementAt(x, y) ?? document.body, { point: { x, y } })
 }
 
-/** Opens the composer for a new thread on the element. When the user moves a pin, moves it there. */
+/**
+ * Opens the composer for a new thread on the element. When the user moves a pin, moves it there.
+ * A draft with text keeps its place: a click on another element asks before the draft moves.
+ */
 export function placeAt(el: Element, at: Parameters<typeof createAnchor>[1]) {
-  const { moving, threads, page } = getState()
+  const { moving, threads, page, draft } = getState()
   const thread = moving ? threads.find((t) => t.id === moving) : undefined
   if (thread) {
     setState({ moving: null, openThreadId: thread.id })
@@ -44,7 +49,20 @@ export function placeAt(el: Element, at: Parameters<typeof createAnchor>[1]) {
     void moveThread(thread, page, anchor).catch(() => {})
     return
   }
-  setState({ draft: { anchor: createAnchor(el, at), element: el, page }, openThreadId: null })
+  const anchor = createAnchor(el, at)
+  if (draft?.element !== el && hasDraft(newDraftKey(page))) {
+    setState({
+      draftMove: { anchor, element: el, page },
+      draft: draft && { ...draft, open: false },
+      openThreadId: null,
+    })
+    return
+  }
+  setState({
+    draft: draft?.element === el ? { ...draft, anchor, open: true } : newDraft(anchor, el, page),
+    draftMove: null,
+    openThreadId: null,
+  })
 }
 
 // Elements a keyboard user can pick with ↑ and ↓: text blocks, media and controls.
@@ -58,30 +76,12 @@ function pickable() {
   })
 }
 
-const KINDS: Record<string, string> = {
-  p: "Paragraph",
-  li: "List item",
-  img: "Image",
-  svg: "Image",
-  a: "Link",
-  button: "Button",
-  input: "Field",
-  textarea: "Field",
-  select: "Field",
-  table: "Table",
-}
-
 /** "Heading: Pricing", for screen readers. */
-function describe(el: Element) {
-  const kind = /^h[1-6]$/.test(el.localName)
-    ? "Heading"
-    : el.getAttribute("role") === "img"
-      ? "Image"
-      : (KINDS[el.localName] ?? "Element")
-  const text =
-    (el.textContent ?? "").replace(/\s+/g, " ").trim() || el.getAttribute("alt") || el.getAttribute("aria-label") || ""
-  return text ? `${kind}: ${text.slice(0, 80).replace(/[.!?]$/, "")}` : kind
-}
+const describeElement = (el: Element) =>
+  describe(
+    kindOf(el.localName, el.getAttribute("role")),
+    (el.textContent ?? "").trim() || el.getAttribute("alt") || el.getAttribute("aria-label") || "",
+  )
 
 const center = (el: Element) => {
   const r = el.getBoundingClientRect()
@@ -116,7 +116,7 @@ export function CommentOverlay() {
     }
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
-      if (isTyping(event) || fromWidgetUi(event) || getState().draft) return
+      if (isTyping(event) || fromWidgetUi(event) || getState().draft?.open || getState().draftMove) return
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         const list = pickable()
         if (list.length === 0) return
@@ -242,7 +242,7 @@ export function CommentOverlay() {
       )}
       <p className="sr-only" aria-live="polite">
         {picked
-          ? `${describe(picked)}. ${moving ? "Press Enter to move the comment here." : "Press Enter to comment, Shift+Enter to comment on its area."}`
+          ? `${describeElement(picked)}. ${moving ? "Press Enter to move the comment here." : "Press Enter to comment, Shift+Enter to comment on its area."}`
           : ""}
       </p>
     </>

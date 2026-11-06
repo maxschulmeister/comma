@@ -6,14 +6,27 @@ import {
   DotsThreeIcon,
   EnvelopeSimpleIcon,
   LinkSimpleIcon,
+  MagnifyingGlassIcon,
   PencilSimpleIcon,
   SmileyIcon,
   TrashIcon,
+  UserCirclePlusIcon,
   XIcon,
 } from "@phosphor-icons/react"
 import { cn } from "cn"
 import { type RefObject, useEffect, useState } from "react"
-import { deleteComment, deleteThread, editComment, fileUrl, reply, setRead, setStatus, toggleReaction } from "@/client"
+import {
+  deleteComment,
+  deleteThread,
+  editComment,
+  fileUrl,
+  reply,
+  searchUsers,
+  setAssignee,
+  setRead,
+  setStatus,
+  toggleReaction,
+} from "@/client"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,8 +37,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,38 +45,48 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { describe, kindOf, shortText } from "@/lib/describe"
 import { pressInsideWidget } from "@/lib/dom"
+import { describeContext } from "@/lib/env"
 import { fullDate, timeAgo } from "@/lib/format"
 import { setState, useStore } from "@/store"
-import type { Comment, Thread } from "@/types"
+import type { Comment, Thread, User } from "@/types"
 import { CommentBody } from "./body"
 import { Composer } from "./composer"
 import { EmojiButton, QUICK_REACTIONS } from "./emoji"
+import { notify } from "./notices"
 import { SignInForm } from "./sign-in"
 import { UserAvatar } from "./user-avatar"
+import { nameOf, UserName } from "./user-name"
 
 export const threadLink = (thread: Thread) => `${location.origin}${thread.page}#comma=${thread.id}`
 
-type Confirm = { title: string; description: string; action: string; run: () => Promise<unknown> }
+/** Where the thread's element is: on this page, not found on this page, or on another page. */
+export type Placement = "here" | "missing" | "elsewhere"
+
+type Confirm = { title: string; description: string; action: string; run: () => Promise<unknown>; done: string }
 
 /** The content of the thread popover: comments, reactions, actions and the reply box. */
 export function ThreadView({
   thread,
-  detached,
+  placement,
   listRef,
 }: {
   thread: Thread
-  detached?: boolean
+  placement: Placement
   /** The comment list. The popover focuses it first, so no button (and its tooltip) gets the focus. */
   listRef: RefObject<HTMLDivElement | null>
 }) {
   const me = useStore((s) => s.session?.user)
+  const resolver = useStore((s) => (thread.resolvedBy ? s.users[thread.resolvedBy] : undefined))
+  const assignee = useStore((s) => (thread.assigneeId ? s.users[thread.assigneeId] : undefined))
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
   const close = () => setState({ openThreadId: null })
+  const label = describe(kindOf(thread.anchor.tag), thread.anchor.text)
 
   // Opening a thread marks it as read.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only when the thread opens.
@@ -88,19 +110,17 @@ export function ThreadView({
   }
 
   const resolved = thread.status === "resolved"
-  const canDeleteThread = !!me && (me.id === thread.createdBy || me.isAdmin)
+  const own = !!me && me.id === thread.createdBy
+  const canDeleteThread = own || !!me?.isAdmin
+  const move = () => setState({ moving: thread.id, openThreadId: null })
 
   return (
     <div className="flex max-h-[min(560px,calc(100vh-32px))] flex-col" data-slot="thread">
       <div className="flex items-center gap-0.5 border-b py-1 pr-1 pl-3">
-        <span className="flex-1 truncate font-medium text-xs">
-          {copied ? "Link copied" : "Comment"}
-          {detached && (
-            <Badge variant="outline" className="ml-1.5">
-              Detached
-            </Badge>
-          )}
+        <span className="flex-1 truncate font-medium text-xs" title={label}>
+          {label}
         </span>
+        {me && <AssignButton thread={thread} assignee={assignee} />}
         {me && (
           <Tooltip>
             <TooltipTrigger
@@ -112,7 +132,15 @@ export function ThreadView({
                   onClick={() =>
                     act(async () => {
                       await setStatus(thread, resolved ? "open" : "resolved")
-                      if (!resolved) close()
+                      if (resolved) return notify("Thread reopened")
+                      close()
+                      notify("Thread resolved", {
+                        label: "Undo",
+                        run: () =>
+                          void setStatus(thread, "open")
+                            .then(() => setState({ openThreadId: thread.id }))
+                            .catch((e: Error) => notify(e.message)),
+                      })
                     })
                   }
                 />
@@ -132,16 +160,15 @@ export function ThreadView({
               onClick={() =>
                 act(async () => {
                   await navigator.clipboard.writeText(threadLink(thread))
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 2000)
+                  notify("Link copied")
                 })
               }
             >
               <LinkSimpleIcon />
               Copy link
             </DropdownMenuItem>
-            {me?.id === thread.createdBy && (
-              <DropdownMenuItem onClick={() => setState({ moving: thread.id, openThreadId: null })}>
+            {own && (
+              <DropdownMenuItem onClick={move}>
                 <ArrowsOutCardinalIcon />
                 Move
               </DropdownMenuItem>
@@ -152,6 +179,7 @@ export function ThreadView({
                   act(async () => {
                     close()
                     await setRead(thread, false)
+                    notify("Marked as unread")
                   })
                 }
               >
@@ -168,10 +196,9 @@ export function ThreadView({
                     setConfirm({
                       title: "Delete thread?",
                       description: "This deletes the thread and all its replies.",
-                      action: "Delete",
-                      run: async () => {
-                        await deleteThread(thread)
-                      },
+                      action: "Delete thread",
+                      done: "Thread deleted",
+                      run: () => deleteThread(thread),
                     })
                   }
                 >
@@ -187,10 +214,45 @@ export function ThreadView({
         </Button>
       </div>
 
+      {placement === "missing" && (
+        <div className="flex items-start gap-2 border-b bg-muted/60 px-3 py-2 text-xs">
+          <p className="flex-1 text-pretty">
+            Element not found. It was on: {kindOf(thread.anchor.tag)} “{shortText(thread.anchor.text)}”.
+          </p>
+          {own && (
+            <Button size="xs" variant="outline" onClick={move}>
+              Move
+            </Button>
+          )}
+        </div>
+      )}
+      {placement === "elsewhere" && (
+        <div className="flex items-center gap-2 border-b bg-muted/60 px-3 py-2 text-xs">
+          <p className="flex-1">This comment is on another page.</p>
+          <a href={threadLink(thread)} className={buttonVariants({ size: "xs", variant: "outline" })}>
+            Open page
+          </a>
+        </div>
+      )}
+      {(assignee || thread.context) && (
+        <div className="flex flex-col gap-0.5 border-b px-3 py-1.5 text-muted-foreground text-xs">
+          {assignee && <span className="truncate">Assigned to {nameOf(assignee)}</span>}
+          {thread.context && (
+            <span className="truncate" title={thread.context.url}>
+              {describeContext(thread.context)}
+            </span>
+          )}
+        </div>
+      )}
+
       <div ref={listRef} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto py-1 outline-none">
         {resolved && (
           <p className="flex items-center gap-1.5 px-3 py-1 text-muted-foreground text-xs">
-            <CheckIcon /> Resolved
+            <CheckIcon className="shrink-0" />
+            <span className="truncate">
+              Resolved{thread.resolvedBy && ` by ${nameOf(resolver)}`}
+              {thread.resolvedAt && ` · ${timeAgo(thread.resolvedAt)}`}
+            </span>
           </p>
         )}
         {thread.comments.map((comment, index) => (
@@ -204,13 +266,15 @@ export function ThreadView({
                   ? {
                       title: "Delete thread?",
                       description: "This is the first comment. Deleting it deletes the thread and all its replies.",
-                      action: "Delete",
+                      action: "Delete thread",
+                      done: "Thread deleted",
                       run: () => deleteComment(comment),
                     }
                   : {
                       title: "Delete comment?",
                       description: "You cannot undo this.",
-                      action: "Delete",
+                      action: "Delete comment",
+                      done: "Comment deleted",
                       run: () => deleteComment(comment),
                     },
               )
@@ -231,7 +295,7 @@ export function ThreadView({
           <Composer
             // A new user gets a new composer with their own draft.
             key={`${thread.id}:${me.id}`}
-            draftKey={`reply:${thread.id}`}
+            draftKind={`reply:${thread.id}`}
             placeholder="Reply"
             label="Reply"
             submitLabel="Send reply"
@@ -253,9 +317,13 @@ export function ThreadView({
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
-                const run = confirm?.run
+                const current = confirm
                 setConfirm(null)
-                if (run) void act(run)
+                if (current)
+                  void act(async () => {
+                    await current.run()
+                    notify(current.done)
+                  })
               }}
             >
               {confirm?.action}
@@ -264,6 +332,93 @@ export function ThreadView({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  )
+}
+
+/** Assign the thread to someone in the project. The thread shows as unread for them. */
+function AssignButton({ thread, assignee }: { thread: Thread; assignee: User | undefined }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [people, setPeople] = useState<User[]>([])
+
+  useEffect(() => {
+    if (!open) return
+    let current = true
+    const timer = setTimeout(() => {
+      searchUsers(query.trim())
+        .then((users) => current && setPeople(users))
+        .catch(() => {})
+    }, 150)
+    return () => {
+      current = false
+      clearTimeout(timer)
+    }
+  }, [open, query])
+
+  const pick = (user: User | null) => {
+    setOpen(false)
+    setQuery("")
+    setAssignee(thread, user?.id ?? null)
+      .then(() => notify(user ? `Assigned to ${nameOf(user)}` : "Unassigned"))
+      .catch((e: Error) => notify(e.message))
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Assign"
+            title={assignee ? `Assigned to ${nameOf(assignee)}` : "Assign"}
+          />
+        }
+      >
+        {assignee ? <UserAvatar user={assignee} className="size-5" /> : <UserCirclePlusIcon />}
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="end" className="w-60 gap-1 p-1" aria-label="Assign">
+        <InputGroup>
+          <InputGroupAddon>
+            <MagnifyingGlassIcon />
+          </InputGroupAddon>
+          <InputGroupInput
+            type="search"
+            autoFocus
+            aria-label="Search people"
+            placeholder="Search people"
+            value={query}
+            onChange={(e) => setQuery(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && people[0]) {
+                e.preventDefault()
+                pick(people[0])
+              }
+            }}
+          />
+        </InputGroup>
+        <ul className="max-h-56 overflow-y-auto">
+          {people.map((user) => (
+            <li key={user.id}>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md p-1.5 text-left text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => pick(user)}
+              >
+                <UserAvatar user={user} />
+                <UserName user={user} className="flex-1" />
+                {user.id === thread.assigneeId && <CheckIcon className="shrink-0" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+        {assignee && (
+          <Button variant="ghost" size="sm" className="justify-start" onClick={() => pick(null)}>
+            Unassign
+          </Button>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -280,14 +435,14 @@ function CommentItem({
   const me = useStore((s) => s.session?.user)
   const [editing, setEditing] = useState(false)
   const own = me?.id === comment.authorId
-  const name = author?.name ?? "Unknown"
+  const name = nameOf(author)
 
   return (
     <article className="group/comment flex gap-2 px-3 py-1.5" aria-label={`Comment by ${name}`}>
       <UserAvatar user={author} className="mt-0.5" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex min-h-6 items-center gap-1.5">
-          <span className="truncate font-medium text-xs">{name}</span>
+          <UserName user={author} className="font-medium text-sm" />
           <time
             className="shrink-0 text-muted-foreground text-xs"
             dateTime={new Date(comment.createdAt).toISOString()}
@@ -305,7 +460,7 @@ function CommentItem({
                     variant="ghost"
                     size="icon-xs"
                     aria-label="Comment actions"
-                    className="opacity-0 focus-visible:opacity-100 group-hover/comment:opacity-100 aria-expanded:opacity-100"
+                    className="opacity-0 pointer-coarse:opacity-100 focus-visible:opacity-100 group-hover/comment:opacity-100 aria-expanded:opacity-100"
                   />
                 }
               >
@@ -326,7 +481,7 @@ function CommentItem({
         </div>
         {editing && own ? (
           <Composer
-            draftKey={`edit:${comment.id}`}
+            draftKind={`edit:${comment.id}`}
             initial={comment.body as never}
             placeholder="Edit comment"
             label="Edit comment"
@@ -340,21 +495,21 @@ function CommentItem({
           />
         ) : (
           comment.text && (
-            <div className="text-xs/relaxed">
+            <div className="text-sm/relaxed">
               <CommentBody body={comment.body} />
             </div>
           )
         )}
         {comment.files.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {comment.files.map((file) => (
+            {comment.files.map((file, i) => (
               <a
                 key={file.id}
                 href={fileUrl(file)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block overflow-hidden rounded-md border bg-muted"
-                aria-label="Open image"
+                aria-label={`Open image ${i + 1} of ${comment.files.length} from ${name}`}
               >
                 <img
                   src={fileUrl(file)}
@@ -387,7 +542,7 @@ function Reactions({ comment, onError }: { comment: Comment; onError: (message: 
     <div className="flex flex-wrap items-center gap-1">
       {comment.reactions.map((r) => {
         const mine = !!me && r.userIds.includes(me.id)
-        const names = r.userIds.map((id) => users[id]?.name ?? "Unknown").join(", ")
+        const names = r.userIds.map((id) => nameOf(users[id])).join(", ")
         return (
           <Tooltip key={r.emoji}>
             <TooltipTrigger
@@ -425,7 +580,7 @@ function Reactions({ comment, onError }: { comment: Comment; onError: (message: 
                 className={cn(
                   "rounded-full",
                   comment.reactions.length === 0 &&
-                    "opacity-0 focus-visible:opacity-100 group-hover/comment:opacity-100 aria-expanded:opacity-100",
+                    "opacity-0 pointer-coarse:opacity-100 focus-visible:opacity-100 group-hover/comment:opacity-100 aria-expanded:opacity-100",
                 )}
               />
             }

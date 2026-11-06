@@ -1,10 +1,12 @@
 import { ArrowUpIcon, AtIcon, ImageIcon, LinkIcon, XIcon } from "@phosphor-icons/react"
 import { cn } from "cn"
 import { type DragEvent, useEffect, useId, useRef, useState } from "react"
-import { searchUsers, uploadFile } from "@/client"
+import type { Anchor } from "@/anchor"
+import { fileUrl, searchUsers, uploadFile } from "@/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
+import { draftKey, loadDraft, saveDraft } from "@/drafts"
 import type { Editor, EditorOptions, JSONContent, SuggestionState } from "@/editor/editor"
 import { initials, userColor } from "@/lib/format"
 import { shrinkImage } from "@/lib/image"
@@ -29,9 +31,8 @@ export function preloadEditor() {
 // An upload keeps its request, so a draft that opens again still gets the result.
 type Upload = { key: string; preview: string; ref?: FileRef; error?: string; request?: Promise<FileRef> }
 
-// Drafts stay when the popover closes. Key: "<user id>:new", "<user id>:reply:<thread id>".
-// The user id keeps one person's draft from another person who signs in on the same page.
-const drafts = new Map<string, { json: JSONContent; uploads: Upload[] }>()
+// Uploads on their way, per draft. The saved draft (see drafts.ts) has the finished ones.
+const pendingUploads = new Map<string, Upload[]>()
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
@@ -45,7 +46,10 @@ function trimDoc(doc: JSONContent): JSONContent {
 }
 
 type Props = {
-  draftKey: string
+  /** `new:<page>`, `reply:<thread id>`, `edit:<comment id>`. With the user id, the key of the draft. */
+  draftKind: string
+  /** A new thread: its place, saved with the draft. */
+  anchor?: Anchor
   initial?: JSONContent
   placeholder: string
   label: string
@@ -54,10 +58,13 @@ type Props = {
   autoFocus?: boolean
   onSubmit: (body: JSONContent, files: string[]) => Promise<unknown>
   onCancel?: () => void
+  /** Shows "Discard" while there is text or an image. */
+  onDiscard?: () => void
 }
 
 export function Composer({
-  draftKey,
+  draftKind,
+  anchor,
   initial,
   placeholder,
   label,
@@ -66,9 +73,15 @@ export function Composer({
   autoFocus = true,
   onSubmit,
   onCancel,
+  onDiscard,
 }: Props) {
   const userId = useStore((s) => s.session?.user.id ?? "")
-  const key = useRef(`${userId}:${draftKey}`).current
+  // The user id keeps one person's draft from another person who signs in on the same page.
+  const key = useRef(draftKey(userId, draftKind)).current
+  // Editing a comment keeps no draft.
+  const saved = useRef(initial ? null : loadDraft(key)).current
+  const anchorRef = useRef(anchor)
+  anchorRef.current = anchor
   const mountRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<Editor | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -76,7 +89,9 @@ export function Composer({
   const [empty, setEmpty] = useState(true)
   const [suggestion, setSuggestion] = useState<SuggestionState | null>(null)
   const [linkOpen, setLinkOpen] = useState(false)
-  const [uploads, setUploads] = useState<Upload[]>(() => drafts.get(key)?.uploads ?? [])
+  const [uploads, setUploads] = useState<Upload[]>(() =>
+    saved ? (pendingUploads.get(key) ?? saved.files.map((ref) => ({ key: ref.id, preview: fileUrl(ref), ref }))) : [],
+  )
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const uploadsRef = useRef(uploads)
@@ -100,6 +115,29 @@ export function Composer({
       else dom.setAttribute(name, value)
     }
   }, [suggestion, listId])
+
+  // Saves the text and the finished images. An empty composer has no draft.
+  const persist = (editor: Editor) => {
+    if (initial) return
+    const list = uploadsRef.current
+    if (editor.isEmpty && list.length === 0) {
+      saveDraft(key, null)
+      pendingUploads.delete(key)
+      return
+    }
+    saveDraft(key, {
+      json: editor.getJSON(),
+      files: list.flatMap((u) => (u.ref ? [u.ref] : [])),
+      anchor: anchorRef.current,
+    })
+    if (list.some((u) => !u.ref && !u.error)) pendingUploads.set(key, list)
+    else pendingUploads.delete(key)
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: save when the images change.
+  useEffect(() => {
+    if (editorRef.current) persist(editorRef.current)
+  }, [uploads])
 
   const track = (upload: Upload) =>
     upload.request?.then(
@@ -143,16 +181,26 @@ export function Composer({
     setError(null)
     // No typing while it sends: the text is cleared when the server has it.
     editor.setEditable(false)
-    // If the popover closes while it sends, the text is saved as a draft (see cleanup). The user can open it and
+    // If the popover closes while it sends, the text stays as a draft (see cleanup). The user can open it and
     // write something new. Delete the saved draft only if it is still the text that was sent.
-    const snapshot = (json: JSONContent | undefined, list: Upload[]) => JSON.stringify([json, list.map((u) => u.key)])
-    const sent = snapshot(editor.getJSON(), current)
+    const snapshot = (json: JSONContent | undefined, ids: string[]) => JSON.stringify([json, ids])
+    const sent = snapshot(editor.getJSON(), files)
     try {
       await onSubmit(editor.isEmpty ? EMPTY_DOC : trimDoc(editor.getJSON()), files)
-      const saved = drafts.get(key)
-      if (saved && snapshot(saved.json, saved.uploads) === sent) drafts.delete(key)
-      if (!editor.isDestroyed) editor.commands.clearContent(true)
+      const saved = loadDraft(key)
+      if (
+        saved &&
+        snapshot(
+          saved.json,
+          saved.files.map((f) => f.id),
+        ) === sent
+      ) {
+        saveDraft(key, null)
+        pendingUploads.delete(key)
+      }
+      uploadsRef.current = []
       setUploads([])
+      if (!editor.isDestroyed) editor.commands.clearContent(true)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not send. Try again.")
     } finally {
@@ -172,18 +220,24 @@ export function Composer({
         if (destroyed || !mountRef.current) return
         const options: EditorOptions = {
           element: mountRef.current,
-          content: drafts.get(key)?.json ?? initial ?? null,
+          content: saved?.json ?? initial ?? null,
           placeholder,
           label,
           onChange: (editor) => {
             setEmpty(editor.isEmpty)
             setError(null)
+            persist(editor)
           },
           onSubmit: () => submitRef.current(),
           onLink: () => setLinkOpen(true),
           onSuggestion: setSuggestion,
           searchUsers: async (q) =>
-            (await searchUsers(q)).map((u) => ({ id: u.id, label: u.name, avatar: u.avatarUrl })),
+            (await searchUsers(q)).map((u) => ({
+              id: u.id,
+              label: u.name,
+              avatar: u.avatarUrl,
+              detail: u.kind === "guest" ? "Guest" : undefined,
+            })),
           searchEmoji,
           onFiles: (files) => {
             if (sendingRef.current) return true
@@ -205,12 +259,7 @@ export function Composer({
       destroyed = true
       const editor = editorRef.current
       if (editor) {
-        // Editing a comment keeps no draft.
-        if (!initial) {
-          if (!editor.isEmpty || uploadsRef.current.length > 0) {
-            drafts.set(key, { json: editor.getJSON(), uploads: uploadsRef.current })
-          } else drafts.delete(key)
-        }
+        persist(editor)
         editor.destroy()
       }
       editorRef.current = null
@@ -237,9 +286,13 @@ export function Composer({
       onDrop={onDrop}
       data-slot="composer"
     >
-      <div className="relative rounded-md border border-input bg-background px-2 py-1.5 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
-        <div ref={mountRef} className="comma-prose max-h-48 min-h-[18px] overflow-y-auto text-xs/relaxed" />
-        {!ready && <p className="text-muted-foreground text-xs/relaxed">{placeholder}</p>}
+      <div className="relative rounded-md border border-input bg-background px-2 py-1.5 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
+        {/* 16 px on narrow screens: iOS Safari zooms the page into smaller text fields. */}
+        <div
+          ref={mountRef}
+          className="comma-prose max-h-48 min-h-[18px] overflow-y-auto text-base/relaxed sm:text-sm/relaxed"
+        />
+        {!ready && <p className="text-base/relaxed text-muted-foreground sm:text-sm/relaxed">{placeholder}</p>}
       </div>
 
       {suggestion && !sending && <SuggestionList state={suggestion} id={listId} />}
@@ -256,11 +309,7 @@ export function Composer({
             >
               <img src={u.preview} alt="" className={cn("size-full object-cover", !u.ref && "opacity-50")} />
               {!u.ref && !u.error && <Spinner className="absolute inset-0 m-auto" />}
-              {u.error && (
-                <span className="absolute inset-x-0 bottom-0 bg-destructive/90 px-0.5 text-center text-[9px] text-white">
-                  {u.error}
-                </span>
-              )}
+              {u.error && <span className="absolute inset-0 bg-destructive/40" aria-hidden />}
               <Button
                 type="button"
                 size="icon-xs"
@@ -275,6 +324,10 @@ export function Composer({
             </li>
           ))}
         </ul>
+      )}
+
+      {uploads.some((u) => u.error) && (
+        <p className="text-destructive text-xs">{uploads.find((u) => u.error)?.error} The marked image is not sent.</p>
       )}
 
       {error && (
@@ -343,6 +396,24 @@ export function Composer({
             Cancel
           </Button>
         )}
+        {onDiscard && (!empty || uploads.length > 0) && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={sending}
+            onClick={() => {
+              uploadsRef.current = []
+              setUploads([])
+              editorRef.current?.commands.clearContent(true)
+              saveDraft(key, null)
+              pendingUploads.delete(key)
+              onDiscard()
+            }}
+          >
+            Discard
+          </Button>
+        )}
         <Button
           type="button"
           size="icon-sm"
@@ -377,7 +448,7 @@ function SuggestionList({ state, id }: { state: SuggestionState; id: string }) {
           // Keep the focus in the editor.
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => state.select(i)}
-          className="flex min-h-7 cursor-default items-center gap-2 rounded-md px-2 py-1 text-xs aria-selected:bg-accent aria-selected:text-accent-foreground"
+          className="flex min-h-7 cursor-default items-center gap-2 rounded-md px-2 py-1 text-sm aria-selected:bg-accent aria-selected:text-accent-foreground"
         >
           {state.kind === "mention" ? (
             <span
@@ -390,6 +461,9 @@ function SuggestionList({ state, id }: { state: SuggestionState; id: string }) {
             <span className="text-base leading-none">{item.label}</span>
           )}
           <span className="truncate">{state.kind === "mention" ? item.label : item.detail}</span>
+          {state.kind === "mention" && item.detail && (
+            <span className="shrink-0 text-muted-foreground text-xs">{item.detail}</span>
+          )}
         </div>
       ))}
     </div>

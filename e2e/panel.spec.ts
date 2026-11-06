@@ -153,11 +153,14 @@ test("a detached thread shows in the panel with a label", async ({ page }) => {
   await signIn(page, me)
   await page.goto(path)
   await openPanel(page)
-  await expect(items(page)).toContainText("Detached")
+  await expect(items(page)).toContainText("Element not found")
   await expect(pins(page)).toHaveCount(0)
   await items(page).click()
   await expect(threadPopover(page)).toContainText("Lost comment")
-  await expect(threadPopover(page)).toContainText("Detached")
+  // The thread says what it was about, and the author can move it.
+  await expect(threadPopover(page)).toContainText("Element not found. It was on: Heading “This heading is gone”")
+  await threadPopover(page).getByRole("button", { name: "Move" }).click()
+  await expect(page.getByRole("status").filter({ hasText: "Click the new place" })).toBeVisible()
 })
 
 test("the panel takes the focus and gives it back", async ({ page }) => {
@@ -220,6 +223,30 @@ test.describe("narrow screens", () => {
     await page.keyboard.press("c")
     await expect(panel(page)).toBeHidden()
   })
+
+  test("the toolbar is centered and small, and hides while the panel covers the screen", async ({ page }) => {
+    await signIn(page, await guestSession("Narrow bar"))
+    await openTestPage(page, "narrow-bar")
+    const box = await toolbar(page).boundingBox()
+    expect(box?.width).toBeLessThan(140)
+    expect(Math.abs((box?.x ?? 0) + (box?.width ?? 0) / 2 - 200)).toBeLessThan(2)
+    await openPanel(page)
+    await expect(toolbar(page)).toBeHidden()
+    await panel(page).getByRole("button", { name: "Close comments" }).click()
+    await expect(toolbar(page)).toBeVisible()
+  })
+
+  test("a thread opens next to its pin: the panel closes", async ({ page }) => {
+    const me = await guestSession("Narrow reader")
+    const path = testPath("narrow-open")
+    await apiThread(me, path, "Read me on the page")
+    await signIn(page, me)
+    await page.goto(path)
+    await openPanel(page)
+    await items(page).first().click()
+    await expect(panel(page)).toBeHidden()
+    await expect(threadPopover(page)).toContainText("Read me on the page")
+  })
 })
 
 test("new comments from others appear without a reload", async ({ page, browserName }) => {
@@ -240,4 +267,73 @@ test("new comments from others appear without a reload", async ({ page, browserN
   test.skip(browserName !== "chromium", "Slow: one browser is enough")
   await apiThread(other, path, "Later news")
   await expect(items(page).filter({ hasText: "Later news" })).toBeVisible({ timeout: 17_000 })
+})
+
+test("an empty page points to comments on other pages", async ({ page }) => {
+  const me = await guestSession("Empty")
+  const other = await guestSession("Elsewhere")
+  const path = testPath("empty-elsewhere")
+  const text = `Over on the other page ${path}`
+  await apiThread(other, `${path}-b`, text)
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  await expect(panel(page)).toContainText("No comments on this page")
+  await expect(panel(page)).toContainText(/\d+ (comment|comments) on other pages/)
+  await panel(page).getByRole("button", { name: "Show all pages" }).click()
+  await expect(items(page).filter({ hasText: text })).toBeVisible()
+  // The filter button tells that a filter is on.
+  await expect(panel(page).getByRole("button", { name: "Filter and sort, 1 on" })).toBeVisible()
+})
+
+test("a search without results names the search and clears it", async ({ page }) => {
+  await signIn(page, await guestSession("Searcher"))
+  await openTestPage(page, "search-empty")
+  await openPanel(page)
+  const search = panel(page).getByRole("searchbox", { name: "Search comments" })
+  await search.fill("zebra")
+  await expect(panel(page)).toContainText("No comments match “zebra”")
+  await panel(page).getByRole("button", { name: "Clear search" }).click()
+  await expect(search).toHaveValue("")
+})
+
+test("the empty panel has a button that starts a comment", async ({ page }) => {
+  await signIn(page, await guestSession("Starter"))
+  await openTestPage(page, "start-empty")
+  await openPanel(page)
+  await panel(page).getByRole("button", { name: "Add comment" }).click()
+  await expect(toolbar(page).getByRole("button", { name: "Comment mode" })).toHaveAttribute("aria-pressed", "true")
+})
+
+test("an unread thread shows its newest reply, and pages show their title", async ({ page }) => {
+  const me = await guestSession("Asker")
+  const other = await guestSession("Answerer")
+  const path = testPath("newest-reply")
+  const thread = await apiThread(me, path, "Is this the right title?")
+  const api = await request.newContext()
+  await api.post(`${COMMA}/api/threads/${thread.id}/comments`, {
+    headers: { origin: SITE, authorization: `Bearer ${other.token}` },
+    data: {
+      body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Yes, ship it" }] }] },
+    },
+  })
+  await api.dispose()
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  const item = items(page).first()
+  await expect(item).toContainText("Answerer")
+  await expect(item).toContainText("replied")
+  await expect(item).toContainText("Yes, ship it")
+  await expect(item).toContainText("Is this the right title?")
+
+  // A comment made in the widget keeps the page title.
+  await panel(page).getByRole("button", { name: "Close comments" }).click()
+  const titled = `With a title ${path}`
+  await addComment(page, page.getByTestId("lead"), titled)
+  await endCommentMode(page)
+  await panel(page).getByRole("button", { name: "Filter and sort" }).click()
+  await page.getByRole("menuitemradio", { name: "All pages" }).click()
+  await page.keyboard.press("Escape")
+  await expect(items(page).filter({ hasText: titled })).toContainText("Test page")
 })

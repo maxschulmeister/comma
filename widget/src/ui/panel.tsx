@@ -17,14 +17,16 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Kbd } from "@/components/ui/kbd"
 import { plural, timeAgo } from "@/lib/format"
-import { NARROW } from "@/lib/media"
-import { useResolved } from "@/live"
+import { NARROW, reducedMotion } from "@/lib/media"
+import { pageBox, useResolved } from "@/live"
 import { type Filters, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
 import { openThread, panelElements } from "./pins"
+import { setCommentMode } from "./shortcuts"
 import { SignInForm } from "./sign-in"
 import { threadLink } from "./thread"
 import { UserAvatar } from "./user-avatar"
+import { nameOf, UserName } from "./user-name"
 
 export const PANEL_WIDTH = 360
 
@@ -44,6 +46,7 @@ export function visibleThreads(
     if (filters.scope === "page" && t.page !== page) return false
     if (!filters.resolved && t.status === "resolved") return false
     if (filters.mine && (!me || !t.comments.some((c) => c.authorId === me || c.mentions.includes(me)))) return false
+    if (filters.assigned && (!me || t.assigneeId !== me)) return false
     if (q && !t.comments.some((c) => c.text.toLowerCase().includes(q))) return false
     return true
   })
@@ -98,13 +101,15 @@ function useFocusManagement(ref: RefObject<HTMLElement | null>) {
   }, [ref])
 }
 
-/** Closes the panel. If the focus is in it, the focus goes back to the toolbar button. */
+/**
+ * Closes the panel. If the focus is in it, the focus goes back to the toolbar button, after the render:
+ * on narrow screens the toolbar shows only when the panel is closed.
+ */
 function closePanel(aside: HTMLElement | null) {
   const root = aside?.getRootNode() as ShadowRoot | undefined
-  if (aside && root && aside.contains(root.activeElement)) {
-    root.querySelector<HTMLElement>("[data-panel-button]")?.focus()
-  }
+  const focused = !!aside && !!root && aside.contains(root.activeElement)
   setState({ panelOpen: false })
+  if (focused) setTimeout(() => root?.querySelector<HTMLElement>("[data-panel-button]")?.focus())
 }
 
 export function Panel() {
@@ -114,6 +119,8 @@ export function Panel() {
   return <PanelContent />
 }
 
+const setFilters = (patch: Partial<Filters>) => setState((s) => ({ filters: { ...s.filters, ...patch } }))
+
 function PanelContent() {
   const threads = useStore((s) => s.threads)
   const filters = useStore((s) => s.filters)
@@ -121,6 +128,7 @@ function PanelContent() {
   const me = useStore((s) => s.session?.user.id)
   const signedIn = useStore((s) => !!s.session)
   const loaded = useStore((s) => s.loaded)
+  const pendingLink = useStore((s) => !!s.pendingLink)
   const openThreadId = useStore((s) => s.openThreadId)
   const resolved = useResolved()
   const listRef = useRef<HTMLUListElement>(null)
@@ -130,14 +138,19 @@ function PanelContent() {
     () => visibleThreads(threads, filters, page, me, openThreadId),
     [threads, filters, page, me, openThreadId],
   )
-  const setFilters = (patch: Partial<Filters>) => setState((s) => ({ filters: { ...s.filters, ...patch } }))
+  const activeFilters = [filters.scope === "all", filters.mine, filters.assigned, filters.resolved].filter(
+    Boolean,
+  ).length
 
   const activate = (thread: Thread) => {
     if (thread.page !== page) {
       location.assign(threadLink(thread))
       return
     }
-    resolved.get(thread.id)?.scrollIntoView({ block: "center", behavior: "smooth" })
+    const el = resolved.get(thread.id)
+    // On narrow screens the panel covers the page: it closes, so the thread opens next to its pin.
+    if (el && pageBox(thread.anchor, el) && matchMedia(NARROW).matches) setState({ panelOpen: false })
+    el?.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" })
     openThread(thread.id)
   }
 
@@ -166,9 +179,20 @@ function PanelContent() {
         <h2 className="flex-1 font-medium text-sm">Comments</h2>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="ghost" size="icon-sm" aria-label="Filter and sort" title="Filter and sort" />}
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="relative"
+                aria-label={activeFilters ? `Filter and sort, ${activeFilters} on` : "Filter and sort"}
+                title="Filter and sort"
+              />
+            }
           >
             <FunnelSimpleIcon />
+            {activeFilters > 0 && (
+              <span aria-hidden className="absolute top-1 right-1 size-1.5 rounded-full bg-primary" />
+            )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuGroup>
@@ -185,6 +209,13 @@ function PanelContent() {
               disabled={!signedIn}
             >
               Only my threads
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={filters.assigned}
+              onCheckedChange={(assigned) => setFilters({ assigned })}
+              disabled={!signedIn}
+            >
+              Assigned to me
             </DropdownMenuCheckboxItem>
             <DropdownMenuCheckboxItem
               checked={filters.resolved}
@@ -224,23 +255,14 @@ function PanelContent() {
 
       {!signedIn ? (
         <div className="p-4">
-          <SignInForm title="Sign in to see comments" />
+          <SignInForm title={pendingLink ? "Sign in to see this comment" : "Sign in to see comments"} />
         </div>
       ) : list.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center text-muted-foreground text-xs">
-          {loaded ? (
-            <>
-              <p className="font-medium text-foreground">{filters.query ? "No comments match" : "No comments"}</p>
-              {!filters.query && (
-                <p>
-                  Press <Kbd>C</Kbd> to add a comment.
-                </p>
-              )}
-            </>
-          ) : (
-            <p>Loading…</p>
-          )}
-        </div>
+        loaded ? (
+          <EmptyState />
+        ) : (
+          <p className="flex flex-1 items-center justify-center text-muted-foreground text-sm">Loading…</p>
+        )
       ) : (
         <ul ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1" aria-label="Threads" onKeyDown={onKeyDown}>
           {list.map((thread) => (
@@ -259,6 +281,80 @@ function PanelContent() {
   )
 }
 
+/** Says why the list is empty and offers the way out: other pages, resolved threads, filters, or a new comment. */
+function EmptyState() {
+  const threads = useStore((s) => s.threads)
+  const filters = useStore((s) => s.filters)
+  const page = useStore((s) => s.page)
+  const me = useStore((s) => s.session?.user.id)
+  const shortcut = useStore((s) => s.shortcut)
+  const query = filters.query.trim()
+
+  let title: string
+  const hints: string[] = []
+  const actions: { label: string; run: () => void }[] = []
+  if (query) {
+    title = `No comments match “${query}”`
+    actions.push({ label: "Clear search", run: () => setFilters({ query: "" }) })
+  } else if (
+    (filters.mine || filters.assigned) &&
+    visibleThreads(threads, { ...filters, mine: false, assigned: false }, page, me, null).length > 0
+  ) {
+    title = "No comments match the filters"
+    actions.push({ label: "Clear filters", run: () => setFilters({ mine: false, assigned: false }) })
+  } else {
+    title = filters.scope === "page" ? "No comments on this page" : "No comments yet"
+    const open = threads.filter((t) => t.status === "open")
+    const elsewhere = open.filter((t) => t.page !== page)
+    if (filters.scope === "page" && elsewhere.length > 0) {
+      const unread = elsewhere.filter((t) => t.unread).length
+      hints.push(
+        `${plural(elsewhere.length, "comment", "comments")} on other pages${unread ? `, ${unread} unread` : ""}`,
+      )
+      actions.push({ label: "Show all pages", run: () => setFilters({ scope: "all" }) })
+    }
+    const resolvedHere = threads.filter(
+      (t) => t.status === "resolved" && (filters.scope === "all" || t.page === page),
+    ).length
+    if (!filters.resolved && resolvedHere > 0) {
+      hints.push(`${plural(resolvedHere, "resolved comment", "resolved comments")}`)
+      actions.push({ label: "Show resolved", run: () => setFilters({ resolved: true }) })
+    }
+    actions.push({ label: "Add comment", run: () => setCommentMode(true) })
+  }
+
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center">
+      <p className="text-balance font-medium text-sm">{title}</p>
+      {hints.map((hint) => (
+        <p key={hint} className="text-muted-foreground text-xs">
+          {hint}
+        </p>
+      ))}
+      <div className="mt-3 flex flex-wrap justify-center gap-2">
+        {actions.map((action) => (
+          <Button
+            key={action.label}
+            size="sm"
+            variant={action.label === "Add comment" ? "default" : "outline"}
+            onClick={action.run}
+          >
+            {action.label}
+          </Button>
+        ))}
+      </div>
+      {actions.at(-1)?.label === "Add comment" && shortcut && (
+        <p className="mt-1 text-muted-foreground text-xs">
+          Or press <Kbd>{shortcut.toUpperCase()}</Kbd>
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** "Pricing · /pricing", or the path for threads made before comma kept the title. */
+const pageLabel = (t: Thread) => (t.context?.title ? `${t.context.title} · ${t.page}` : t.page)
+
 function PanelItem({
   thread,
   active,
@@ -272,8 +368,15 @@ function PanelItem({
   showPage: boolean
   onActivate: () => void
 }) {
-  const author = useStore((s) => s.users[thread.createdBy])
+  const users = useStore((s) => s.users)
+  const me = useStore((s) => s.session?.user.id)
   const first = thread.comments[0]
+  // Unread: the newest comment by someone else is the news. The first comment stays as context.
+  const newest = thread.unread ? [...thread.comments].reverse().find((c) => c.authorId !== me) : undefined
+  const reply = newest && newest !== first ? newest : undefined
+  const shown = reply ?? first
+  const author = users[shown?.authorId ?? thread.createdBy]
+  const assignee = thread.assigneeId ? users[thread.assigneeId] : undefined
   const replies = thread.comments.length - 1
   return (
     <li>
@@ -292,12 +395,11 @@ function PanelItem({
         )}
         onClick={onActivate}
       >
-        <UserAvatar user={author} />
+        <UserAvatar user={author} className="mt-0.5" />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex items-center gap-1.5">
-            <span className={cn("truncate text-xs", thread.unread ? "font-semibold" : "font-medium")}>
-              {author?.name ?? "Unknown"}
-            </span>
+            <UserName user={author} className={cn("text-sm", thread.unread ? "font-semibold" : "font-medium")} />
+            {reply && <span className="shrink-0 text-muted-foreground text-xs">replied</span>}
             <span className="shrink-0 text-muted-foreground text-xs">{timeAgo(lastActivity(thread))}</span>
             <span className="flex-1" />
             {thread.unread && (
@@ -306,15 +408,21 @@ function PanelItem({
               </span>
             )}
           </span>
-          {showPage && <span className="truncate font-mono text-[10px] text-muted-foreground">{thread.page}</span>}
-          <span className={cn("line-clamp-2 text-xs/relaxed", !thread.unread && "text-muted-foreground")}>
-            {first?.text || "Image"}
+          {showPage && (
+            <span className="truncate text-muted-foreground text-xs" title={thread.page}>
+              {pageLabel(thread)}
+            </span>
+          )}
+          <span className={cn("line-clamp-2 text-sm/relaxed", !thread.unread && "text-muted-foreground")}>
+            {shown?.text || "Image"}
           </span>
-          {(replies > 0 || detached || thread.status === "resolved") && (
-            <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
-              {replies > 0 && plural(replies, "reply", "replies")}
+          {reply && <span className="truncate text-muted-foreground text-xs">On: {first?.text || "Image"}</span>}
+          {(replies > 0 || assignee || detached || thread.status === "resolved") && (
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-muted-foreground text-xs">
+              {replies > 0 && <span>{plural(replies, "reply", "replies")}</span>}
+              {assignee && <span className="truncate">Assigned to {nameOf(assignee)}</span>}
               {thread.status === "resolved" && <Badge variant="secondary">Resolved</Badge>}
-              {detached && <Badge variant="outline">Detached</Badge>}
+              {detached && <Badge variant="outline">Element not found</Badge>}
             </span>
           )}
         </span>
