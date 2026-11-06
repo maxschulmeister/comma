@@ -71,7 +71,9 @@ Run this after each deploy, with a project and one of its origins:
 bun scripts/check-deploy.ts https://comma.example.com --project acme --origin https://www.acme.com
 ```
 
-It checks the widget files and their headers, the origin check, a guest session (database write), the threads (database read), and an image upload and download. It makes a guest named "Deploy check" and one unused image. Cleanup deletes the image after 24 h.
+It checks the widget files and their headers, the origin check, a session (database write), the threads (database read), and an image upload and download. It makes a user named "Deploy check" and one unused image. Cleanup deletes the image after 24 h.
+
+A project without guests (see `guests` in README.md): give the check the project's app secret in `COMMA_APP_SECRET`. It then signs in as an app user.
 
 Then in a browser, on a page of the site:
 

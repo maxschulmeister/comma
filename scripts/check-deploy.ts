@@ -1,7 +1,9 @@
 // Checks a deployed comma server from outside. Run after each deploy:
 //   bun scripts/check-deploy.ts https://comma.example.com --project acme --origin https://www.acme.com
-// It signs in a guest named "Deploy check" and uploads one small image. Cleanup deletes the image after 24 h.
+// It signs in a user named "Deploy check" and uploads one small image. Cleanup deletes the image after 24 h.
+// A project without guests: set COMMA_APP_SECRET to the project's appSecret. The check signs in as an app user.
 import { parseArgs } from "node:util"
+import { sign } from "hono/jwt"
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -37,9 +39,14 @@ await check("widget script /c.js", async () => {
     return `cache-control ${res.headers.get("cache-control")}`
 })
 await check("widget module /w/main.js", async () => expectStatus(await fetch(`${url}/w/main.js`), 200))
+let guests = true
 await check(`project ${project} from ${origin}`, async () => {
   const res = await fetch(`${url}/api/projects/${project}`, { headers: { origin } })
-  return expectStatus(res, 200) ?? ((await res.json()).id === project ? undefined : "wrong project")
+  const problem = expectStatus(res, 200)
+  if (problem) return problem
+  const info = await res.json()
+  guests = info.guests !== false
+  return info.id === project ? undefined : "wrong project"
 })
 await check("project from an origin that is not registered: 403", async () =>
   expectStatus(
@@ -49,12 +56,23 @@ await check("project from an origin that is not registered: 403", async () =>
 )
 
 let token = ""
-await check("guest session (database write)", async () => {
-  const res = await fetch(`${url}/api/session/guest`, {
-    method: "POST",
-    headers: { origin, "content-type": "application/json" },
-    body: JSON.stringify({ project, name: "Deploy check" }),
-  })
+await check(`${guests ? "guest" : "app"} session (database write)`, async () => {
+  const post = (path: string, body: object) =>
+    fetch(`${url}${path}`, {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body: JSON.stringify({ project, ...body }),
+    })
+  let res: Response
+  if (guests) res = await post("/api/session/guest", { name: "Deploy check" })
+  else {
+    const secret = process.env.COMMA_APP_SECRET
+    if (!secret) return "guests are off for this project: set COMMA_APP_SECRET to its appSecret"
+    const exp = Math.floor(Date.now() / 1000) + 120
+    res = await post("/api/session/app", {
+      appToken: await sign({ sub: "comma-deploy-check", name: "Deploy check", exp }, secret, "HS256"),
+    })
+  }
   if (res.status !== 200) return `status ${res.status}: ${await res.text()}`
   token = (await res.json()).token
 })
