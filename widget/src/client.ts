@@ -93,6 +93,8 @@ export function signInWithPopup() {
       const data = event.data
       if (data?.type !== "comma:session" || data.project !== project || typeof data.token !== "string") return
       cleanup()
+      // The popup also closes itself. Firefox blocks that after a few redirects, so close it here too.
+      popup?.close()
       saveSession({ token: data.token, user: data.user })
       resolve()
     }
