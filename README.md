@@ -134,16 +134,16 @@ comma sends the session to the site that opened the popup, only if that site is 
 
 ## Keyboard
 
-| Key                       |                                                                       |
-| ------------------------- | --------------------------------------------------------------------- |
-| `C`                       | Comment mode on or off                                                |
-| `Tab`, then `Enter`       | In comment mode: comment on the focused element                       |
-| `Esc`                     | Close the popover, then leave comment mode                            |
-| `Shift+C`                 | Show or hide comments                                                 |
-| `Enter` / `Shift+Enter`   | Send / new line                                                       |
-| `⌘B` `⌘I` `⌘⇧X` `⌘E` `⌘K` | Bold, italic, strikethrough, code, link (`Ctrl` on Windows and Linux) |
-| `⌘⇧8` `⌘⇧7`               | Bulleted and numbered list                                            |
-| `↑` `↓`                   | Move between threads in the panel                                     |
+| Key                       |                                                                                   |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `C`                       | Comment mode on or off                                                            |
+| `↑` `↓`, then `Enter`     | In comment mode: pick an element and comment on it (`Tab` to a control works too) |
+| `Esc`                     | Close the popover, then leave comment mode                                        |
+| `Shift+C`                 | Show or hide comments                                                             |
+| `Enter` / `Shift+Enter`   | Send / new line                                                                   |
+| `⌘B` `⌘I` `⌘⇧X` `⌘E` `⌘K` | Bold, italic, strikethrough, code, link (`Ctrl` on Windows and Linux)             |
+| `⌘⇧8` `⌘⇧7`               | Bulleted and numbered list                                                        |
+| `↑` `↓`                   | In the panel: move between threads                                                |
 
 ## Development
 
