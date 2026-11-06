@@ -26,7 +26,7 @@ export type Anchor = {
   repeated?: boolean
   /**
    * For repeated text: the closest container that tells the element apart from its look-alikes (a product card).
-   * `depth`: levels up from the element. `hash`: hash of the start of the container's text.
+   * `depth`: levels up from the element. `hash`: hash of the start of the container's text and its links and images.
    */
   scope?: { depth: number; hash: string }
   /** Pin: position in % of the element box. */
@@ -76,7 +76,9 @@ function ancestorAt(el: Element, depth: number) {
   return node && node !== document.body && node !== document.documentElement ? node : null
 }
 
-const scopeHash = (el: Element | null) => (el ? hashOf(normalize(el.textContent).slice(0, SCOPE_LENGTH)) : "")
+// A container's text start and its links and images: two cards with the same text can show other products.
+const scopeHash = (el: Element | null) =>
+  el ? hashOf(`${normalize(el.textContent).slice(0, SCOPE_LENGTH)};${fingerprintOf(el)}`) : ""
 
 // The container of `el` that tells it apart from the most look-alikes: the closest one that tells it apart from all,
 // else the one that tells it apart from most ("Free shipping" in two of three cards: the card title, not the wrapper).

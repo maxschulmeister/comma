@@ -199,7 +199,7 @@ Find the element again:
 2. If no match, scan elements with the same tag and score by text.
 3. Check each candidate: same tag and similar text. Below the threshold: detached.
 4. Changed text and short text also need similar neighbors.
-5. If the page had the same or a similar text more than once when the comment was made (product cards, "Learn more"), only the same text with the same neighbors and the same container (the card it is in) is accepted. If the id and the neighbors disagree, the comment is detached.
+5. If the page had the same or a similar text more than once when the comment was made (product cards, "Learn more"), only the same text with the same neighbors and the same container (the card it is in: its text start, links and images) is accepted. If the id and the neighbors disagree, the comment is detached.
 6. On the open page, the element found before stays while it keeps its text, also when its neighbors change (not for repeated text).
 
 Rules:

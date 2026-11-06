@@ -409,3 +409,9 @@ test("look-alikes with nested labels: the label inside a button is told apart by
   await pin(page, "label-red")
   await reorderThenRemove(page, "label-cards", "label-red")
 })
+
+test("look-alikes in cards with the same text: the card's links and images tell them apart", async ({ page }) => {
+  await open(page)
+  await pin(page, "shirt-red")
+  await reorderThenRemove(page, "shirt-cards", "shirt-red")
+})
