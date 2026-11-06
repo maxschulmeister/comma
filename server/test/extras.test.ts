@@ -14,7 +14,7 @@ const mention = (id: string, label: string, before = "Hi ") => ({
   ],
 })
 
-async function start(s: ReturnType<typeof setup>) {
+async function start(s: Awaited<ReturnType<typeof setup>>) {
   const a = await s.guest("Ada")
   const res = await s.request("POST", "/api/threads", {
     token: a.token,
@@ -25,7 +25,7 @@ async function start(s: ReturnType<typeof setup>) {
 
 describe("mentions", () => {
   test("the server reads mentions from the body, only users of the project", async () => {
-    const s = setup()
+    const s = await setup()
     const b = await s.guest("Bob")
     const outsider = await s.guest("Out", "https://other.test", "other")
     const a = await s.guest("Ada")
@@ -49,7 +49,7 @@ describe("mentions", () => {
   })
 
   test("editing a comment updates its mentions", async () => {
-    const s = setup()
+    const s = await setup()
     const b = await s.guest("Bob")
     const { a, thread } = await start(s)
     const res = await s.request("PATCH", `/api/comments/${thread.comments[0].id}`, {
@@ -62,7 +62,7 @@ describe("mentions", () => {
 
 describe("user search", () => {
   test("finds app users and people who commented, not silent guests", async () => {
-    const s = setup()
+    const s = await setup()
     await s.appUser({ sub: "1", name: "Grace Hopper" })
     await s.guest("Gregory Silent")
     const { a } = await start(s)
@@ -73,7 +73,7 @@ describe("user search", () => {
   })
 
   test("names that start with the query come first", async () => {
-    const s = setup()
+    const s = await setup()
     await s.appUser({ sub: "1", name: "Max Ann" })
     await s.appUser({ sub: "2", name: "Anna Lee" })
     const { a } = await start(s)
@@ -84,7 +84,7 @@ describe("user search", () => {
 
 describe("reactions", () => {
   test("users add and remove reactions", async () => {
-    const s = setup()
+    const s = await setup()
     const { a, thread } = await start(s)
     const b = await s.guest("Bob")
     const id = thread.comments[0].id
@@ -101,7 +101,7 @@ describe("reactions", () => {
   })
 
   test("a reaction must be an emoji", async () => {
-    const s = setup()
+    const s = await setup()
     const { a, thread } = await start(s)
     const res = await s.request("PUT", `/api/comments/${thread.comments[0].id}/reactions/abc`, { token: a.token })
     expect(res.status).toBe(400)
@@ -116,7 +116,7 @@ describe("reactions", () => {
 
 describe("read state", () => {
   test("a thread is unread when someone else comments after my last read", async () => {
-    const s = setup()
+    const s = await setup()
     const { a, thread } = await start(s)
     const b = await s.guest("Bob")
     const forB = async () => (await s.request("GET", "/api/threads", { token: b.token })).json.threads[0].unread
@@ -131,7 +131,7 @@ describe("read state", () => {
   })
 
   test("mark as unread", async () => {
-    const s = setup()
+    const s = await setup()
     const { a, thread } = await start(s)
     const res = await s.request("POST", `/api/threads/${thread.id}/read`, { token: a.token, body: { read: false } })
     expect(res.json.thread.unread).toBe(true)
@@ -142,7 +142,7 @@ describe("read state", () => {
 
 describe("ETag", () => {
   test("no change gives 304, a change gives new data", async () => {
-    const s = setup()
+    const s = await setup()
     const { a, thread } = await start(s)
     const first = await s.request("GET", "/api/threads", { token: a.token })
     const etag = first.headers.get("etag") ?? ""
@@ -159,7 +159,7 @@ describe("ETag", () => {
   })
 
   test("my read state changes the ETag", async () => {
-    const s = setup()
+    const s = await setup()
     const { a, thread } = await start(s)
     const etag = (await s.request("GET", "/api/threads", { token: a.token })).headers.get("etag") ?? ""
     await s.request("POST", `/api/threads/${thread.id}/read`, { token: a.token, body: { read: false } })
@@ -175,7 +175,7 @@ const PNG = Uint8Array.from(
 )
 
 async function upload(
-  s: ReturnType<typeof setup>,
+  s: Awaited<ReturnType<typeof setup>>,
   token: string,
   bytes: Uint8Array<ArrayBuffer> = PNG,
   name = "a.png",
@@ -187,7 +187,7 @@ async function upload(
 
 describe("files", () => {
   test("an uploaded image is attached to a comment and served", async () => {
-    const s = setup()
+    const s = await setup()
     const a = await s.guest("Ada")
     const up = await upload(s, a.token)
     expect(up.status).toBe(200)
@@ -207,14 +207,14 @@ describe("files", () => {
   })
 
   test("the type comes from the content, not the name", async () => {
-    const s = setup()
+    const s = await setup()
     const a = await s.guest("Ada")
     const res = await upload(s, a.token, new TextEncoder().encode("<svg onload=alert(1)>"), "x.png")
     expect(res.status).toBe(415)
   })
 
   test("images over 4 MB are rejected", async () => {
-    const s = setup()
+    const s = await setup()
     const a = await s.guest("Ada")
     const big = new Uint8Array(4 * 1024 * 1024 + 1)
     big.set(PNG)
@@ -224,7 +224,7 @@ describe("files", () => {
   })
 
   test("a file can be used once, by its uploader only, up to 5 per comment", async () => {
-    const s = setup()
+    const s = await setup()
     const a = await s.guest("Ada")
     const b = await s.guest("Bob")
     const up = await upload(s, a.token)
@@ -246,7 +246,7 @@ describe("files", () => {
 
   test("uploads that no comment uses are deleted after 24 h", async () => {
     let now = Date.now()
-    const s = setup({ now: () => now })
+    const s = await setup({ now: () => now })
     const a = await s.guest("Ada")
     const unused = await upload(s, a.token)
     const used = await upload(s, a.token)
@@ -255,13 +255,13 @@ describe("files", () => {
       body: { page: "/", anchor, body: text("x"), files: [used.json.id] },
     })
     now += 24 * 60 * 60 * 1000 + 1
-    expect(s.app.cleanupFiles()).toBe(1)
+    expect(await s.app.cleanupFiles()).toBe(1)
     expect((await s.app.fetch(new Request(`http://comma.test/files/${unused.json.id}`))).status).toBe(404)
     expect((await s.app.fetch(new Request(`http://comma.test/files/${used.json.id}`))).status).toBe(200)
   })
 
   test("deleting a thread deletes its files", async () => {
-    const s = setup()
+    const s = await setup()
     const a = await s.guest("Ada")
     const up = await upload(s, a.token)
     const res = await s.request("POST", "/api/threads", {
@@ -275,7 +275,7 @@ describe("files", () => {
 
 describe("popup sign-in", () => {
   test("start redirects to the app sign-in URL with a callback and state", async () => {
-    const s = setup()
+    const s = await setup()
     const res = await s.app.fetch(
       new Request("http://comma.test/auth/start?project=acme&origin=https%3A%2F%2Facme.test"),
     )
@@ -287,7 +287,7 @@ describe("popup sign-in", () => {
   })
 
   test("behind a proxy, the callback is on the public URL, not on the address the proxy uses", async () => {
-    const s = setup({ publicUrl: "https://comma.acme.test" })
+    const s = await setup({ publicUrl: "https://comma.acme.test" })
     const res = await s.app.fetch(
       new Request("http://localhost:4000/auth/start?project=acme&origin=https%3A%2F%2Facme.test"),
     )
@@ -296,7 +296,7 @@ describe("popup sign-in", () => {
   })
 
   test("start refuses origins not registered for the project", async () => {
-    const s = setup()
+    const s = await setup()
     const res = await s.app.fetch(
       new Request("http://comma.test/auth/start?project=acme&origin=https%3A%2F%2Fevil.test"),
     )
@@ -304,7 +304,7 @@ describe("popup sign-in", () => {
   })
 
   test("callback posts a session to the opener origin only", async () => {
-    const s = setup()
+    const s = await setup()
     const start = await s.app.fetch(
       new Request("http://comma.test/auth/start?project=acme&origin=https%3A%2F%2Facme.test"),
     )
@@ -321,7 +321,7 @@ describe("popup sign-in", () => {
   })
 
   test("callback with a bad state or token fails", async () => {
-    const s = setup()
+    const s = await setup()
     const token = await appToken_({ sub: "u1", name: "Grace" })
     expect((await s.app.fetch(new Request(`http://comma.test/auth/callback?token=${token}&state=bad`))).status).toBe(
       400,
@@ -339,7 +339,7 @@ describe("popup sign-in", () => {
 
 describe("upload limit", () => {
   test("a user can upload 100 images per hour", async () => {
-    const s = setup()
+    const s = await setup()
     const a = await s.guest("Uploader")
     for (let i = 0; i < 100; i++) expect((await upload(s, a.token)).status).toBe(200)
     expect((await upload(s, a.token)).status).toBe(429)
@@ -348,13 +348,15 @@ describe("upload limit", () => {
 
 describe("unused upload quota", () => {
   test("a project holds at most 200 MB of images that no comment uses", async () => {
-    const s = setup()
+    const s = await setup()
     // Fill the quota directly: 40 unused files of 5 MB.
     const g = await s.guest("Filler")
-    const insert = s.db.query(
-      "insert into files (id, project, uploaded_by, mime, size, width, height, data, created_at) values (?, 'acme', ?, 'image/png', ?, 1, 1, x'00', ?)",
-    )
-    for (let i = 0; i < 40; i++) insert.run(`f${i}`, g.user.id, 5 * 1024 * 1024, Date.now())
+    for (let i = 0; i < 40; i++) {
+      await s.db.execute({
+        sql: "insert into files (id, project, uploaded_by, mime, size, width, height, data, created_at) values (?, 'acme', ?, 'image/png', ?, 1, 1, x'00', ?)",
+        args: [`f${i}`, g.user.id, 5 * 1024 * 1024, Date.now()],
+      })
+    }
     const other = await s.guest("Other")
     expect((await upload(s, other.token)).status).toBe(507)
   })
@@ -362,7 +364,7 @@ describe("unused upload quota", () => {
 
 describe("profile changes", () => {
   test("a new name of an app user changes the ETag", async () => {
-    const s = setup()
+    const s = await setup()
     const grace = await s.appUser({ sub: "g", name: "Grace" })
     await s.request("POST", "/api/threads", { token: grace.token, body: { page: "/", anchor, body: text("x") } })
     const b = await s.guest("Bob")

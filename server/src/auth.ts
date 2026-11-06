@@ -1,7 +1,7 @@
 import { sign, verify } from "hono/jwt"
 import { z } from "zod"
 import type { Project } from "./config"
-import type { Db } from "./db"
+import { type Db, get, run } from "./db"
 
 export type UserRow = {
   id: string
@@ -75,43 +75,61 @@ export async function verifyAppToken(project: Project, token: string) {
 }
 
 /** `changed`: the public profile (name, avatar, admin) of an existing user changed. */
-export function upsertAppUser(db: Db, project: Project, claims: z.infer<typeof AppClaims>, now: number) {
-  const existing = db
-    .query<UserRow, [string, string]>("select * from users where project = ? and kind = 'app' and external_id = ?")
-    .get(project.id, claims.sub)
+export async function upsertAppUser(db: Db, project: Project, claims: z.infer<typeof AppClaims>, now: number) {
+  const find = () =>
+    get<UserRow>(
+      db,
+      "select * from users where project = ? and kind = 'app' and external_id = ?",
+      project.id,
+      claims.sub,
+    )
+  const existing = await find()
   if (existing) {
     const changed =
       existing.name !== claims.name ||
       existing.avatar_url !== (claims.avatar ?? null) ||
       existing.is_admin !== (claims.admin ? 1 : 0)
     if (!changed && existing.email === (claims.email ?? null)) return { user: existing, changed }
-    db.query("update users set name = ?, email = ?, avatar_url = ?, is_admin = ? where id = ?").run(
+    const user = await get<UserRow>(
+      db,
+      "update users set name = ?, email = ?, avatar_url = ?, is_admin = ? where id = ? returning *",
       claims.name,
       claims.email ?? null,
       claims.avatar ?? null,
       claims.admin ? 1 : 0,
       existing.id,
     )
-    return { user: getUser(db, existing.id) as UserRow, changed }
+    return { user: user as UserRow, changed }
   }
-  const id = newId()
-  db.query(
-    "insert into users (id, project, kind, external_id, name, email, avatar_url, is_admin, created_at) values (?, ?, 'app', ?, ?, ?, ?, ?, ?)",
-  ).run(id, project.id, claims.sub, claims.name, claims.email ?? null, claims.avatar ?? null, claims.admin ? 1 : 0, now)
-  return { user: getUser(db, id) as UserRow, changed: false }
+  // Two first sign-ins at the same time: one inserts, both read the same user.
+  await run(
+    db,
+    `insert into users (id, project, kind, external_id, name, email, avatar_url, is_admin, created_at)
+     values (?, ?, 'app', ?, ?, ?, ?, ?, ?) on conflict (project, external_id) where kind = 'app' do nothing`,
+    newId(),
+    project.id,
+    claims.sub,
+    claims.name,
+    claims.email ?? null,
+    claims.avatar ?? null,
+    claims.admin ? 1 : 0,
+    now,
+  )
+  return { user: (await find()) as UserRow, changed: false }
 }
 
-export function createGuest(db: Db, project: Project, name: string, now: number) {
-  const id = newId()
-  db.query("insert into users (id, project, kind, name, created_at) values (?, ?, 'guest', ?, ?)").run(
-    id,
+export async function createGuest(db: Db, project: Project, name: string, now: number) {
+  const user = await get<UserRow>(
+    db,
+    "insert into users (id, project, kind, name, created_at) values (?, ?, 'guest', ?, ?) returning *",
+    newId(),
     project.id,
     name,
     now,
   )
-  return getUser(db, id) as UserRow
+  return user as UserRow
 }
 
 export function getUser(db: Db, id: string) {
-  return db.query<UserRow, [string]>("select * from users where id = ?").get(id)
+  return get<UserRow>(db, "select * from users where id = ?", id)
 }

@@ -4,7 +4,7 @@ import { ACME, appToken_, OTHER, setup } from "./helpers"
 
 describe("guest session", () => {
   test("a guest gets a session token that works for the API", async () => {
-    const { guest, request } = setup()
+    const { guest, request } = await setup()
     const { token, user } = await guest("Ada")
     expect(user).toMatchObject({ name: "Ada", kind: "guest" })
     const res = await request("GET", "/api/threads", { token })
@@ -13,19 +13,19 @@ describe("guest session", () => {
   })
 
   test("a guest needs a name", async () => {
-    const { request } = setup()
+    const { request } = await setup()
     const res = await request("POST", "/api/session/guest", { body: { project: "acme", name: "  " } })
     expect(res.status).toBe(400)
   })
 
   test("an unknown project fails", async () => {
-    const { request } = setup()
+    const { request } = await setup()
     const res = await request("POST", "/api/session/guest", { body: { project: "nope", name: "Ada" } })
     expect(res.status).toBe(404)
   })
 
   test("an origin not registered for the project fails", async () => {
-    const { request } = setup()
+    const { request } = await setup()
     const res = await request("POST", "/api/session/guest", { origin: OTHER, body: { project: "acme", name: "Ada" } })
     expect(res.status).toBe(403)
   })
@@ -33,7 +33,7 @@ describe("guest session", () => {
 
 describe("app session", () => {
   test("a valid app token gives a session with the app user", async () => {
-    const { appUser } = setup()
+    const { appUser } = await setup()
     const { user } = await appUser({
       sub: "u-1",
       name: "Grace",
@@ -44,7 +44,7 @@ describe("app session", () => {
   })
 
   test("the same app user gets the same comma user, with new details", async () => {
-    const { appUser } = setup()
+    const { appUser } = await setup()
     const a = await appUser({ sub: "u-1", name: "Grace" })
     const b = await appUser({ sub: "u-1", name: "Grace Hopper", admin: true })
     expect(b.user.id).toBe(a.user.id)
@@ -64,14 +64,14 @@ describe("app session", () => {
   ]
   for (const [name, make] of cases) {
     test(`${name} fails`, async () => {
-      const { request } = setup()
+      const { request } = await setup()
       const res = await request("POST", "/api/session/app", { body: { project: "acme", appToken: await make() } })
       expect(res.status).toBe(401)
     })
   }
 
   test("a project without an app secret has no app sign-in", async () => {
-    const { request } = setup()
+    const { request } = await setup()
     const appToken = await appToken_({ sub: "u", name: "X" }, "other-secret")
     const res = await request("POST", "/api/session/app", { origin: OTHER, body: { project: "nope", appToken } })
     expect(res.status).toBe(404)
@@ -80,20 +80,20 @@ describe("app session", () => {
 
 describe("session token", () => {
   test("the API needs a session token", async () => {
-    const { request } = setup()
+    const { request } = await setup()
     expect((await request("GET", "/api/threads")).status).toBe(401)
     expect((await request("GET", "/api/threads", { token: "garbage" })).status).toBe(401)
   })
 
   test("a session token only works from the origins of its project", async () => {
-    const { guest, request } = setup()
+    const { guest, request } = await setup()
     const { token } = await guest()
     expect((await request("GET", "/api/threads", { token, origin: OTHER })).status).toBe(403)
     expect((await request("GET", "/api/threads", { token, origin: "http://localhost:3000" })).status).toBe(200)
   })
 
   test("a session token of one project does not show another project's data", async () => {
-    const { guest, request } = setup()
+    const { guest, request } = await setup()
     const acme = await guest("A")
     const other = await guest("B", OTHER, "other")
     await request("POST", "/api/threads", {
@@ -107,7 +107,7 @@ describe("session token", () => {
 
 describe("CORS", () => {
   test("preflight allows registered origins only", async () => {
-    const { app } = setup()
+    const { app } = await setup()
     const preflight = (origin: string) =>
       app.fetch(
         new Request("http://comma.test/api/threads", {
@@ -127,7 +127,7 @@ describe("CORS", () => {
   })
 
   test("responses name the request origin", async () => {
-    const { guest, request } = setup()
+    const { guest, request } = await setup()
     const { token } = await guest()
     const res = await request("GET", "/api/threads", { token })
     expect(res.headers.get("access-control-allow-origin")).toBe(ACME)
@@ -137,7 +137,7 @@ describe("CORS", () => {
 
 describe("project info", () => {
   test("tells the widget which sign-in methods the project has", async () => {
-    const { request } = setup()
+    const { request } = await setup()
     const acme = await request("GET", "/api/projects/acme")
     expect(acme.status).toBe(200)
     expect(acme.json).toEqual({ id: "acme", popupSignIn: true })
@@ -147,7 +147,7 @@ describe("project info", () => {
   })
 
   test("same-origin GET requests have no Origin header: the browser's Sec-Fetch-Site and the host decide", async () => {
-    const { request, guest } = setup()
+    const { request, guest } = await setup()
     const { token } = await guest()
     const sameOrigin = { "sec-fetch-site": "same-origin", "x-forwarded-host": "acme.test" }
     const get = (path: string, headers: Record<string, string>) =>

@@ -1,7 +1,9 @@
+import { createClient } from "@libsql/client"
 import { sign } from "hono/jwt"
 import { createApp } from "../src/app"
 import type { Config } from "../src/config"
-import { openDb } from "../src/db"
+import { migrate } from "../src/db"
+import type { FileStore } from "../src/files"
 
 export const ACME = "https://acme.test"
 export const OTHER = "https://other.test"
@@ -21,8 +23,8 @@ export const config: Config = {
 // biome-ignore lint/suspicious/noExplicitAny: tests read nested JSON from responses.
 export type Json = Record<string, any>
 
-export function setup(options: { now?: () => number; publicUrl?: string } = {}) {
-  const db = openDb(":memory:")
+export async function setup(options: { now?: () => number; publicUrl?: string; files?: FileStore } = {}) {
+  const db = await migrate(createClient({ url: ":memory:" }), true)
   const app = createApp({
     db,
     config,
@@ -30,6 +32,7 @@ export function setup(options: { now?: () => number; publicUrl?: string } = {}) 
     widgetDir: "/nonexistent",
     now: options.now,
     publicUrl: options.publicUrl,
+    files: options.files,
   })
 
   async function request(

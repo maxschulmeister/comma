@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises"
 import { join, normalize } from "node:path"
 import { Hono } from "hono"
 
@@ -13,8 +14,9 @@ const types: Record<string, string> = {
 export function widgetRoutes(dir: string) {
   const app = new Hono()
   const send = async (path: string, cache: string) => {
-    const file = Bun.file(join(dir, path))
-    if (!(await file.exists())) return new Response("Not found", { status: 404 })
+    // node:fs, not Bun.file: the same code runs on Bun and on Node (AWS Lambda).
+    const file = await readFile(join(dir, path)).catch(() => null)
+    if (!file) return new Response("Not found", { status: 404 })
     const ext = path.slice(path.lastIndexOf("."))
     return new Response(file, {
       headers: {

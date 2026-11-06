@@ -23,13 +23,22 @@ bun example/app.ts     # the example site on http://localhost:4100
 
 ### Server settings
 
-| Env            | Default           |                                                                                                    |
-| -------------- | ----------------- | -------------------------------------------------------------------------------------------------- |
-| `COMMA_SECRET` | (required)        | Signs session tokens. 32 or more random characters.                                                |
-| `COMMA_DB`     | `comma.sqlite`    | SQLite file. Back up this file.                                                                    |
-| `COMMA_CONFIG` | `comma.config.ts` | Projects (see below).                                                                              |
-| `PORT`         | `4000`            |                                                                                                    |
-| `COMMA_URL`    | (the request)     | Address of comma, behind a proxy: `https://comma.example.com`. Popup sign-in sends it to your app. |
+| Env                          | Default           |                                                                                                      |
+| ---------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------- |
+| `COMMA_SECRET`               | (required)        | Signs session tokens. 32 or more random characters.                                                  |
+| `COMMA_DB`                   | `comma.sqlite`    | SQLite file (back it up), or a remote libSQL database: `libsql://…` (Turso), `https://…` (own sqld). |
+| `COMMA_DB_TOKEN`             |                   | Auth token of the remote database.                                                                   |
+| `COMMA_CONFIG`               | `comma.config.ts` | Projects (see below).                                                                                |
+| `PORT`                       | `4000`            |                                                                                                      |
+| `COMMA_URL`                  | (the request)     | Address of comma, behind a proxy: `https://comma.example.com`. Popup sign-in sends it to your app.   |
+| `COMMA_FILES`                | `db`              | Where images are: `db` (in the database) or `s3`.                                                    |
+| `COMMA_S3_BUCKET`            |                   | With `s3`.                                                                                           |
+| `COMMA_S3_REGION`            |                   | With `s3`. Not needed with an endpoint.                                                              |
+| `COMMA_S3_ENDPOINT`          | (AWS S3)          | Another S3 API: Cloudflare R2, MinIO.                                                                |
+| `COMMA_S3_ACCESS_KEY_ID`     | (the AWS role)    | With `s3`. On AWS Lambda, comma uses the function role.                                              |
+| `COMMA_S3_SECRET_ACCESS_KEY` | (the AWS role)    |                                                                                                      |
+
+To deploy, see [DEPLOY.md](DEPLOY.md).
 
 ## Add comma to a site
 

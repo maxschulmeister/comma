@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { anchor, setup, text } from "./helpers"
 
-async function withThread(s: ReturnType<typeof setup>, body = text("First")) {
+async function withThread(s: Awaited<ReturnType<typeof setup>>, body = text("First")) {
   const author = await s.guest("Author")
   const res = await s.request("POST", "/api/threads", { token: author.token, body: { page: "/pricing", anchor, body } })
   expect(res.status).toBe(200)
@@ -10,7 +10,7 @@ async function withThread(s: ReturnType<typeof setup>, body = text("First")) {
 
 describe("threads and comments", () => {
   test("a user creates a thread, another user replies, both see it", async () => {
-    const s = setup()
+    const s = await setup()
     const { thread } = await withThread(s)
     expect(thread).toMatchObject({ page: "/pricing", status: "open", anchor })
     expect(thread.comments).toHaveLength(1)
@@ -34,7 +34,7 @@ describe("threads and comments", () => {
   })
 
   test("the page is a URL path", async () => {
-    const s = setup()
+    const s = await setup()
     const { token } = await s.guest()
     const res = await s.request("POST", "/api/threads", {
       token,
@@ -44,7 +44,7 @@ describe("threads and comments", () => {
   })
 
   test("only the author edits a comment", async () => {
-    const s = setup()
+    const s = await setup()
     const { author, thread } = await withThread(s)
     const comment = thread.comments[0]
     const other = await s.guest("Other")
@@ -62,7 +62,7 @@ describe("threads and comments", () => {
   })
 
   test("only the author deletes a comment", async () => {
-    const s = setup()
+    const s = await setup()
     const { thread } = await withThread(s)
     const other = await s.guest("Other")
     const reply = await s.request("POST", `/api/threads/${thread.id}/comments`, {
@@ -85,7 +85,7 @@ describe("threads and comments", () => {
   })
 
   test("deleting the first comment deletes the thread", async () => {
-    const s = setup()
+    const s = await setup()
     const { author, thread } = await withThread(s)
     await s.request("DELETE", `/api/comments/${thread.comments[0].id}`, { token: author.token })
     const list = await s.request("GET", "/api/threads", { token: author.token })
@@ -93,7 +93,7 @@ describe("threads and comments", () => {
   })
 
   test("the thread author or an admin deletes a thread, nobody else", async () => {
-    const s = setup()
+    const s = await setup()
     const { author, thread } = await withThread(s)
     const other = await s.guest("Other")
     expect((await s.request("DELETE", `/api/threads/${thread.id}`, { token: other.token })).status).toBe(403)
@@ -107,7 +107,7 @@ describe("threads and comments", () => {
   })
 
   test("anyone resolves and reopens a thread", async () => {
-    const s = setup()
+    const s = await setup()
     const { thread } = await withThread(s)
     const other = await s.guest("Other")
     const resolved = await s.request("PATCH", `/api/threads/${thread.id}`, {
@@ -121,7 +121,7 @@ describe("threads and comments", () => {
   })
 
   test("only the thread author moves the pin", async () => {
-    const s = setup()
+    const s = await setup()
     const { author, thread } = await withThread(s)
     const moved = { ...anchor, point: { x: 90, y: 10 } }
     const other = await s.guest("Other")
@@ -141,7 +141,7 @@ describe("threads and comments", () => {
   })
 
   test("a thread of another project is not found", async () => {
-    const s = setup()
+    const s = await setup()
     const { thread } = await withThread(s)
     const other = await s.guest("B", "https://other.test", "other")
     const res = await s.request("POST", `/api/threads/${thread.id}/comments`, {
@@ -180,7 +180,7 @@ describe("comment body", () => {
   ]
   for (const [name, body] of bad) {
     test(`${name} is rejected`, async () => {
-      const s = setup()
+      const s = await setup()
       const { token } = await s.guest()
       const res = await s.request("POST", "/api/threads", { token, body: { page: "/", anchor, body } })
       expect(res.status).toBe(400)
@@ -188,7 +188,7 @@ describe("comment body", () => {
   }
 
   test("rich text is kept, unknown attributes are dropped", async () => {
-    const s = setup()
+    const s = await setup()
     const { token } = await s.guest()
     const body = {
       type: "doc",
@@ -222,7 +222,7 @@ describe("comment body", () => {
 describe("rate limit", () => {
   test("a user can add 100 comments per hour", async () => {
     let now = Date.UTC(2025, 0, 1)
-    const s = setup({ now: () => now })
+    const s = await setup({ now: () => now })
     const { author, thread } = await withThread(s)
     for (let i = 0; i < 99; i++) {
       const res = await s.request("POST", `/api/threads/${thread.id}/comments`, {
@@ -247,7 +247,7 @@ describe("rate limit", () => {
 
 describe("revisions", () => {
   test("every change gives the thread a higher updatedAt, also in the same millisecond", async () => {
-    const s = setup({ now: () => 1_000 })
+    const s = await setup({ now: () => 1_000 })
     const author = await s.guest("Author")
     const created = await s.request("POST", "/api/threads", {
       token: author.token,
@@ -266,7 +266,7 @@ describe("revisions", () => {
 })
 
 test("the server keeps every anchor field the widget sends", async () => {
-  const s = setup()
+  const s = await setup()
   const author = await s.guest("Author")
   const full = {
     ...anchor,

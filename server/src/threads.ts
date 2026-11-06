@@ -1,6 +1,6 @@
 // Reads threads with their comments, reactions, files and read state, in the shape the widget uses.
 import { publicUser, type User, type UserRow } from "./auth"
-import type { Db } from "./db"
+import { all, type Db, get, sql } from "./db"
 
 type ThreadRow = {
   id: string
@@ -52,62 +52,64 @@ export type Thread = {
 }
 
 export function getThreadRow(db: Db, project: string, id: string) {
-  return db.query<ThreadRow, [string, string]>("select * from threads where id = ? and project = ?").get(id, project)
+  return get<ThreadRow>(db, "select * from threads where id = ? and project = ?", id, project)
 }
 
 export function getCommentRow(db: Db, project: string, id: string) {
-  return db
-    .query<CommentRow & { project: string; thread_created_by: string }, [string, string]>(
-      `select c.*, t.project, t.created_by as thread_created_by from comments c join threads t on t.id = c.thread_id
-       where c.id = ? and t.project = ?`,
-    )
-    .get(id, project)
+  return get<CommentRow & { project: string; thread_created_by: string }>(
+    db,
+    `select c.*, t.project, t.created_by as thread_created_by from comments c join threads t on t.id = c.thread_id
+     where c.id = ? and t.project = ?`,
+    id,
+    project,
+  )
 }
 
-export function isFirstComment(db: Db, comment: { id: string; thread_id: string }) {
-  const first = db
-    .query<{ id: string }, [string]>("select id from comments where thread_id = ? order by created_at, rowid limit 1")
-    .get(comment.thread_id)
+export async function isFirstComment(db: Db, comment: { id: string; thread_id: string }) {
+  const first = await get<{ id: string }>(
+    db,
+    "select id from comments where thread_id = ? order by created_at, rowid limit 1",
+    comment.thread_id,
+  )
   return first?.id === comment.id
 }
 
-// All threads of a project (or one thread), for one user.
-export function loadThreads(db: Db, project: string, me: UserRow, onlyThread?: string) {
+// All threads of a project (or one thread), for one user. One round trip for the threads, one for the users.
+export async function loadThreads(db: Db, project: string, me: UserRow, onlyThread?: string) {
   const where = onlyThread ? "t.project = ? and t.id = ?" : "t.project = ?"
   const args = onlyThread ? [project, onlyThread] : [project]
-  const threads = db
-    .query<ThreadRow, string[]>(`select t.* from threads t where ${where} order by t.created_at, t.rowid`)
-    .all(...args)
-  const comments = db
-    .query<CommentRow, string[]>(
-      `select c.* from comments c join threads t on t.id = c.thread_id where ${where} order by c.created_at, c.rowid`,
-    )
-    .all(...args)
-  const mentions = db
-    .query<{ comment_id: string; user_id: string }, string[]>(
-      `select m.* from mentions m join comments c on c.id = m.comment_id join threads t on t.id = c.thread_id where ${where}`,
-    )
-    .all(...args)
-  const reactions = db
-    .query<{ comment_id: string; user_id: string; emoji: string }, string[]>(
-      `select r.comment_id, r.user_id, r.emoji from reactions r join comments c on c.id = r.comment_id
-       join threads t on t.id = c.thread_id where ${where} order by r.created_at, r.rowid`,
-    )
-    .all(...args)
-  const files = db
-    .query<{ id: string; comment_id: string; mime: string; width: number; height: number }, string[]>(
-      `select f.id, f.comment_id, f.mime, f.width, f.height from files f join comments c on c.id = f.comment_id
-       join threads t on t.id = c.thread_id where ${where} order by f.created_at, f.rowid`,
-    )
-    .all(...args)
-  const reads = new Map(
-    db
-      .query<{ thread_id: string; read_at: number; unread: number }, [string]>(
-        "select thread_id, read_at, unread from reads where user_id = ?",
-      )
-      .all(me.id)
-      .map((r) => [r.thread_id, r]),
+  const results = await db.batch(
+    [
+      sql(`select t.* from threads t where ${where} order by t.created_at, t.rowid`, ...args),
+      sql(
+        `select c.* from comments c join threads t on t.id = c.thread_id where ${where} order by c.created_at, c.rowid`,
+        ...args,
+      ),
+      sql(
+        `select m.* from mentions m join comments c on c.id = m.comment_id join threads t on t.id = c.thread_id where ${where}`,
+        ...args,
+      ),
+      sql(
+        `select r.comment_id, r.user_id, r.emoji from reactions r join comments c on c.id = r.comment_id
+         join threads t on t.id = c.thread_id where ${where} order by r.created_at, r.rowid`,
+        ...args,
+      ),
+      sql(
+        `select f.id, f.comment_id, f.mime, f.width, f.height from files f join comments c on c.id = f.comment_id
+         join threads t on t.id = c.thread_id where ${where} order by f.created_at, f.rowid`,
+        ...args,
+      ),
+      sql("select thread_id, read_at, unread from reads where user_id = ?", me.id),
+    ],
+    "read",
   )
+  const rows = <T>(i: number) => (results[i]?.rows ?? []) as unknown as T[]
+  const threads = rows<ThreadRow>(0)
+  const comments = rows<CommentRow>(1)
+  const mentions = rows<{ comment_id: string; user_id: string }>(2)
+  const reactions = rows<{ comment_id: string; user_id: string; emoji: string }>(3)
+  const files = rows<{ id: string; comment_id: string; mime: string; width: number; height: number }>(4)
+  const reads = new Map(rows<{ thread_id: string; read_at: number; unread: number }>(5).map((r) => [r.thread_id, r]))
 
   const userIds = new Set<string>([me.id])
   const byComment = <T extends { comment_id: string }>(rows: T[]) => {
@@ -176,10 +178,8 @@ export function loadThreads(db: Db, project: string, me: UserRow, onlyThread?: s
   const users: Record<string, User> = {}
   const ids = [...userIds]
   if (ids.length > 0) {
-    const rows = db
-      .query<UserRow, string[]>(`select * from users where id in (${ids.map(() => "?").join(",")})`)
-      .all(...ids)
-    for (const u of rows) users[u.id] = publicUser(u)
+    const list = await all<UserRow>(db, `select * from users where id in (${ids.map(() => "?").join(",")})`, ...ids)
+    for (const u of list) users[u.id] = publicUser(u)
   }
   return { threads: result, users }
 }

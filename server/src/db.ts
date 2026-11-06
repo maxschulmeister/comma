@@ -1,4 +1,9 @@
-import { Database } from "bun:sqlite"
+// The database: SQLite through libSQL. A local file, or a remote database (Turso, own sqld).
+// Entry files make the client: `@libsql/client` (also files) or `@libsql/client/web` (remote only, no native code).
+// Do not use `transaction()`: on `:memory:` it opens a new, empty database. Use `batch`: one round trip, atomic.
+import type { Client, InStatement, InValue } from "@libsql/client"
+
+export type Db = Client
 
 const SCHEMA = `
 create table if not exists users (
@@ -82,11 +87,26 @@ create table if not exists versions (
 );
 `
 
-export function openDb(path: string) {
-  const db = new Database(path, { create: true, strict: true })
-  db.exec("pragma journal_mode = wal; pragma foreign_keys = on; pragma busy_timeout = 5000;")
-  db.exec(SCHEMA)
+/** Makes the tables. Files also get WAL and foreign keys. Remote databases may not keep pragmas, so the app
+ * deletes child rows itself and does not use `on delete cascade`. */
+export async function migrate(db: Db, local: boolean) {
+  if (local)
+    await db.executeMultiple("pragma journal_mode = wal; pragma foreign_keys = on; pragma busy_timeout = 5000;")
+  await db.executeMultiple(SCHEMA)
   return db
 }
 
-export type Db = Database
+export const sql = (text: string, ...args: InValue[]): InStatement => ({ sql: text, args })
+
+export async function all<T>(db: Db, text: string, ...args: InValue[]) {
+  return (await db.execute({ sql: text, args })).rows as unknown as T[]
+}
+
+export async function get<T>(db: Db, text: string, ...args: InValue[]) {
+  return (await all<T>(db, text, ...args))[0]
+}
+
+/** Runs a write. Returns the number of changed rows. */
+export async function run(db: Db, text: string, ...args: InValue[]) {
+  return (await db.execute({ sql: text, args })).rowsAffected
+}

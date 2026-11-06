@@ -15,7 +15,8 @@ import {
 } from "./auth"
 import { parseBody } from "./body"
 import { type Config, ConfigSchema, type Project } from "./config"
-import type { Db } from "./db"
+import { all, type Db, get, run, sql } from "./db"
+import type { FileStore } from "./files"
 import { MAX_IMAGE_BYTES, readImage } from "./images"
 import { popupRoutes } from "./popup"
 import { RateLimit } from "./rate-limit"
@@ -27,7 +28,10 @@ export type AppOptions = {
   config: Config
   /** Signs session tokens. */
   secret: string
-  widgetDir: string
+  /** The built widget (`widget/dist`). Without it, the platform serves the widget files (Workers, Vercel). */
+  widgetDir?: string
+  /** Where image bytes live. Default: in the database. */
+  files?: FileStore
   now?: () => number
   /** The address users reach comma at, behind a proxy (`COMMA_URL`). The popup sign-in callback uses it. */
   publicUrl?: string
@@ -105,7 +109,7 @@ async function json(c: { req: { json: () => Promise<unknown> } }) {
 }
 
 export function createApp(options: AppOptions) {
-  const { db, secret } = options
+  const { db, secret, files: store } = options
   const now = options.now ?? Date.now
   const config = ConfigSchema.parse(options.config)
   const projects = new Map(config.projects.map((p) => [p.id, p]))
@@ -114,26 +118,55 @@ export function createApp(options: AppOptions) {
   const uploadLimit = new RateLimit(100, 60 * 60 * 1000)
 
   const bump = (project: string) =>
-    db
-      .query(
-        "insert into versions (project, version) values (?, 1) on conflict (project) do update set version = version + 1",
-      )
-      .run(project)
+    sql(
+      "insert into versions (project, version) values (?, 1) on conflict (project) do update set version = version + 1",
+      project,
+    )
   // `updated_at` is the thread revision: it always grows, also for two changes in the same millisecond.
   const touch = (threadId: string) =>
-    db.query("update threads set updated_at = max(?, updated_at + 1) where id = ?").run(now(), threadId)
-  const markRead = (userId: string, threadId: string) => {
-    db.query(
+    sql("update threads set updated_at = max(?, updated_at + 1) where id = ?", now(), threadId)
+  const markRead = (userId: string, threadId: string) => [
+    sql(
       `insert into reads (user_id, thread_id, read_at, unread) values (?, ?, ?, 0)
        on conflict (user_id, thread_id) do update set read_at = excluded.read_at, unread = 0`,
-    ).run(userId, threadId, now())
-    db.query("update users set reads_version = reads_version + 1 where id = ?").run(userId)
+      userId,
+      threadId,
+      now(),
+    ),
+    sql("update users set reads_version = reads_version + 1 where id = ?", userId),
+  ]
+
+  // Child rows go first. The app deletes them itself: remote databases may not keep `pragma foreign_keys`.
+  const deleteComments = (where: string, arg: string) => [
+    sql(`delete from reactions where comment_id in (select id from comments where ${where})`, arg),
+    sql(`delete from mentions where comment_id in (select id from comments where ${where})`, arg),
+    sql(`delete from files where comment_id in (select id from comments where ${where})`, arg),
+    sql(`delete from comments where ${where}`, arg),
+  ]
+  const deleteThread = (id: string) => [
+    ...deleteComments("thread_id = ?", id),
+    sql("delete from reads where thread_id = ?", id),
+    sql("delete from threads where id = ?", id),
+  ]
+  // Image bytes outside the database go after the rows. A failure leaves bytes that no row uses, not the reverse.
+  const filesOf = async (where: string, arg: string) =>
+    store
+      ? (
+          await all<{ id: string }>(
+            db,
+            `select id from files where comment_id in (select id from comments where ${where})`,
+            arg,
+          )
+        ).map((f) => f.id)
+      : []
+  const deleteStored = async (ids: string[]) => {
+    if (store && ids.length > 0) await store.delete(ids)
   }
 
   // Other clients must see a new name or avatar: a change invalidates their ETag.
-  const appUser = (project: Project, claims: NonNullable<Awaited<ReturnType<typeof verifyAppToken>>>) => {
-    const { user, changed } = upsertAppUser(db, project, claims, now())
-    if (changed) bump(project.id)
+  const appUser = async (project: Project, claims: NonNullable<Awaited<ReturnType<typeof verifyAppToken>>>) => {
+    const { user, changed } = await upsertAppUser(db, project, claims, now())
+    if (changed) await db.execute(bump(project.id))
     return user
   }
 
@@ -145,14 +178,14 @@ export function createApp(options: AppOptions) {
     return c.json({ error: "Server error" }, 500)
   })
 
-  app.route("/", widgetRoutes(options.widgetDir))
+  if (options.widgetDir) app.route("/", widgetRoutes(options.widgetDir))
 
-  app.get("/files/:id", (c) => {
-    const file = db
-      .query<{ mime: string; data: Uint8Array }, [string]>("select mime, data from files where id = ?")
-      .get(c.req.param("id"))
-    if (!file) return c.notFound()
-    return new Response(new Uint8Array(file.data), {
+  app.get("/files/:id", async (c) => {
+    const id = c.req.param("id")
+    const file = await get<{ mime: string; data: ArrayBuffer }>(db, "select mime, data from files where id = ?", id)
+    const data = file && (store ? await store.get(id) : new Uint8Array(file.data))
+    if (!file || !data) return c.notFound()
+    return new Response(data, {
       headers: {
         "content-type": file.mime,
         "cache-control": "public, max-age=31536000, immutable",
@@ -172,7 +205,7 @@ export function createApp(options: AppOptions) {
       session: async (project, appToken) => {
         const claims = await verifyAppToken(project, appToken)
         if (!claims) return null
-        const user = appUser(project, claims)
+        const user = await appUser(project, claims)
         return { token: await signSession(secret, user), user: publicUser(user) }
       },
     }),
@@ -227,7 +260,7 @@ export function createApp(options: AppOptions) {
   app.post("/api/session/guest", async (c) => {
     const input = parse(z.object({ project: z.string(), name: z.string().trim().min(1).max(60) }), await json(c))
     const project = projectFor(input.project, c)
-    const user = createGuest(db, project, input.name, now())
+    const user = await createGuest(db, project, input.name, now())
     return c.json({ token: await signSession(secret, user), user: publicUser(user) })
   })
 
@@ -237,14 +270,14 @@ export function createApp(options: AppOptions) {
     if (!project.appSecret) throw new HTTPException(404, { message: "This project has no app sign-in" })
     const claims = await verifyAppToken(project, input.appToken)
     if (!claims) throw new HTTPException(401, { message: "Invalid app token" })
-    const user = appUser(project, claims)
+    const user = await appUser(project, claims)
     return c.json({ token: await signSession(secret, user), user: publicUser(user) })
   })
 
   const auth = createMiddleware<Env>(async (c, next) => {
     const header = c.req.header("authorization") ?? ""
     const session = header.startsWith("Bearer ") ? await verifySession(secret, header.slice(7)) : null
-    const user = session && getUser(db, session.userId)
+    const user = session && (await getUser(db, session.userId))
     const project = session && projects.get(session.project)
     if (!session || !user || !project || user.project !== project.id) {
       throw new HTTPException(401, { message: "Sign in again" })
@@ -262,16 +295,19 @@ export function createApp(options: AppOptions) {
   }
 
   // Checks files: uploaded by this user, in this project, not used yet.
-  const claimFiles = (user: UserRow, ids: string[]) => {
-    for (const id of ids) {
-      const file = db
-        .query<{ id: string }, [string, string, string]>(
-          "select id from files where id = ? and project = ? and uploaded_by = ? and comment_id is null",
-        )
-        .get(id, user.project, user.id)
-      if (!file) throw new HTTPException(400, { message: "Unknown image" })
-    }
-    return [...new Set(ids)]
+  const claimFiles = async (user: UserRow, ids: string[]) => {
+    const unique = [...new Set(ids)]
+    if (unique.length === 0) return unique
+    const found = await all<{ id: string }>(
+      db,
+      `select id from files where project = ? and uploaded_by = ? and comment_id is null
+       and id in (${unique.map(() => "?").join(",")})`,
+      user.project,
+      user.id,
+      ...unique,
+    )
+    if (found.length !== unique.length) throw new HTTPException(400, { message: "Unknown image" })
+    return unique
   }
 
   const bodyOf = (input: unknown, hasFiles: boolean) => {
@@ -281,233 +317,272 @@ export function createApp(options: AppOptions) {
     return parsed
   }
 
-  const insertComment = (
+  // Mentions of users in the same project only.
+  const mentionsOf = async (user: UserRow, ids: string[]) => {
+    if (ids.length === 0) return []
+    const rows = await all<{ id: string }>(
+      db,
+      `select id from users where project = ? and id in (${ids.map(() => "?").join(",")})`,
+      user.project,
+      ...ids,
+    )
+    return rows.map((r) => r.id)
+  }
+  const saveMentions = (commentId: string, ids: string[]) => [
+    sql("delete from mentions where comment_id = ?", commentId),
+    ...ids.map((id) => sql("insert or ignore into mentions (comment_id, user_id) values (?, ?)", commentId, id)),
+  ]
+
+  const insertComment = async (
     user: UserRow,
+    id: string,
     threadId: string,
     parsed: Extract<ReturnType<typeof parseBody>, { body: unknown }>,
     files: string[],
-  ) => {
-    const id = newId()
-    db.query("insert into comments (id, thread_id, author_id, body, text, created_at) values (?, ?, ?, ?, ?, ?)").run(
+  ) => [
+    sql(
+      "insert into comments (id, thread_id, author_id, body, text, created_at) values (?, ?, ?, ?, ?, ?)",
       id,
       threadId,
       user.id,
       JSON.stringify(parsed.body),
       parsed.text,
       now(),
-    )
-    saveMentions(user, id, parsed.mentions)
-    for (const fileId of files) db.query("update files set comment_id = ? where id = ?").run(id, fileId)
-    return id
-  }
+    ),
+    ...saveMentions(id, await mentionsOf(user, parsed.mentions)),
+    // `comment_id is null`: of two comments at the same time with the same image, only one gets it.
+    ...files.map((fileId) => sql("update files set comment_id = ? where id = ? and comment_id is null", id, fileId)),
+  ]
 
-  // Mentions of users in the same project only.
-  const saveMentions = (user: UserRow, commentId: string, ids: string[]) => {
-    db.query("delete from mentions where comment_id = ?").run(commentId)
-    for (const id of ids) {
-      const target = getUser(db, id)
-      if (target?.project === user.project) {
-        db.query("insert or ignore into mentions (comment_id, user_id) values (?, ?)").run(commentId, id)
-      }
-    }
-  }
-
-  const thread = (user: UserRow, id: string) => {
-    const result = loadThreads(db, user.project, user, id)
+  const thread = async (user: UserRow, id: string) => {
+    const result = await loadThreads(db, user.project, user, id)
     return { thread: result.threads[0], users: result.users }
   }
 
-  const findThread = (user: UserRow, id: string) => {
-    const row = getThreadRow(db, user.project, id)
+  const findThread = async (user: UserRow, id: string) => {
+    const row = await getThreadRow(db, user.project, id)
     if (!row) throw new HTTPException(404, { message: "Thread not found" })
     return row
   }
 
-  const findComment = (user: UserRow, id: string) => {
-    const row = getCommentRow(db, user.project, id)
+  const findComment = async (user: UserRow, id: string) => {
+    const row = await getCommentRow(db, user.project, id)
     if (!row) throw new HTTPException(404, { message: "Comment not found" })
     return row
   }
 
-  app.get("/api/threads", (c) => {
+  app.get("/api/threads", async (c) => {
     const user = c.get("user")
-    const version = db
-      .query<{ version: number }, [string]>("select version from versions where project = ?")
-      .get(user.project)
+    const version = await get<{ version: number }>(db, "select version from versions where project = ?", user.project)
     const etag = `"${version?.version ?? 0}-${user.reads_version}-${user.id}"`
     c.header("etag", etag)
     c.header("cache-control", "no-cache")
     if (c.req.header("if-none-match") === etag) return c.body(null, 304)
-    return c.json({ me: publicUser(user), ...loadThreads(db, user.project, user) })
+    return c.json({ me: publicUser(user), ...(await loadThreads(db, user.project, user)) })
   })
 
   app.post("/api/threads", async (c) => {
     const user = c.get("user")
     const input = parse(CreateThread, await json(c))
-    const files = claimFiles(user, input.files)
+    const files = await claimFiles(user, input.files)
     const parsed = bodyOf(input.body, files.length > 0)
     limit(user)
     const id = newId()
-    db.transaction(() => {
-      db.query(
-        "insert into threads (id, project, page, anchor, created_by, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)",
-      ).run(id, user.project, input.page, JSON.stringify(input.anchor), user.id, now(), now())
-      insertComment(user, id, parsed, files)
-      markRead(user.id, id)
-      bump(user.project)
-    })()
-    return c.json(thread(user, id))
+    await db.batch(
+      [
+        sql(
+          "insert into threads (id, project, page, anchor, created_by, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)",
+          id,
+          user.project,
+          input.page,
+          JSON.stringify(input.anchor),
+          user.id,
+          now(),
+          now(),
+        ),
+        ...(await insertComment(user, newId(), id, parsed, files)),
+        ...markRead(user.id, id),
+        bump(user.project),
+      ],
+      "write",
+    )
+    return c.json(await thread(user, id))
   })
 
   app.patch("/api/threads/:id", async (c) => {
     const user = c.get("user")
-    const row = findThread(user, c.req.param("id"))
+    const row = await findThread(user, c.req.param("id"))
     const input = parse(UpdateThread, await json(c))
+    const changes = []
     if ("status" in input) {
       if (input.status !== row.status) {
         const resolved = input.status === "resolved"
-        db.query(
-          "update threads set status = ?, resolved_at = ?, resolved_by = ?, updated_at = max(?, updated_at + 1) where id = ?",
-        ).run(input.status, resolved ? now() : null, resolved ? user.id : null, now(), row.id)
+        changes.push(
+          sql(
+            "update threads set status = ?, resolved_at = ?, resolved_by = ?, updated_at = max(?, updated_at + 1) where id = ?",
+            input.status,
+            resolved ? now() : null,
+            resolved ? user.id : null,
+            now(),
+            row.id,
+          ),
+        )
       }
     } else {
       if (row.created_by !== user.id) throw new HTTPException(403, { message: "Only the author can move this comment" })
-      db.query("update threads set page = ?, anchor = ?, updated_at = max(?, updated_at + 1) where id = ?").run(
-        input.page,
-        JSON.stringify(input.anchor),
-        now(),
-        row.id,
+      changes.push(
+        sql(
+          "update threads set page = ?, anchor = ?, updated_at = max(?, updated_at + 1) where id = ?",
+          input.page,
+          JSON.stringify(input.anchor),
+          now(),
+          row.id,
+        ),
       )
     }
-    bump(user.project)
-    return c.json(thread(user, row.id))
+    await db.batch([...changes, bump(user.project)], "write")
+    return c.json(await thread(user, row.id))
   })
 
-  app.delete("/api/threads/:id", (c) => {
+  app.delete("/api/threads/:id", async (c) => {
     const user = c.get("user")
-    const row = findThread(user, c.req.param("id"))
+    const row = await findThread(user, c.req.param("id"))
     if (row.created_by !== user.id && user.is_admin !== 1) {
       throw new HTTPException(403, { message: "Only the author or an admin can delete this thread" })
     }
-    db.transaction(() => {
-      db.query("delete from threads where id = ?").run(row.id)
-      bump(user.project)
-    })()
+    const stored = await filesOf("thread_id = ?", row.id)
+    await db.batch([...deleteThread(row.id), bump(user.project)], "write")
+    await deleteStored(stored)
     return c.json({ ok: true })
   })
 
   app.post("/api/threads/:id/read", async (c) => {
     const user = c.get("user")
-    const row = findThread(user, c.req.param("id"))
+    const row = await findThread(user, c.req.param("id"))
     const input = parse(Read, await json(c))
-    if (input.read) markRead(user.id, row.id)
-    else {
-      db.query(
-        `insert into reads (user_id, thread_id, read_at, unread) values (?, ?, 0, 1)
-         on conflict (user_id, thread_id) do update set unread = 1`,
-      ).run(user.id, row.id)
-      db.query("update users set reads_version = reads_version + 1 where id = ?").run(user.id)
-    }
-    return c.json(thread(user, row.id))
+    await db.batch(
+      input.read
+        ? markRead(user.id, row.id)
+        : [
+            sql(
+              `insert into reads (user_id, thread_id, read_at, unread) values (?, ?, 0, 1)
+               on conflict (user_id, thread_id) do update set unread = 1`,
+              user.id,
+              row.id,
+            ),
+            sql("update users set reads_version = reads_version + 1 where id = ?", user.id),
+          ],
+      "write",
+    )
+    return c.json(await thread(user, row.id))
   })
 
   app.post("/api/threads/:id/comments", async (c) => {
     const user = c.get("user")
-    const row = findThread(user, c.req.param("id"))
+    const row = await findThread(user, c.req.param("id"))
     const input = parse(CreateComment, await json(c))
-    const files = claimFiles(user, input.files)
+    const files = await claimFiles(user, input.files)
     const parsed = bodyOf(input.body, files.length > 0)
     limit(user)
-    let id = ""
-    db.transaction(() => {
-      id = insertComment(user, row.id, parsed, files)
-      touch(row.id)
-      markRead(user.id, row.id)
-      bump(user.project)
-    })()
-    const result = thread(user, row.id)
+    const id = newId()
+    await db.batch(
+      [
+        ...(await insertComment(user, id, row.id, parsed, files)),
+        touch(row.id),
+        ...markRead(user.id, row.id),
+        bump(user.project),
+      ],
+      "write",
+    )
+    const result = await thread(user, row.id)
     return c.json({ ...result, comment: result.thread?.comments.find((x) => x.id === id) })
   })
 
   app.patch("/api/comments/:id", async (c) => {
     const user = c.get("user")
-    const row = findComment(user, c.req.param("id"))
+    const row = await findComment(user, c.req.param("id"))
     if (row.author_id !== user.id) throw new HTTPException(403, { message: "Only the author can edit this comment" })
     const input = parse(UpdateComment, await json(c))
-    const hasFiles = !!db.query("select 1 from files where comment_id = ?").get(row.id)
+    const hasFiles = !!(await get(db, "select 1 from files where comment_id = ?", row.id))
     const parsed = bodyOf(input.body, hasFiles)
-    db.transaction(() => {
-      db.query("update comments set body = ?, text = ?, edited_at = ? where id = ?").run(
-        JSON.stringify(parsed.body),
-        parsed.text,
-        now(),
-        row.id,
-      )
-      saveMentions(user, row.id, parsed.mentions)
-      touch(row.thread_id)
-      bump(user.project)
-    })()
-    const result = thread(user, row.thread_id)
+    await db.batch(
+      [
+        sql(
+          "update comments set body = ?, text = ?, edited_at = ? where id = ?",
+          JSON.stringify(parsed.body),
+          parsed.text,
+          now(),
+          row.id,
+        ),
+        ...saveMentions(row.id, await mentionsOf(user, parsed.mentions)),
+        touch(row.thread_id),
+        bump(user.project),
+      ],
+      "write",
+    )
+    const result = await thread(user, row.thread_id)
     return c.json({ ...result, comment: result.thread?.comments.find((x) => x.id === row.id) })
   })
 
-  app.delete("/api/comments/:id", (c) => {
+  app.delete("/api/comments/:id", async (c) => {
     const user = c.get("user")
-    const row = findComment(user, c.req.param("id"))
+    const row = await findComment(user, c.req.param("id"))
     if (row.author_id !== user.id) throw new HTTPException(403, { message: "Only the author can delete this comment" })
     // The first comment is the thread. Its author is the thread author.
-    const deletesThread = isFirstComment(db, row)
-    db.transaction(() => {
-      if (deletesThread) db.query("delete from threads where id = ?").run(row.thread_id)
-      else {
-        db.query("delete from comments where id = ?").run(row.id)
-        touch(row.thread_id)
-      }
-      bump(user.project)
-    })()
+    const deletesThread = await isFirstComment(db, row)
+    const stored = deletesThread ? await filesOf("thread_id = ?", row.thread_id) : await filesOf("id = ?", row.id)
+    await db.batch(
+      [
+        ...(deletesThread ? deleteThread(row.thread_id) : [...deleteComments("id = ?", row.id), touch(row.thread_id)]),
+        bump(user.project),
+      ],
+      "write",
+    )
+    await deleteStored(stored)
     if (deletesThread) return c.json({ ok: true, threadDeleted: true })
-    return c.json({ ok: true, threadDeleted: false, ...thread(user, row.thread_id) })
+    return c.json({ ok: true, threadDeleted: false, ...(await thread(user, row.thread_id)) })
   })
 
   const react = (add: boolean) =>
     createMiddleware<Env>(async (c) => {
       const user = c.get("user")
-      const row = findComment(user, c.req.param("id") ?? "")
+      const row = await findComment(user, c.req.param("id") ?? "")
       const emoji = parse(Emoji, decodeURIComponent(c.req.param("emoji") ?? ""))
-      db.transaction(() => {
-        if (add) {
-          db.query("insert or ignore into reactions (comment_id, user_id, emoji, created_at) values (?, ?, ?, ?)").run(
-            row.id,
-            user.id,
-            emoji,
-            now(),
-          )
-        } else
-          db.query("delete from reactions where comment_id = ? and user_id = ? and emoji = ?").run(
-            row.id,
-            user.id,
-            emoji,
-          )
-        touch(row.thread_id)
-        bump(user.project)
-      })()
-      return c.json(thread(user, row.thread_id))
+      await db.batch(
+        [
+          add
+            ? sql(
+                "insert or ignore into reactions (comment_id, user_id, emoji, created_at) values (?, ?, ?, ?)",
+                row.id,
+                user.id,
+                emoji,
+                now(),
+              )
+            : sql("delete from reactions where comment_id = ? and user_id = ? and emoji = ?", row.id, user.id, emoji),
+          touch(row.thread_id),
+          bump(user.project),
+        ],
+        "write",
+      )
+      return c.json(await thread(user, row.thread_id))
     })
   app.put("/api/comments/:id/reactions/:emoji", react(true))
   app.delete("/api/comments/:id/reactions/:emoji", react(false))
 
   // Mention picker: signed-in app users and people who commented.
-  app.get("/api/users", (c) => {
+  app.get("/api/users", async (c) => {
     const user = c.get("user")
     const q = (c.req.query("q") ?? "").trim().toLowerCase().slice(0, 60)
-    const rows = db
-      .query<UserRow, [string, string, string]>(
-        `select * from users u where u.project = ?
-         and (u.kind = 'app' or exists (select 1 from comments c where c.author_id = u.id))
-         and instr(lower(u.name), ?) > 0
-         order by (instr(lower(u.name), ?) = 1) desc, u.name limit 8`,
-      )
-      .all(user.project, q, q)
+    const rows = await all<UserRow>(
+      db,
+      `select * from users u where u.project = ?
+       and (u.kind = 'app' or exists (select 1 from comments c where c.author_id = u.id))
+       and instr(lower(u.name), ?) > 0
+       order by (instr(lower(u.name), ?) = 1) desc, u.name limit 8`,
+      user.project,
+      q,
+      q,
+    )
     return c.json({ users: rows.map(publicUser) })
   })
 
@@ -524,11 +599,11 @@ export function createApp(options: AppOptions) {
     if (!uploadLimit.take(user.id, now()))
       throw new HTTPException(429, { message: "Too many images. Try again later." })
     if (file.size > MAX_IMAGE_BYTES) throw new HTTPException(413, { message: "Images can be up to 4 MB" })
-    const unused = db
-      .query<{ total: number | null }, [string]>(
-        "select sum(size) as total from files where project = ? and comment_id is null",
-      )
-      .get(user.project)
+    const unused = await get<{ total: number | null }>(
+      db,
+      "select sum(size) as total from files where project = ? and comment_id is null",
+      user.project,
+    )
     if ((unused?.total ?? 0) + file.size > MAX_UNUSED_BYTES) {
       throw new HTTPException(507, { message: "Too many images waiting. Try again later." })
     }
@@ -536,15 +611,37 @@ export function createApp(options: AppOptions) {
     const info = readImage(data)
     if (!info) throw new HTTPException(415, { message: "Use a PNG, JPEG, GIF or WebP image" })
     const id = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url")
-    db.query(
+    // Bytes in the store first: a row always has its bytes.
+    if (store) await store.put(id, data, info.mime)
+    await run(
+      db,
       "insert into files (id, project, uploaded_by, mime, size, width, height, data, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    ).run(id, user.project, user.id, info.mime, data.length, info.width, info.height, data, now())
+      id,
+      user.project,
+      user.id,
+      info.mime,
+      data.length,
+      info.width,
+      info.height,
+      store ? new Uint8Array() : data,
+      now(),
+    )
     return c.json({ id, url: `/files/${id}`, mime: info.mime, width: info.width, height: info.height })
   })
 
   return Object.assign(app, {
-    /** Deletes uploads that no comment uses after 24 h. */
-    cleanupFiles: () =>
-      db.query("delete from files where comment_id is null and created_at < ?").run(now() - UNUSED_FILE_MS).changes,
+    /** Deletes uploads that no comment uses after 24 h. Returns how many. */
+    cleanupFiles: async () => {
+      const old = await all<{ id: string }>(
+        db,
+        "select id from files where comment_id is null and created_at < ?",
+        now() - UNUSED_FILE_MS,
+      )
+      const ids = old.map((f) => f.id)
+      if (ids.length === 0) return 0
+      await run(db, `delete from files where id in (${ids.map(() => "?").join(",")})`, ...ids)
+      await deleteStored(ids)
+      return ids.length
+    },
   })
 }
