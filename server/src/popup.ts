@@ -60,7 +60,7 @@ export function popupRoutes({ projects, secret, session }: Options) {
       return c.html(page("Sign-in expired. Close this window and try again."), 400)
     }
     const project = projects.get(state.prj)
-    if (!project || !project.origins.includes(state.origin)) return c.html(page("This site is not allowed."), 403)
+    if (!project?.origins.includes(state.origin)) return c.html(page("This site is not allowed."), 403)
     const result = await session(project, c.req.query("token") ?? "")
     if (!result) return c.html(page("Sign-in failed. Close this window and try again."), 401)
     const message = JSON.stringify({ type: "comma:session", project: project.id, ...result }).replace(/</g, "\\u003c")

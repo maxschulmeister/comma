@@ -275,7 +275,9 @@ function Cluster({ x, y, items }: { x: number; y: number; items: Item[] }) {
                       <span className="line-clamp-2 text-muted-foreground text-xs">{first?.text || "Image"}</span>
                     </span>
                     {thread.unread && (
-                      <span className="mt-1.5 size-2 shrink-0 rounded-full bg-blue-500" aria-label="Unread" />
+                      <span className="mt-1.5 size-2 shrink-0 rounded-full bg-blue-500">
+                        <span className="sr-only">Unread</span>
+                      </span>
                     )}
                   </button>
                 </li>

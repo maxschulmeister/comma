@@ -159,18 +159,20 @@ window.comma.identify(token) // token from your backend, see "Login"
   - `@font-face` does not work in a shadow root in Chromium. Add the Instrument Sans `@font-face` to the page document.
   - Base UI portals: render into a container inside the shadow root.
 - Trade-offs:
-  - Base UI under `preact/compat` is not proven. Step 1 checks it. If it fails: use React for the widget and raise the size budget.
-  - Base UI, Tailwind CSS and icons add size. Import icons one by one. Measure in step 1.
+  - Base UI under `preact/compat`: step 1 checked it in Chromium, Firefox and WebKit. It works, with two fixes:
+    - Preact renders after the whole event (`options.debounceRendering`), not in a microtask between listeners.
+    - React bubbles events from a portal to its parent; Preact does not. So Base UI sees a press in a nested popup (menu, emoji picker, dialog) as a press outside the parent popover. Top-level popovers ignore presses inside the widget. A press on the page still closes them.
+  - Base UI, Tailwind CSS and icons add size (see "Size").
 - Composer: [Tiptap](https://tiptap.dev) v3 (MIT), core only, no React binding. Preact mounts it with a ref.
   - Extensions: Document, Paragraph, Text, Bold, Italic, Strike, Code, Link, lists, HardBreak, UndoRedo, Placeholder, Mention. Not StarterKit (it adds what we do not use).
   - `:name:` autocomplete: `@tiptap/suggestion` with our own emoji list. Not `@tiptap/extension-emoji` (measured: +~70 kB gzip, and it stores emoji as nodes).
   - `injectCSS: false`: Tiptap puts its CSS in `document.head`, which does not reach the Shadow DOM. Add the ProseMirror base CSS to our own styles.
   - ProseMirror supports Shadow DOM, with fixes for Safari (`getComposedRanges`). Step 1 checks this in all browsers.
 - Thread view: does not use Tiptap. A small renderer turns the stored JSON into Preact elements. Only known nodes and marks, no `innerHTML`.
-- Size:
-  - `c.js` ≤ 35 kB gzip: toolbar, pins, threads, panel. Preact is ~6 kB of this. Base UI and Tailwind CSS are also in this budget. Check the budget after the step 1 spike.
-  - Editor chunk ~135 kB gzip (measured: Tiptap core + ProseMirror + the extensions above). Loads on demand. Preload it when comment mode starts or when the browser is idle.
-  - Emoji data: loads on demand.
+- Size (measured, checked by `bun run size`):
+  - `c.js` + `main.js` ≤ 140 kB gzip (now ~125 kB): toolbar, pins, threads, panel. Base UI and Floating UI are the largest part, then Tailwind CSS and Phosphor icons. Preact is ~6 kB. `c.js` is a 0.2 kB loader that loads `main.js`.
+  - Editor chunk ≤ 135 kB gzip (now ~120 kB): Tiptap core + ProseMirror + the extensions above. Loads on demand. Preloads when comment mode starts or when the browser is idle.
+  - Emoji picker chunk ≤ 15 kB gzip ([Frimousse](https://frimousse.liveblocks.io), from the shadcn registry). Emoji data (Emojibase, with Slack names for `:name:`) loads on demand from the comma server.
 
 ### Push panel
 

@@ -49,10 +49,16 @@ test("replies and reactions", async ({ page, context }) => {
   // Ann sees the reply and the reaction after the next update (window focus).
   await page.evaluate(() => window.dispatchEvent(new Event("focus")))
   await expect(thread.getByRole("article")).toHaveCount(2)
-  const annChip = thread.getByRole("article").first().getByRole("button", { name: /^🎉 1: Bob/ })
+  const annChip = thread
+    .getByRole("article")
+    .first()
+    .getByRole("button", { name: /^🎉 1: Bob/ })
   await expect(annChip).toHaveAttribute("aria-pressed", "false")
   await annChip.click()
-  await expect(thread.getByRole("article").first().getByRole("button", { name: /^🎉 2/ })).toHaveAttribute("aria-pressed", "true")
+  await expect(thread.getByRole("article").first().getByRole("button", { name: /^🎉 2/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  )
   await bob.close()
 })
 
@@ -123,7 +129,9 @@ test("resolve hides the pin, reopen from the panel shows it", async ({ page }) =
   await panel(page).getByRole("button", { name: "Filter and sort" }).click()
   await page.getByRole("menuitemcheckbox", { name: "Show resolved" }).click()
   await page.keyboard.press("Escape")
-  await panel(page).getByRole("button", { name: /First comment/ }).click()
+  await panel(page)
+    .getByRole("button", { name: /First comment/ })
+    .click()
   await expect(thread).toContainText("Resolved")
   await thread.getByRole("button", { name: "Reopen" }).click()
   await expect(thread).not.toContainText("Resolved")

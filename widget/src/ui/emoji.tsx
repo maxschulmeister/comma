@@ -18,7 +18,9 @@ let data: Promise<Entry[]> | null = null
 function loadEmoji() {
   data ??= Promise.all([
     fetch(`${emojiBaseUrl()}/en/data.json`).then((r) => r.json() as Promise<EmojiEntry[]>),
-    fetch(`${emojiBaseUrl()}/en/shortcodes/iamcal.json`).then((r) => r.json() as Promise<Record<string, string | string[]>>),
+    fetch(`${emojiBaseUrl()}/en/shortcodes/iamcal.json`).then(
+      (r) => r.json() as Promise<Record<string, string | string[]>>,
+    ),
   ])
     .then(([list, shortcodes]) =>
       // Group 2 is skin tone and hair parts. Entries without a group are regional indicators.

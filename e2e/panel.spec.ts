@@ -23,7 +23,14 @@ async function apiThread(session: Session, page: string, text: string, anchorTex
     headers: { origin: SITE, authorization: `Bearer ${session.token}` },
     data: {
       page,
-      anchor: { selectors: { css: `body > main > section > ${tag}` }, tag, text: anchorText, context: "", point: { x: 10, y: 50 }, viewport: 1280 },
+      anchor: {
+        selectors: { css: `body > main > section > ${tag}` },
+        tag,
+        text: anchorText,
+        context: "",
+        point: { x: 10, y: 50 },
+        viewport: 1280,
+      },
       body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] },
     },
   })
@@ -34,7 +41,9 @@ async function apiThread(session: Session, page: string, text: string, anchorTex
 }
 
 const openPanel = async (page: Page) => {
-  await toolbar(page).getByRole("button", { name: /^Comments/ }).click()
+  await toolbar(page)
+    .getByRole("button", { name: /^Comments/ })
+    .click()
   await expect(panel(page)).toBeVisible()
 }
 const items = (page: Page) => panel(page).locator("[data-slot=panel-item]")
@@ -51,7 +60,9 @@ test("the panel pushes the page and pins follow", async ({ page }) => {
   expect(Math.abs((await pinX()) - (await leadX()) - ((await lead.boundingBox())?.width ?? 0) * 0.2)).toBeLessThan(2)
   await panel(page).getByRole("button", { name: "Close comments" }).click()
   await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).marginRight)).toBe("0px")
-  await expect.poll(async () => Math.abs((await pinX()) - (await leadX()) - ((await lead.boundingBox())?.width ?? 0) * 0.2)).toBeLessThan(2)
+  await expect
+    .poll(async () => Math.abs((await pinX()) - (await leadX()) - ((await lead.boundingBox())?.width ?? 0) * 0.2))
+    .toBeLessThan(2)
 })
 
 test("list, search, sort and filters", async ({ page }) => {

@@ -29,7 +29,6 @@ export function isTyping(event: Event) {
 
 export const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 
-
 /**
  * True when a popover closes because of a press inside the widget (a menu, a nested popover, a dialog).
  * Base UI keeps nested popups "inside" their parent through React's event bubbling. Preact bubbles

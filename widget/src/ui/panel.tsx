@@ -255,7 +255,11 @@ function PanelItem({
             </span>
             <span className="shrink-0 text-muted-foreground text-xs">{timeAgo(lastActivity(thread))}</span>
             <span className="flex-1" />
-            {thread.unread && <span className="size-2 shrink-0 rounded-full bg-blue-500" aria-label="Unread" />}
+            {thread.unread && (
+              <span className="size-2 shrink-0 rounded-full bg-blue-500">
+                <span className="sr-only">Unread</span>
+              </span>
+            )}
           </span>
           {showPage && <span className="truncate font-mono text-[10px] text-muted-foreground">{thread.page}</span>}
           <span className={cn("line-clamp-2 text-xs/relaxed", !thread.unread && "text-muted-foreground")}>

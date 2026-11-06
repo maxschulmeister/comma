@@ -4,7 +4,9 @@ import { panel, testPath, toolbar } from "./helpers"
 test("on another site, people sign in with the app in a popup", async ({ page }) => {
   // 127.0.0.1 is another site than the app (localhost).
   await page.goto(`http://127.0.0.1:4900${testPath("popup")}`)
-  await toolbar(page).getByRole("button", { name: /^Comments/ }).click()
+  await toolbar(page)
+    .getByRole("button", { name: /^Comments/ })
+    .click()
   const popupPromise = page.waitForEvent("popup")
   await panel(page).getByRole("button", { name: "Sign in", exact: true }).click()
   const popup = await popupPromise

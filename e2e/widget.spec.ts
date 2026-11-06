@@ -2,10 +2,10 @@ import { expect, test } from "@playwright/test"
 import {
   addComment,
   clickAt,
-  guestSession,
-  newCommentPopover,
   closeThread,
   endCommentMode,
+  guestSession,
+  newCommentPopover,
   openTestPage,
   overlay,
   panel,

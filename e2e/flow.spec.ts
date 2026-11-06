@@ -67,7 +67,12 @@ test("comment, mention, image, reply, react, unread, resolve, reload", async ({ 
   await expect(toolbar(ada).getByRole("button", { name: /^Comments, \d+ unread$/ })).toBeVisible()
   await pins(ada).first().click()
   await expect(adaThread).toContainText("On it")
-  await expect(adaThread.getByRole("article").first().getByRole("button", { name: `👍 1: ${bea}` })).toBeVisible()
+  await expect(
+    adaThread
+      .getByRole("article")
+      .first()
+      .getByRole("button", { name: `👍 1: ${bea}` }),
+  ).toBeVisible()
   await expect(pins(ada)).not.toHaveAccessibleName(/unread/)
 
   // Ada resolves. The pin goes away.
@@ -76,7 +81,9 @@ test("comment, mention, image, reply, react, unread, resolve, reload", async ({ 
 
   // After a reload the resolved thread opens from the panel, with its pin on the title.
   await ada.reload()
-  await toolbar(ada).getByRole("button", { name: /^Comments/ }).click()
+  await toolbar(ada)
+    .getByRole("button", { name: /^Comments/ })
+    .click()
   await panel(ada).getByRole("button", { name: "Filter and sort" }).click()
   await ada.getByRole("menuitemcheckbox", { name: "Show resolved" }).click()
   await ada.keyboard.press("Escape")
@@ -89,5 +96,7 @@ test("comment, mention, image, reply, react, unread, resolve, reload", async ({ 
 
   // The panel narrows the page.
   expect(await ada.evaluate(() => getComputedStyle(document.documentElement).marginRight)).toBe("360px")
-  expect(await ada.evaluate(() => document.querySelector("main")?.getBoundingClientRect().right)).toBeLessThanOrEqual(1280 - 360)
+  expect(await ada.evaluate(() => document.querySelector("main")?.getBoundingClientRect().right)).toBeLessThanOrEqual(
+    1280 - 360,
+  )
 })

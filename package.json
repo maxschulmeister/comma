@@ -14,7 +14,8 @@
     "test": "bun test server",
     "e2e": "bunx playwright test",
     "typecheck": "bun run --cwd server typecheck && bun run --cwd widget typecheck",
-    "check": "bunx biome check . && bun run typecheck"
+    "check": "bunx biome check . && bun run typecheck && bun run size",
+    "size": "bun run build && bun scripts/size.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.5",

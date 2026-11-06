@@ -18,6 +18,7 @@ export const config: Config = {
   ],
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: tests read nested JSON from responses.
 export type Json = Record<string, any>
 
 export function setup(options: { now?: () => number } = {}) {

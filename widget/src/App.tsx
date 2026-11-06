@@ -13,6 +13,7 @@ const HASH = /^#comma=([\w-]+)$/
 function useDeepLink() {
   const loaded = useStore((s) => s.loaded)
   const resolved = useResolved()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: run again when the threads load.
   useEffect(() => {
     const open = () => {
       const id = HASH.exec(location.hash)?.[1]
