@@ -228,14 +228,16 @@ test("a unique link that now points elsewhere is detached", async ({ page }) => 
   expect(await resolved(page, anchor)).toBeNull()
 })
 
-test("a stable id wins over a look-alike that took the old context", async ({ page }) => {
+test("repeated text: a stable id and a look-alike with the old neighbors disagree, so it is detached", async ({
+  page,
+}) => {
   await open(page)
   await pin(page, "note")
   await page.evaluate(() => {
     ;(document.querySelector('[data-fixture="intro-1"]') as HTMLElement).textContent = "Changed"
     ;(document.querySelector('[data-fixture="intro-2"]') as HTMLElement).textContent = "Intro"
   })
-  expect(await resolved(page)).toBe("note")
+  expect(await resolved(page)).toBeNull()
 })
 
 test("a similar heading does not take the place of a removed one", async ({ page }) => {
@@ -251,12 +253,23 @@ test("a similar heading does not take the place of a removed one", async ({ page
 
 test("an edited heading is still found", async ({ page }) => {
   await open(page)
+  await pin(page, "title")
+  await page.evaluate(() => {
+    ;(document.querySelector('[data-fixture="title"]') as HTMLElement).textContent = "Comments on any website!"
+  })
+  expect(await resolved(page)).toBe("title")
+})
+
+test("an edited heading with a look-alike on the page is detached: the edit could be the other one", async ({
+  page,
+}) => {
+  await open(page)
   await pin(page, "plan-a")
   await page.evaluate(() => {
     ;(document.querySelector('[data-fixture="plan-a"]') as HTMLElement).textContent =
       "Frequently asked questions about plan A!"
   })
-  expect(await resolved(page)).toBe("plan-a")
+  expect(await resolved(page)).toBeNull()
 })
 
 test("a link to another target is another element; tracking parameters do not matter", async ({ page }) => {
@@ -339,4 +352,23 @@ test("repeated text on the open page: a reused row with another product is detac
     return window.commaAnchor.resolveAnchor(window.saved, window.target)
   })
   expect(kept).toBeNull()
+})
+
+test("a heading with a look-alike on the page: another heading with the same words is not the same", async ({
+  page,
+}) => {
+  await open(page)
+  await pin(page, "flight-lp")
+  await page.evaluate(() => document.querySelector('[data-fixture="flight-lp"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+test("repeated text with a slot id: a slot reused for another product is detached", async ({ page }) => {
+  await open(page)
+  await pin(page, "slot-0")
+  await page.evaluate(() => {
+    const heading = document.querySelector('[data-fixture="slot-0"]')?.closest(".card")?.querySelector("h3")
+    if (heading) heading.textContent = "Ceiling lamp"
+  })
+  expect(await resolved(page)).toBeNull()
 })

@@ -18,7 +18,11 @@ export type Anchor = {
    * the page shows it, so the pin stays at the position.
    */
   twins?: number
-  /** Other elements had the same text (with other neighbors) when the comment was made: the neighbors must match. */
+  /**
+   * Other elements had the same or a similar text (and the same identity) when the comment was made:
+   * product cards with the same "Free delivery" line, "Flight from London to Paris" and "… Paris to London".
+   * Then only the same text with the same neighbors is this element.
+   */
   repeated?: boolean
   /** Pin: position in % of the element box. */
   point?: { x: number; y: number }
@@ -124,10 +128,13 @@ export function createAnchor(el: Element, at: { point: { x: number; y: number } 
   anchor.fingerprint = fingerprintOf(el)
   const twins = lookAlikesOf(anchor).length
   if (twins > 1) anchor.twins = twins
-  const sameText = Array.from(document.getElementsByTagName(anchor.tag)).filter(
-    (x) => !x.closest("comma-widget") && textOf(x) === anchor.text && fingerprintOf(x) === anchor.fingerprint,
+  const lookAlikes = Array.from(document.getElementsByTagName(anchor.tag)).filter(
+    (x) =>
+      !x.closest("comma-widget") &&
+      similarity(textOf(x), anchor.text) >= MIN_TEXT &&
+      fingerprintOf(x) === anchor.fingerprint,
   )
-  if (sameText.length > 1) anchor.repeated = true
+  if (lookAlikes.length > 1) anchor.repeated = true
   if ("point" in at) anchor.point = { x: round(px(at.point.x)), y: round(py(at.point.y)) }
   else {
     const { x, y, width, height } = at.rect
@@ -229,12 +236,16 @@ function query(selector: string | undefined) {
  * Repeated text is the exception: only its neighbors tell the copies apart (a list can reuse a row for another item).
  */
 export function resolveAnchor(anchor: Anchor, previous?: Element | null): Element | null {
+  // Repeated text: only the same text with the same neighbors is this element (see Anchor.repeated).
+  const sameAsRepeated = (el: Element) =>
+    !anchor.repeated || (textOf(el) === anchor.text && contextOf(el) === anchor.context)
+
   if (
     previous?.isConnected &&
     previous.localName === anchor.tag &&
     textOf(previous) === anchor.text &&
     (!anchor.fingerprint || fingerprintOf(previous) === anchor.fingerprint) &&
-    (!anchor.repeated || contextOf(previous) === anchor.context)
+    sameAsRepeated(previous)
   ) {
     return previous
   }
@@ -249,8 +260,19 @@ export function resolveAnchor(anchor: Anchor, previous?: Element | null): Elemen
   const sameIdentity = (el: Element) => !anchor.fingerprint || fingerprintOf(el) === anchor.fingerprint
 
   // A stable id is proof, when the element still has about the same text and the same identity.
-  if (byId?.localName === anchor.tag && similarity(textOf(byId), anchor.text) >= MIN_TEXT && sameIdentity(byId)) {
+  // An id can name a slot that a list reuses for another item: repeated text needs its neighbors too.
+  if (
+    byId?.localName === anchor.tag &&
+    similarity(textOf(byId), anchor.text) >= MIN_TEXT &&
+    sameIdentity(byId) &&
+    sameAsRepeated(byId)
+  ) {
     return byId
+  }
+  // The id names an element with this repeated text, but with other neighbors: a reused slot, or a look-alike
+  // took the old neighbors. The id and the neighbors disagree: no proof either way.
+  if (anchor.repeated && byId?.localName === anchor.tag && textOf(byId) === anchor.text && sameIdentity(byId)) {
+    return null
   }
 
   // One pass over all elements with the same tag and identity: exact look-alikes, and scores for changed text.
@@ -266,15 +288,16 @@ export function resolveAnchor(anchor: Anchor, previous?: Element | null): Elemen
     const ownContext = contextOf(el)
     if (ownText === anchor.text && ownContext === anchor.context) exact.push(el)
     const context = anchor.context ? similarity(ownContext, anchor.context) : 1
+    // Changed text. Not `text < 1`: "London to Paris" and "Paris to London" have the same letter pairs.
+    const changed = ownText !== anchor.text
     // Changed text needs the same neighbors: "plan A" and "plan B" headings are similar, their neighbors are not.
     // Short text repeats on pages ("Learn more"), so it always needs them.
-    if ((short || text < 1) && context < MIN_CONTEXT) continue
-    // Text that was on the page more than once: only its exact neighbors tell the copies apart.
-    // "MacBook Pro 14-inch" and "16-inch" are similar neighbors of the same "Free delivery" text,
-    // and "London to Paris" and "Paris to London" have the same letter pairs (similarity 1).
-    if (anchor.repeated && ownContext !== anchor.context) continue
+    if ((short || changed) && context < MIN_CONTEXT) continue
+    // Similar text was on the page more than once: only the exact text and neighbors tell the copies apart.
+    // "MacBook Pro 14-inch" and "16-inch" are similar neighbors of the same "Free delivery" text.
+    if (anchor.repeated && (changed || ownContext !== anchor.context)) continue
     // No neighbors to compare: changed text cannot be checked, and a position is no proof.
-    if (!anchor.context && text < 1) continue
+    if (!anchor.context && changed) continue
     const score = text * 0.7 + context * 0.3
     if (!best || score > best.score) {
       second = best?.score ?? 0
