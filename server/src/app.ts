@@ -55,6 +55,7 @@ const AnchorSchema = z
     twins: z.number().int().min(2).max(100_000).optional(),
     fingerprint: z.string().max(16).optional(),
     repeated: z.boolean().optional(),
+    scope: z.object({ depth: z.number().int().min(1).max(10), hash: z.string().max(16) }).optional(),
     point: Point.optional(),
     rect: Point.extend({ width: z.number().finite(), height: z.number().finite() }).optional(),
     viewport: z.number().int().min(0).max(100_000),

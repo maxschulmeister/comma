@@ -372,3 +372,17 @@ test("repeated text with a slot id: a slot reused for another product is detache
   })
   expect(await resolved(page)).toBeNull()
 })
+
+test("look-alikes in different cards: the card tells them apart when the cards change order", async ({ page }) => {
+  await open(page)
+  await pin(page, "cart-desk")
+  // The cards change order (sorting): the button at the old position is in the other card.
+  await page.evaluate(() => {
+    const cards = document.querySelector('[data-fixture="lamp-cards"]') as HTMLElement
+    cards.prepend(cards.lastElementChild as Element)
+  })
+  expect(await resolved(page)).toBe("cart-desk")
+  // Its card is gone: the other card's button is not it.
+  await page.evaluate(() => document.querySelector('[data-fixture="cart-desk"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})

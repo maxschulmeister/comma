@@ -24,6 +24,11 @@ export type Anchor = {
    * Then only the same text with the same neighbors is this element.
    */
   repeated?: boolean
+  /**
+   * For repeated text: the closest container that tells the element apart from its look-alikes (a product card).
+   * `depth`: levels up from the element. `hash`: hash of the start of the container's text.
+   */
+  scope?: { depth: number; hash: string }
   /** Pin: position in % of the element box. */
   point?: { x: number; y: number }
   /** Region: box in % of the element box. Can be < 0 or > 100. */
@@ -39,6 +44,9 @@ const MIN_TEXT = 0.8
 const SHORT_TEXT = 25
 const MIN_CONTEXT = 0.8
 const MIN_LEAD = 0.02
+// Containers: how far up we look, and how much of their text we compare (the start: a card's title, not its stock count).
+const MAX_SCOPE_DEPTH = 6
+const SCOPE_LENGTH = 200
 
 const normalize = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim()
 
@@ -60,6 +68,25 @@ function contextOf(el: Element) {
     node = node.parentElement
   }
   return ""
+}
+
+function ancestorAt(el: Element, depth: number) {
+  let node: Element | null = el
+  for (let i = 0; i < depth && node; i++) node = node.parentElement
+  return node && node !== document.body && node !== document.documentElement ? node : null
+}
+
+const scopeHash = (el: Element | null) => (el ? hashOf(normalize(el.textContent).slice(0, SCOPE_LENGTH)) : "")
+
+// The closest container of `el` that holds none of the look-alikes and has another text than their containers.
+function scopeOf(el: Element, others: Element[]): Anchor["scope"] {
+  for (let depth = 1; depth <= MAX_SCOPE_DEPTH; depth++) {
+    const node = ancestorAt(el, depth)
+    if (!node || others.some((o) => node.contains(o))) return undefined
+    const hash = scopeHash(node)
+    if (others.some((o) => scopeHash(ancestorAt(o, depth)) !== hash)) return { depth, hash }
+  }
+  return undefined
 }
 
 // Ids made by frameworks change between builds or renders: ":r3:", "radix-…", "headlessui-…", "ember123".
@@ -126,15 +153,19 @@ export function createAnchor(el: Element, at: { point: { x: number; y: number } 
   if (el.id && isStableId(el.id)) anchor.selectors.id = el.id
   anchor.selectors.css = cssPath(el)
   anchor.fingerprint = fingerprintOf(el)
-  const twins = lookAlikesOf(anchor).length
-  if (twins > 1) anchor.twins = twins
   const lookAlikes = Array.from(document.getElementsByTagName(anchor.tag)).filter(
     (x) =>
+      x !== el &&
       !x.closest("comma-widget") &&
       similarity(textOf(x), anchor.text) >= MIN_TEXT &&
       fingerprintOf(x) === anchor.fingerprint,
   )
-  if (lookAlikes.length > 1) anchor.repeated = true
+  if (lookAlikes.length > 0) {
+    anchor.repeated = true
+    anchor.scope = scopeOf(el, lookAlikes)
+  }
+  const twins = lookAlikesOf(anchor).length
+  if (twins > 1) anchor.twins = twins
   if ("point" in at) anchor.point = { x: round(px(at.point.x)), y: round(py(at.point.y)) }
   else {
     const { x, y, width, height } = at.rect
@@ -170,14 +201,19 @@ export function similarity(a: string, b: string) {
   return (2 * common) / (a.length - 1 + (b.length - 1))
 }
 
-// Elements with the same tag, text, context and fingerprint.
-function lookAlikesOf(anchor: Pick<Anchor, "tag" | "text" | "context" | "fingerprint">) {
+// The element is in a container with the same text start as the anchor's (see Anchor.scope).
+const inScope = (anchor: Anchor, el: Element) =>
+  !anchor.scope || scopeHash(ancestorAt(el, anchor.scope.depth)) === anchor.scope.hash
+
+// Elements with the same tag, text, context, fingerprint and container.
+function lookAlikesOf(anchor: Anchor) {
   return Array.from(document.getElementsByTagName(anchor.tag)).filter(
     (el) =>
       !el.closest("comma-widget") &&
       textOf(el) === anchor.text &&
       contextOf(el) === anchor.context &&
-      (!anchor.fingerprint || fingerprintOf(el) === anchor.fingerprint),
+      (!anchor.fingerprint || fingerprintOf(el) === anchor.fingerprint) &&
+      inScope(anchor, el),
   )
 }
 
@@ -215,8 +251,13 @@ function fingerprintOf(el: Element) {
       if (value !== null) parts.push(`>${name}=${identityUrl(name, value)}`)
     }
   }
+  return hashOf(parts.join(";"))
+}
+
+// FNV-1a.
+function hashOf(s: string) {
   let hash = 0x811c9dc5
-  for (const char of parts.join(";")) hash = Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193)
+  for (const char of s) hash = Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193)
   return (hash >>> 0).toString(16)
 }
 
@@ -236,9 +277,9 @@ function query(selector: string | undefined) {
  * Repeated text is the exception: only its neighbors tell the copies apart (a list can reuse a row for another item).
  */
 export function resolveAnchor(anchor: Anchor, previous?: Element | null): Element | null {
-  // Repeated text: only the same text with the same neighbors is this element (see Anchor.repeated).
+  // Repeated text: only the same text with the same neighbors and container is this element (see Anchor.repeated).
   const sameAsRepeated = (el: Element) =>
-    !anchor.repeated || (textOf(el) === anchor.text && contextOf(el) === anchor.context)
+    !anchor.repeated || (textOf(el) === anchor.text && contextOf(el) === anchor.context && inScope(anchor, el))
 
   if (
     previous?.isConnected &&
@@ -286,16 +327,17 @@ export function resolveAnchor(anchor: Anchor, previous?: Element | null): Elemen
     const text = similarity(ownText, anchor.text)
     if (text < MIN_TEXT || !sameIdentity(el)) continue
     const ownContext = contextOf(el)
-    if (ownText === anchor.text && ownContext === anchor.context) exact.push(el)
+    const sameScope = inScope(anchor, el)
+    if (ownText === anchor.text && ownContext === anchor.context && sameScope) exact.push(el)
     const context = anchor.context ? similarity(ownContext, anchor.context) : 1
     // Changed text. Not `text < 1`: "London to Paris" and "Paris to London" have the same letter pairs.
     const changed = ownText !== anchor.text
     // Changed text needs the same neighbors: "plan A" and "plan B" headings are similar, their neighbors are not.
     // Short text repeats on pages ("Learn more"), so it always needs them.
     if ((short || changed) && context < MIN_CONTEXT) continue
-    // Similar text was on the page more than once: only the exact text and neighbors tell the copies apart.
+    // Similar text was on the page more than once: only the exact text, neighbors and container tell the copies apart.
     // "MacBook Pro 14-inch" and "16-inch" are similar neighbors of the same "Free delivery" text.
-    if (anchor.repeated && (changed || ownContext !== anchor.context)) continue
+    if (anchor.repeated && (changed || ownContext !== anchor.context || !sameScope)) continue
     // No neighbors to compare: changed text cannot be checked, and a position is no proof.
     if (!anchor.context && changed) continue
     const score = text * 0.7 + context * 0.3

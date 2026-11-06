@@ -92,7 +92,10 @@ test("emoji with :name: and with the picker", async ({ page }) => {
   await page.keyboard.press("Enter")
   await popover.getByRole("button", { name: "Add emoji" }).click()
   await page.getByRole("searchbox", { name: "Search emoji" }).fill("thumbs up")
-  await page.locator("[data-slot=emoji-picker-emoji]:visible").first().click()
+  // Wait for the search result: before it, the first emoji is 😀.
+  const first = page.locator("[data-slot=emoji-picker-emoji]:visible").first()
+  await expect(first).toContainText("👍")
+  await first.click()
   await expect(popover.locator(".ProseMirror")).toContainText("👍")
   await expect(popover.locator(".ProseMirror")).toBeFocused()
   await page.keyboard.press("Enter")

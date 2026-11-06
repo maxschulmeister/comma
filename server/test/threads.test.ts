@@ -264,3 +264,14 @@ describe("revisions", () => {
     expect(revisions).toEqual([1_000, 1_001, 1_002, 1_003])
   })
 })
+
+test("the server keeps every anchor field the widget sends", async () => {
+  const s = setup()
+  const author = await s.guest("Author")
+  const full = { ...anchor, twins: 2, fingerprint: "a1b2c3d4", repeated: true, scope: { depth: 1, hash: "9f8e7d6c" } }
+  const res = await s.request("POST", "/api/threads", {
+    token: author.token,
+    body: { page: "/", anchor: full, body: text("x") },
+  })
+  expect(res.json.thread.anchor).toEqual(full)
+})
