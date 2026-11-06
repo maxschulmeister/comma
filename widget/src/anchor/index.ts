@@ -30,9 +30,9 @@ export type Anchor = {
    */
   scope?: { depth: number; hash: string }
   /**
-   * For a short label with no link or image of its own ("Add to cart"): the small container it is in (its card),
-   * if that has links or images. `hash`: hash of those links and images. A filter that shows another product in the
-   * same card changes them.
+   * For a short label that is not a link or image itself ("Add to cart"): the closest small container with links or
+   * images (a product link around it, or its card). `hash`: hash of those links and images, without icons in buttons.
+   * A filter that shows another product in the same card changes them.
    */
   card?: { depth: number; hash: string }
   /** Pin: position in % of the element box. */
@@ -59,6 +59,7 @@ const MAX_CARD_TEXT = 300
 const IDENTITY_SELECTOR = "[href],[src],[srcset]"
 // Elements that point to a page or show an image. Not `href="#…"`: icons (`<use href="#cart">`) and in-page links.
 const URL_SELECTOR = "[href]:not([href^='#']),[src],[srcset]"
+const BUTTON_SELECTOR = "button,[role=button]"
 
 const normalize = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim()
 
@@ -108,19 +109,30 @@ function scopeOf(el: Element, others: Element[]): Anchor["scope"] {
   return best && { depth: best.depth, hash: best.hash }
 }
 
-// The small container of a short label, with links or images that are not the label's own (see Anchor.card).
-// A link or image is its own identity. An icon in a button (`<use href="#cart">`) is not: the same icon is on every
-// card. So the evidence must be a real URL outside the control the label is in (a button, or the label itself).
+// The links and images in a container that say which item it shows. Not icons in buttons: the same cart or heart
+// icon is on every card, and it changes when a user toggles it.
+function cardUrls(node: Element) {
+  const urls: string[] = []
+  for (const x of [node, ...Array.from(node.querySelectorAll(URL_SELECTOR))]) {
+    if (!x.matches(URL_SELECTOR) || x.closest(BUTTON_SELECTOR)) continue
+    for (const name of CHILD_IDENTITY) {
+      const value = x.getAttribute(name)
+      if (value !== null) urls.push(`${name}=${identityUrl(name, value)}`)
+    }
+  }
+  return urls
+}
+
+const cardHash = (node: Element | null) => (node ? hashOf(cardUrls(node).join(";")) : "")
+
+// The small container of a short label with links or images that say which item it is (see Anchor.card).
+// The closest one: a product link around the label, else the card. A link or image is its own identity: no card.
 function cardOf(el: Element): Anchor["card"] {
   if (el.matches(URL_SELECTOR)) return undefined
-  const control = el.closest("button, a, label, summary, [role=button]") ?? el
   for (let depth = 1; depth <= MAX_CARD_DEPTH; depth++) {
     const node = ancestorAt(el, depth)
     if (!node || normalize(node.textContent).length > MAX_CARD_TEXT) return undefined
-    if (control.contains(node)) continue
-    if (Array.from(node.querySelectorAll(URL_SELECTOR)).some((x) => !control.contains(x))) {
-      return { depth, hash: fingerprintOf(node) }
-    }
+    if (cardUrls(node).length > 0) return { depth, hash: cardHash(node) }
   }
   return undefined
 }
@@ -245,7 +257,7 @@ const inScope = (anchor: Anchor, el: Element) => {
   if (anchor.scope && scopeHash(ancestorAt(el, anchor.scope.depth)) !== anchor.scope.hash) return false
   if (!anchor.card) return true
   const card = ancestorAt(el, anchor.card.depth)
-  return !!card && fingerprintOf(card) === anchor.card.hash
+  return !!card && cardHash(card) === anchor.card.hash
 }
 
 // Elements with the same tag, text, context, fingerprint and container.

@@ -494,3 +494,40 @@ for (const name of ["wrapped-buy", "wrapped-label"]) {
     expect(after).toEqual({ kept: false, found: null })
   })
 }
+
+test("a button next to another button with an icon: another product in its card is another element", async ({
+  page,
+}) => {
+  await open(page)
+  await pin(page, "wish-buy")
+  expect(await resolved(page)).toBe("wish-buy")
+  const after = await afterChange(page, () => {
+    const card = document.querySelector('[data-fixture="wish-shop"] article')
+    card?.querySelector("img")?.setAttribute("src", "/img/cup-blue.png")
+    card?.querySelector("a")?.setAttribute("href", "/p/cup-blue")
+  })
+  expect(after).toEqual({ kept: false, found: null })
+})
+
+test("a label in a product link: another product link is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "link-label")
+  expect(await resolved(page)).toBe("link-label")
+  const after = await afterChange(page, () => {
+    const link = document.querySelector('[data-fixture="link-shop"] a')
+    link?.setAttribute("href", "/p/vase-blue")
+    link?.querySelector("img")?.setAttribute("src", "/img/vase-blue.png")
+  })
+  expect(after).toEqual({ kept: false, found: null })
+})
+
+test("a product card: a toggled icon in a button does not detach the comment", async ({ page }) => {
+  await open(page)
+  await pin(page, "wish-buy")
+  const after = await afterChange(page, () => {
+    document
+      .querySelector('[data-fixture="wish-shop"] button[aria-label="Save"] img')
+      ?.setAttribute("src", "/icons/heart-filled.svg")
+  })
+  expect(after).toEqual({ kept: true, found: "wish-buy" })
+})
