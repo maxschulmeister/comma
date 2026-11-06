@@ -92,6 +92,8 @@ test("list, search, sort and filters", async ({ page }) => {
     await panel(page).getByRole("button", { name: "Filter and sort" }).click()
     await page.getByRole(role, { name }).click()
     await page.keyboard.press("Escape")
+    // A click on the button while the menu still closes does not open it again.
+    await expect(page.getByRole("menu")).toBeHidden()
   }
 
   // Only my threads.

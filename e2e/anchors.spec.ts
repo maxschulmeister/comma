@@ -448,3 +448,35 @@ test("a short label that was unique: another product in its card is another elem
   expect(kept).toBeNull()
   expect(await resolved(page)).toBeNull()
 })
+
+// The element found before stays (open page) and is found again (reload) — or neither, when `change` makes it another.
+async function afterChange(page: Page, change: () => void) {
+  return page.evaluate((code) => {
+    new Function(code)()
+    const kept = window.commaAnchor.resolveAnchor(window.saved, window.target) === window.target
+    const found = window.commaAnchor.resolveAnchor(window.saved)
+    return { kept, found: found?.getAttribute("data-fixture") ?? null }
+  }, `(${change.toString()})()`)
+}
+
+test("a short label with a shared icon: another product in its card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "icon-buy")
+  expect(await resolved(page)).toBe("icon-buy")
+  const after = await afterChange(page, () => {
+    const card = document.querySelector('[data-fixture="icon-buy"]')?.closest(".card")
+    card?.querySelector("img")?.setAttribute("src", "/img/lamp-b.png")
+    card?.querySelector("a")?.setAttribute("href", "/p/lamp-b")
+  })
+  expect(after).toEqual({ kept: false, found: null })
+})
+
+test("a picture: another source is another picture", async ({ page }) => {
+  await open(page)
+  await pin(page, "gallery-img")
+  expect(await resolved(page)).toBe("gallery-img")
+  const after = await afterChange(page, () => {
+    document.querySelector('[data-fixture="gallery"] source')?.setAttribute("srcset", "/img/gallery-2.avif")
+  })
+  expect(after).toEqual({ kept: false, found: null })
+})

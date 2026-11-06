@@ -107,8 +107,9 @@ function scopeOf(el: Element, others: Element[]): Anchor["scope"] {
 }
 
 // The small container of a short label, with links or images that are not the label's own (see Anchor.card).
+// A link or image is its own identity. An icon in a button (`<use href="#cart">`) is not: the same icon is on every card.
 function cardOf(el: Element): Anchor["card"] {
-  if (el.matches(IDENTITY_SELECTOR) || el.querySelector(IDENTITY_SELECTOR)) return undefined
+  if (el.matches("a[href]:not([href^='#']), [src], [srcset]")) return undefined
   for (let depth = 1; depth <= MAX_CARD_DEPTH; depth++) {
     const node = ancestorAt(el, depth)
     if (!node || normalize(node.textContent).length > MAX_CARD_TEXT) return undefined
@@ -291,6 +292,12 @@ function fingerprintOf(el: Element) {
     for (const name of CHILD_IDENTITY) {
       const value = child.getAttribute(name)
       if (value !== null) parts.push(`>${name}=${identityUrl(name, value)}`)
+    }
+  }
+  // An image in a <picture> shows one of the picture's sources: they are part of what it shows.
+  if (el.localName === "img" && el.parentElement?.localName === "picture") {
+    for (const source of Array.from(el.parentElement.querySelectorAll("source[srcset]"))) {
+      parts.push(`<srcset=${identityUrl("srcset", source.getAttribute("srcset") ?? "")}`)
     }
   }
   return hashOf(parts.join(";"))
