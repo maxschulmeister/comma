@@ -3,7 +3,6 @@ import { lazy, Suspense, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Spinner } from "@/components/ui/spinner"
-import { afterEvent } from "@/lib/dom"
 import { getState } from "@/store"
 
 export const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "👀", "🙏"]
@@ -97,12 +96,10 @@ export function EmojiButton({
           }
         >
           <Picker
-            onSelect={(emoji) =>
-              afterEvent(() => {
-                setOpen(false)
-                onSelect(emoji)
-              })
-            }
+            onSelect={(emoji) => {
+              setOpen(false)
+              onSelect(emoji)
+            }}
           />
         </Suspense>
       </PopoverContent>

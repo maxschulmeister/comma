@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { afterEvent } from "@/lib/dom"
+import { pressInsideWidget } from "@/lib/dom"
 import { fullDate, timeAgo } from "@/lib/format"
 import { setState, useStore } from "@/store"
 import type { Comment, Thread } from "@/types"
@@ -361,11 +361,10 @@ function Reactions({ comment, onError }: { comment: Comment; onError: (message: 
   const me = useStore((s) => s.session?.user)
   const users = useStore((s) => s.users)
   const [open, setOpen] = useState(false)
-  const react = (emoji: string) =>
-    afterEvent(() => {
-      setOpen(false)
-      toggleReaction(comment, emoji).catch((e: Error) => onError(e.message))
-    })
+  const react = (emoji: string) => {
+    setOpen(false)
+    toggleReaction(comment, emoji).catch((e: Error) => onError(e.message))
+  }
   if (!me && comment.reactions.length === 0) return null
   return (
     <div className="flex flex-wrap items-center gap-1">
@@ -398,7 +397,7 @@ function Reactions({ comment, onError }: { comment: Comment; onError: (message: 
         )
       })}
       {me && (
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover open={open} onOpenChange={(next, details) => setOpen(next || pressInsideWidget(details))}>
           <PopoverTrigger
             render={
               <Button

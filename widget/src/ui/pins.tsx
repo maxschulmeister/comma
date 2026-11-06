@@ -4,7 +4,7 @@ import { type Box, createAnchor } from "@/anchor"
 import { createThread, moveThread } from "@/client"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { Popover, PopoverContent } from "@/components/ui/popover"
-import { elementAt } from "@/lib/dom"
+import { elementAt, pressInsideWidget } from "@/lib/dom"
 import { plural, timeAgo } from "@/lib/format"
 import { pageBox, useLayoutTick, useResolved } from "@/live"
 import { type Draft, getState, setState, useStore } from "@/store"
@@ -303,8 +303,8 @@ function ThreadPopover() {
   return (
     <Popover
       open={!!thread && !!anchor}
-      onOpenChange={(open) => {
-        if (!open) setState({ openThreadId: null })
+      onOpenChange={(open, details) => {
+        if (!open && !pressInsideWidget(details)) setState({ openThreadId: null })
       }}
     >
       <PopoverContent
@@ -344,9 +344,9 @@ function DraftComposer({ draft }: { draft: Draft }) {
       </div>
       <Popover
         open={!!el}
-        onOpenChange={(open) => {
+        onOpenChange={(open, details) => {
           // The text stays as a draft (see Composer).
-          if (!open) setState({ draft: null })
+          if (!open && !pressInsideWidget(details)) setState({ draft: null })
         }}
       >
         <PopoverContent

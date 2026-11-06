@@ -1,3 +1,4 @@
+import { options } from "preact"
 import { createRoot } from "react-dom/client"
 import { App } from "./app"
 import { identify, loadProject, loadSession, refresh, signOut, startPolling } from "./client"
@@ -12,6 +13,12 @@ type Loader = { __queue: [string, unknown[]][]; __script: { src: string; project
 
 const loader = (window as unknown as { comma?: Loader }).comma
 if (loader?.__script) start(loader)
+
+// Render after the whole event, not between its listeners (Preact's default is a microtask).
+// Base UI checks clicks in nested popups after our handlers run. React keeps a portal "inside" its
+// parent; Preact does not. If a nested popup unmounts before the check, the parent sees a click
+// outside and closes too.
+options.debounceRendering = (render) => setTimeout(render, 0)
 
 function start({ __queue: queue, __script: script }: Loader) {
   const server = new URL(script.src).origin

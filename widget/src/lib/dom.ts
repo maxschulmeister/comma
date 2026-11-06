@@ -29,8 +29,14 @@ export function isTyping(event: Event) {
 
 export const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 
+
 /**
- * Runs after the current event is done. Use it to close a nested popover from a click inside it:
- * if it closes during the click, the parent popover sees a click outside and closes too.
+ * True when a popover closes because of a press inside the widget (a menu, a nested popover, a dialog).
+ * Base UI keeps nested popups "inside" their parent through React's event bubbling. Preact bubbles
+ * through the DOM, and our popups render in a shared container, so Base UI sees a press outside.
+ * Top-level popovers ignore these presses. A press on the page still closes them.
  */
-export const afterEvent = (fn: () => void) => setTimeout(fn, 0)
+export function pressInsideWidget(details: { reason: string; event?: Event }) {
+  if (details.reason !== "outside-press" || !details.event) return false
+  return details.event.composedPath().some((node) => node instanceof Element && node.localName === HOST_TAG)
+}
