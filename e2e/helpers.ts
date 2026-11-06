@@ -99,6 +99,8 @@ export async function closeThread(page: Page) {
 }
 
 export async function endCommentMode(page: Page) {
+  // Away from pins: a pin under the mouse shows a preview, and Escape closes that first.
+  await page.mouse.move(1, 1)
   await closeThread(page)
   await page.keyboard.press("Escape")
   await expect(toolbar(page).getByRole("button", { name: "Comment mode" })).toHaveAttribute("aria-pressed", "false")

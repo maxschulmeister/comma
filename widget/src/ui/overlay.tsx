@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { type Box, createAnchor } from "@/anchor"
+import { anchorBox, type Box, createAnchor, resolveAnchor } from "@/anchor"
 import { moveThread } from "@/client"
 import { elementAt, fromWidgetPart, HOST_TAG, isTyping } from "@/lib/dom"
 import { useLayoutTick } from "@/live"
 import { getState, setState, useStore } from "@/store"
+import type { Thread } from "@/types"
 
 const DRAG_MIN = 6
 
@@ -16,13 +17,30 @@ const rectOf = (d: Drag): Box => ({
   height: Math.abs(d.y2 - d.y),
 })
 
+/**
+ * The anchor of a thread moved so that its pin tip is at (x, y), in viewport coordinates.
+ * A region keeps its size: it ends at the point (the pin is at its bottom-right corner).
+ * `el`: the new element. Default: the element under the point (or under the region's center).
+ */
+export function movedAnchor(thread: Thread, x: number, y: number, el?: Element) {
+  const old = thread.anchor.rect ? resolveAnchor(thread.anchor) : null
+  if (old) {
+    const box = anchorBox(thread.anchor, old)
+    const rect = { x: x - box.width, y: y - box.height, width: box.width, height: box.height }
+    const target = el ?? elementAt(rect.x + rect.width / 2, rect.y + rect.height / 2) ?? document.body
+    return createAnchor(target, { rect })
+  }
+  return createAnchor(el ?? elementAt(x, y) ?? document.body, { point: { x, y } })
+}
+
 /** Opens the composer for a new thread on the element. When the user moves a pin, moves it there. */
 export function placeAt(el: Element, at: Parameters<typeof createAnchor>[1]) {
   const { moving, threads, page } = getState()
   const thread = moving ? threads.find((t) => t.id === moving) : undefined
   if (thread) {
     setState({ moving: null, openThreadId: thread.id })
-    void moveThread(thread, page, createAnchor(el, at)).catch(() => {})
+    const anchor = "point" in at ? movedAnchor(thread, at.point.x, at.point.y, el) : createAnchor(el, at)
+    void moveThread(thread, page, anchor).catch(() => {})
     return
   }
   setState({ draft: { anchor: createAnchor(el, at), element: el, page }, openThreadId: null })
@@ -54,10 +72,14 @@ const KINDS: Record<string, string> = {
 
 /** "Heading: Pricing", for screen readers. */
 function describe(el: Element) {
-  const kind = /^h[1-6]$/.test(el.localName) ? "Heading" : (KINDS[el.localName] ?? "Element")
+  const kind = /^h[1-6]$/.test(el.localName)
+    ? "Heading"
+    : el.getAttribute("role") === "img"
+      ? "Image"
+      : (KINDS[el.localName] ?? "Element")
   const text =
     (el.textContent ?? "").replace(/\s+/g, " ").trim() || el.getAttribute("alt") || el.getAttribute("aria-label") || ""
-  return text ? `${kind}: ${text.slice(0, 80)}` : kind
+  return text ? `${kind}: ${text.slice(0, 80).replace(/[.!?]$/, "")}` : kind
 }
 
 const center = (el: Element) => {
@@ -118,7 +140,11 @@ export function CommentOverlay() {
         if (!el) return
         event.preventDefault()
         pick(null)
-        placeAt(el, center(el))
+        // Shift+Enter: a region around the whole element.
+        if (event.shiftKey && !getState().moving) {
+          const r = el.getBoundingClientRect()
+          placeAt(el, { rect: { x: r.left, y: r.top, width: r.width, height: r.height } })
+        } else placeAt(el, center(el))
       }
     }
     window.addEventListener("keydown", onKey, true)
@@ -214,7 +240,9 @@ export function CommentOverlay() {
         </p>
       )}
       <p className="sr-only" aria-live="polite">
-        {picked ? `${describe(picked)}. Press Enter to ${moving ? "move the comment here" : "comment"}.` : ""}
+        {picked
+          ? `${describe(picked)}. ${moving ? "Press Enter to move the comment here." : "Press Enter to comment, Shift+Enter to comment on its area."}`
+          : ""}
       </p>
     </>
   )

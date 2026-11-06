@@ -1,16 +1,17 @@
 import { cn } from "cn"
 import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef, useState } from "react"
-import { type Box, createAnchor } from "@/anchor"
+import type { Box } from "@/anchor"
 import { createThread, moveThread } from "@/client"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { Popover, PopoverContent } from "@/components/ui/popover"
-import { elementAt, pressInsideWidget } from "@/lib/dom"
+import { pressInsideWidget } from "@/lib/dom"
 import { plural, timeAgo } from "@/lib/format"
 import { NARROW, useMedia } from "@/lib/media"
 import { pageBox, useLayoutTick, useResolved } from "@/live"
 import { type Draft, getState, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
 import { Composer } from "./composer"
+import { movedAnchor } from "./overlay"
 import { SignInForm } from "./sign-in"
 import { ThreadView } from "./thread"
 import { UserAvatar } from "./user-avatar"
@@ -145,9 +146,7 @@ function Pin({
       window.removeEventListener("pointerup", up)
       window.removeEventListener("pointercancel", up)
       if (!dragged.current || e.type === "pointercancel") return onDrag(null)
-      const target = elementAt(e.clientX, e.clientY)
-      if (!target) return onDrag(null)
-      const anchor = createAnchor(target, { point: { x: e.clientX, y: e.clientY } })
+      const anchor = movedAnchor(thread, e.clientX, e.clientY)
       moveThread(thread, getState().page, anchor)
         .catch(() => {})
         .finally(() => onDrag(null))

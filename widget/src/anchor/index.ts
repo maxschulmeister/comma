@@ -18,6 +18,8 @@ export type Anchor = {
    * the page shows it, so the pin stays at the position.
    */
   twins?: number
+  /** Other elements had the same text (with other neighbors) when the comment was made: the neighbors must match. */
+  repeated?: boolean
   /** Pin: position in % of the element box. */
   point?: { x: number; y: number }
   /** Region: box in % of the element box. Can be < 0 or > 100. */
@@ -122,6 +124,10 @@ export function createAnchor(el: Element, at: { point: { x: number; y: number } 
   anchor.fingerprint = fingerprintOf(el)
   const twins = lookAlikesOf(anchor).length
   if (twins > 1) anchor.twins = twins
+  const sameText = Array.from(document.getElementsByTagName(anchor.tag)).filter(
+    (x) => !x.closest("comma-widget") && textOf(x) === anchor.text && fingerprintOf(x) === anchor.fingerprint,
+  )
+  if (sameText.length > 1) anchor.repeated = true
   if ("point" in at) anchor.point = { x: round(px(at.point.x)), y: round(py(at.point.y)) }
   else {
     const { x, y, width, height } = at.rect
@@ -171,16 +177,20 @@ function lookAlikesOf(anchor: Pick<Anchor, "tag" | "text" | "context" | "fingerp
 // Attributes that say what an element is or where it goes. Not `title` or `value`: they change often.
 const OWN_IDENTITY = ["href", "src", "alt", "aria-label", "name", "data-testid"]
 const CHILD_IDENTITY = ["href", "src"]
+// Query parameters that do not change what a URL points to.
 const TRACKING = /^(utm_\w+|fbclid|gclid|msclkid|mc_cid|mc_eid|_ga|ref)$/i
+// For images also: size, format, cache and signature parameters (image services, signed storage URLs).
+const IMAGE_VOLATILE =
+  /^(w|h|width|height|q|quality|fit|fm|format|auto|dpr|crop|ixlib|v|t|ts|cb|_|sig|signature|s|expires|token|policy|key-pair-id|googleaccessid|x-amz-[\w-]+|x-goog-[\w-]+)$/i
 
-// A link goes somewhere: keep its query and fragment, without tracking parameters.
-// An image is its file: keep the path only. Signed and resized image URLs change their query on every load.
+// The part of a link or image URL that says what it is: path, query and fragment, without volatile parameters.
 function identityUrl(name: string, value: string) {
-  if (name === "src") return value.split(/[?#]/)[0] ?? ""
   const [base = "", hash] = value.split("#", 2)
   const [path = "", query] = base.split("?", 2)
   const params = new URLSearchParams(query ?? "")
-  for (const key of [...params.keys()]) if (TRACKING.test(key)) params.delete(key)
+  for (const key of [...params.keys()]) {
+    if (TRACKING.test(key) || (name === "src" && IMAGE_VOLATILE.test(key))) params.delete(key)
+  }
   const rest = params.toString()
   return `${path}${rest ? `?${rest}` : ""}${hash !== undefined ? `#${hash}` : ""}`
 }
@@ -212,7 +222,21 @@ function query(selector: string | undefined) {
   }
 }
 
-export function resolveAnchor(anchor: Anchor): Element | null {
+/**
+ * The element of the anchor, or null (detached).
+ * `previous`: the element found before on this page. If it is still there with the same text and identity, it stays,
+ * also when its neighbors changed. After a reload there is no previous element, so the neighbors must match again.
+ */
+export function resolveAnchor(anchor: Anchor, previous?: Element | null): Element | null {
+  if (
+    previous?.isConnected &&
+    previous.localName === anchor.tag &&
+    textOf(previous) === anchor.text &&
+    (!anchor.fingerprint || fingerprintOf(previous) === anchor.fingerprint)
+  ) {
+    return previous
+  }
+
   // A developer-made anchor is trusted.
   const own = anchor.selectors.anchor && query(`[data-comment-anchor="${CSS.escape(anchor.selectors.anchor)}"]`)
   if (own) return own
@@ -241,10 +265,10 @@ export function resolveAnchor(anchor: Anchor): Element | null {
     if (ownText === anchor.text && ownContext === anchor.context) exact.push(el)
     const context = anchor.context ? similarity(ownContext, anchor.context) : 1
     // Changed text needs the same neighbors: "plan A" and "plan B" headings are similar, their neighbors are not.
-    // Short text repeats on pages ("Learn more"), so it always needs them.
-    if ((short || text < 1) && context < MIN_CONTEXT) continue
-    // No neighbors to compare: changed text is only accepted at the same position.
-    if (!anchor.context && text < 1 && el !== byCss) continue
+    // Short text repeats on pages ("Learn more"), and so does repeated text: they always need them.
+    if ((short || anchor.repeated || text < 1) && context < MIN_CONTEXT) continue
+    // No neighbors to compare: changed text cannot be checked, and a position is no proof.
+    if (!anchor.context && text < 1) continue
     const score = text * 0.7 + context * 0.3
     if (!best || score > best.score) {
       second = best?.score ?? 0

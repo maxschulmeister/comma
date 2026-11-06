@@ -7,7 +7,7 @@ const bundle = execFileSync("bun", ["build", "e2e/anchor-entry.ts", "--target=br
 
 type Api = {
   createAnchor: (el: Element, at: { point: { x: number; y: number } } | { rect: DOMRectInit }) => Anchor
-  resolveAnchor: (anchor: Anchor) => Element | null
+  resolveAnchor: (anchor: Anchor, previous?: Element | null) => Element | null
   anchorBox: (anchor: Anchor, el: Element) => { x: number; y: number; width: number; height: number }
 }
 declare global {
@@ -275,4 +275,42 @@ test("an image with a new signed URL is still found", async ({ page }) => {
   await pin(page, "photo")
   await page.evaluate(() => document.querySelector('[data-fixture="photo"]')?.setAttribute("src", "/pixel.png?sig=two"))
   expect(await resolved(page)).toBe("photo")
+})
+
+test("text that repeats on the page needs its neighbors: a removed card does not move the pin", async ({ page }) => {
+  await open(page)
+  await pin(page, "quote-basic")
+  await page.evaluate(() => document.querySelector('[data-fixture="quote-basic"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+test("an image behind a proxy: another source is another image, a new size is not", async ({ page }) => {
+  await open(page)
+  await pin(page, "proxied")
+  const img = '[data-fixture="proxied"]'
+  await page.evaluate(
+    (s) => document.querySelector(s)?.setAttribute("src", "/image?url=photo-a.jpg&w=320&sig=two"),
+    img,
+  )
+  expect(await resolved(page)).toBe("proxied")
+  await page.evaluate(
+    (s) => document.querySelector(s)?.setAttribute("src", "/image?url=photo-b.jpg&w=640&sig=one"),
+    img,
+  )
+  expect(await resolved(page)).toBeNull()
+})
+
+test("on the open page, the same element stays when only its neighbors change", async ({ page }) => {
+  await open(page)
+  await pin(page, "pricing-h3")
+  await page.evaluate(() => {
+    ;(document.querySelector('[data-fixture="pricing-desc"]') as HTMLElement).textContent = "Plans for every team"
+  })
+  // After a reload the neighbors are new: a short text cannot be told apart, so it is detached.
+  expect(await resolved(page)).toBeNull()
+  // On the open page, the element found before is kept.
+  const kept = await page.evaluate(
+    () => window.commaAnchor.resolveAnchor(window.saved, window.target) === window.target,
+  )
+  expect(kept).toBe(true)
 })

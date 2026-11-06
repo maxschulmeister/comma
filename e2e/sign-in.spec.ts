@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { sign } from "hono/jwt"
-import { panel, testPath, toolbar } from "./helpers"
+import { panel, signIn, testPath, toolbar } from "./helpers"
 
 test("on another site, people sign in with the app in a popup", async ({ page }) => {
   // 127.0.0.1 is another site than the app (localhost).
@@ -93,6 +93,51 @@ test("signOut cancels a sign-in that is still on its way", async ({ page }) => {
   await page.waitForResponse("**/api/session/app")
   await page.waitForTimeout(200)
   await expect(toolbar(page).getByRole("button", { name: "Account", exact: true })).toBeVisible()
+})
+
+test("identify works while an old, expired session is cleared", async ({ page }) => {
+  await signIn(page, { token: "expired-or-bad", user: { id: "x", name: "Old" } })
+  // Order: identify starts, then the poll with the old session fails (401), then the sign-in answer arrives.
+  const gate = () => {
+    let open = () => {}
+    const opened = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    return { open, opened }
+  }
+  const poll = gate()
+  const signInAnswer = gate()
+  // Hold the request (not the answer) of the first poll: the server answers 401 when it gets it.
+  let firstPoll = true
+  await page.route("**/api/threads", async (route) => {
+    if (firstPoll) {
+      firstPoll = false
+      await poll.opened
+    }
+    await route.continue()
+  })
+  await page.route("**/api/session/app", async (route) => {
+    const response = await route.fetch()
+    await signInAnswer.opened
+    await route.fulfill({ response })
+  })
+  await page.goto(testPath("expired"))
+  await expect(toolbar(page)).toBeVisible()
+  const token = await sign(
+    { sub: "e2e:fresh", name: "Fresh", exp: Math.floor(Date.now() / 1000) + 120 },
+    "e2e-app-secret",
+    "HS256",
+  )
+  const sent = page.waitForRequest("**/api/session/app")
+  await page.evaluate(
+    (t) => void (window as unknown as { comma: { identify: (t: string) => Promise<void> } }).comma.identify(t),
+    token,
+  )
+  await sent
+  poll.open()
+  await expect(toolbar(page).getByRole("button", { name: "Account", exact: true })).toBeVisible()
+  signInAnswer.open()
+  await expect(toolbar(page).getByRole("button", { name: "Account: Fresh" })).toBeVisible()
 })
 
 test("a guest signs in with a name", async ({ page }) => {

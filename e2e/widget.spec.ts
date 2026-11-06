@@ -91,7 +91,7 @@ test.describe("comment mode", () => {
     const announcement = page.locator("[aria-live=polite]")
     for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowDown")
     await expect(announcement).toHaveText(
-      "Paragraph: A paragraph that people comment on in tests.. Press Enter to comment.",
+      "Paragraph: A paragraph that people comment on in tests. Press Enter to comment, Shift+Enter to comment on its area.",
     )
     await page.keyboard.press("Enter")
     await typeComment(page, newCommentPopover(page), "Picked with arrows")
@@ -115,6 +115,56 @@ test.describe("comment mode", () => {
     await page.getByRole("link", { name: "Side link" }).focus()
     await page.keyboard.press("Enter")
     await expect(newCommentPopover(page)).toBeVisible()
+  })
+
+  test("with the keyboard: Shift+Enter comments on the area of the picked element", async ({ page }) => {
+    await signIn(page, await guestSession("Area"))
+    await openTestPage(page, "area")
+    await page.keyboard.press("c")
+    await expect(overlay(page)).toBeAttached()
+    const announcement = page.locator("[aria-live=polite]")
+    // ↑ first picks the last element in view: the picture.
+    await page.keyboard.press("ArrowUp")
+    await expect(announcement).toContainText("Image: Picture")
+    await page.keyboard.press("Shift+Enter")
+    await typeComment(page, newCommentPopover(page), "The whole picture")
+    await page.keyboard.press("Enter")
+    await expect(threadPopover(page)).toContainText("The whole picture")
+    const region = await page.locator("[data-slot=pins] > div.border-primary").first().boundingBox()
+    const picture = await page.getByTestId("picture").boundingBox()
+    expect(Math.round(region?.width ?? 0)).toBe(Math.round(picture?.width ?? -1))
+  })
+
+  test("moving a region keeps its size", async ({ page }) => {
+    await signIn(page, await guestSession("Region mover"))
+    await openTestPage(page, "region-move")
+    await page.keyboard.press("c")
+    await expect(overlay(page)).toBeAttached()
+    const picture = await page.getByTestId("picture").boundingBox()
+    if (!picture) throw new Error("no box")
+    await page.mouse.move(picture.x + 20, picture.y + 20)
+    await page.mouse.down()
+    await page.mouse.move(picture.x + 120, picture.y + 60, { steps: 5 })
+    await page.mouse.up()
+    await typeComment(page, newCommentPopover(page), "Region to move")
+    await page.keyboard.press("Enter")
+    await endCommentMode(page)
+    const pin = await pins(page).first().boundingBox()
+    if (!pin) throw new Error("no pin")
+    const drop = { x: pin.x + 205, y: pin.y + 70 }
+    await page.mouse.move(pin.x + 5, pin.y + 20)
+    await page.mouse.down()
+    await page.mouse.move(drop.x, drop.y, { steps: 8 })
+    await page.mouse.up()
+    await pins(page).first().click()
+    const region = page.locator("[data-slot=pins] > div.border-primary").first()
+    await expect(region).toBeVisible()
+    const box = await region.boundingBox()
+    expect(Math.round(box?.width ?? 0)).toBe(100)
+    expect(Math.round(box?.height ?? 0)).toBe(40)
+    // The pin tip (the region's bottom-right corner) is where the pin was dropped.
+    expect(Math.abs((box?.x ?? 0) + (box?.width ?? 0) - drop.x)).toBeLessThan(2)
+    expect(Math.abs((box?.y ?? 0) + (box?.height ?? 0) - drop.y)).toBeLessThan(2)
   })
 
   test("a drag draws a region", async ({ page }) => {

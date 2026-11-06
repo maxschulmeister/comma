@@ -244,3 +244,23 @@ describe("rate limit", () => {
     expect(later.status).toBe(200)
   })
 })
+
+describe("revisions", () => {
+  test("every change gives the thread a higher updatedAt, also in the same millisecond", async () => {
+    const s = setup({ now: () => 1_000 })
+    const author = await s.guest("Author")
+    const created = await s.request("POST", "/api/threads", {
+      token: author.token,
+      body: { page: "/", anchor, body: text("x") },
+    })
+    const id = created.json.thread.id
+    const commentId = created.json.thread.comments[0].id
+    const a = await s.request("PUT", `/api/comments/${commentId}/reactions/${encodeURIComponent("👍")}`, {
+      token: author.token,
+    })
+    const b = await s.request("POST", `/api/threads/${id}/comments`, { token: author.token, body: { body: text("y") } })
+    const c = await s.request("PATCH", `/api/threads/${id}`, { token: author.token, body: { status: "resolved" } })
+    const revisions = [created, a, b, c].map((r) => r.json.thread.updatedAt)
+    expect(revisions).toEqual([1_000, 1_001, 1_002, 1_003])
+  })
+})

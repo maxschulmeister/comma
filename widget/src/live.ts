@@ -9,6 +9,7 @@ type Listener = () => void
 // --- Resolved elements, per thread on the current page ---
 
 let resolved = new Map<string, Element | null>()
+const anchorKeys = new Map<string, string>()
 const resolvedListeners = new Set<Listener>()
 let lastThreads: Thread[] | null = null
 let lastPage = ""
@@ -22,7 +23,11 @@ function resolveAll() {
   let changed = false
   for (const thread of threads) {
     if (thread.page !== page) continue
-    const el = resolveAnchor(thread.anchor)
+    // The element found before for the same anchor stays while it keeps its text (see resolveAnchor).
+    const key = JSON.stringify(thread.anchor)
+    const before = anchorKeys.get(thread.id) === key ? resolved.get(thread.id) : null
+    const el = resolveAnchor(thread.anchor, before)
+    anchorKeys.set(thread.id, key)
     next.set(thread.id, el)
     if (resolved.get(thread.id) !== el) changed = true
   }

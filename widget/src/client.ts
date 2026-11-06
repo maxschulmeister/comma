@@ -41,14 +41,11 @@ function saveSession(session: Session | null) {
  */
 const isCurrent = (session: Session | null) => getState().session?.token === session?.token
 
-async function request<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-  headers: Record<string, string> = {},
-): Promise<T> {
-  const { server, session } = getState()
-  const init: RequestInit = { method, headers: { ...headers }, credentials: "omit" }
+/** `signedIn: false`: no session (sign-in, project info). The answer does not depend on the current session. */
+async function request<T>(method: string, path: string, body?: unknown, signedIn = true): Promise<T> {
+  const { server } = getState()
+  const session = signedIn ? getState().session : null
+  const init: RequestInit = { method, headers: {}, credentials: "omit" }
   const h = init.headers as Record<string, string>
   if (session) h.authorization = `Bearer ${session.token}`
   if (body instanceof FormData) init.body = body
@@ -58,16 +55,23 @@ async function request<T>(
   }
   const res = await fetch(`${server}${path}`, init)
   const data = await res.json().catch(() => ({}))
-  if (res.status === 401 && session && isCurrent(session)) saveSession(null)
-  // The answer belongs to a session that ended (sign-out, other user): it must not change the store.
-  if (!isCurrent(session)) throw new ApiError(401, "You are signed out.")
+  if (signedIn) {
+    if (res.status === 401 && session && isCurrent(session)) saveSession(null)
+    // The answer belongs to a session that ended (sign-out, other user): it must not change the store.
+    if (!isCurrent(session)) throw new ApiError(401, "You are signed out.")
+  }
   if (!res.ok) throw new ApiError(res.status, data.error ?? "Something went wrong. Try again.")
   return data as T
 }
 
 export async function loadProject() {
   const { project } = getState()
-  const info = await request<{ popupSignIn: boolean }>("GET", `/api/projects/${encodeURIComponent(project)}`)
+  const info = await request<{ popupSignIn: boolean }>(
+    "GET",
+    `/api/projects/${encodeURIComponent(project)}`,
+    undefined,
+    false,
+  )
   setState({ popupSignIn: info.popupSignIn })
 }
 
@@ -79,7 +83,7 @@ let authAttempt = 0
 
 async function signIn(path: string, body: Record<string, string>) {
   const attempt = ++authAttempt
-  const session = await request<Session>("POST", path, { project: getState().project, ...body })
+  const session = await request<Session>("POST", path, { project: getState().project, ...body }, false)
   if (attempt === authAttempt) saveSession(session)
 }
 
@@ -202,14 +206,23 @@ export function startPolling() {
 // Threads deleted here. A late answer about one of them must not bring it back.
 const deleted = new Set<string>()
 
-function applyThread({ thread, users }: ThreadResult) {
+// Read changes per thread: the number of the latest one, and how many are on their way.
+const readLatest = new Map<string, number>()
+const readInFlight = new Map<string, number>()
+let readCount = 0
+
+/** `readAnswer`: the number of the read change this answer is for. */
+function applyThread({ thread, users }: ThreadResult, readAnswer?: number) {
   etag = null
   changes++
   if (deleted.has(thread.id)) return thread
   setState((s) => {
     const current = s.threads.find((t) => t.id === thread.id)
-    // Answers can arrive out of order. An older thread keeps the newer one, with its read state.
-    const next = current && current.updatedAt > thread.updatedAt ? { ...current, unread: thread.unread } : thread
+    // Answers can arrive out of order: an older thread (lower revision) does not replace a newer one.
+    // While a read change is on its way, only its own answer sets the read state.
+    let next = current && current.updatedAt > thread.updatedAt ? current : thread
+    const keepRead = readAnswer ? readLatest.get(thread.id) !== readAnswer : (readInFlight.get(thread.id) ?? 0) > 0
+    if (current && keepRead) next = { ...next, unread: current.unread }
     return {
       threads: current ? s.threads.map((t) => (t.id === thread.id ? next : t)) : [...s.threads, next],
       users: { ...s.users, ...users },
@@ -275,16 +288,22 @@ export async function setRead(thread: Thread, read: boolean) {
   const setUnread = (unread: boolean) =>
     setState((s) => ({ threads: s.threads.map((t) => (t.id === thread.id ? { ...t, unread } : t)) }))
   const { session } = getState()
+  const number = ++readCount
+  readLatest.set(thread.id, number)
+  readInFlight.set(thread.id, (readInFlight.get(thread.id) ?? 0) + 1)
   changes++
   setUnread(!read)
   try {
-    return applyThread(await request<ThreadResult>("POST", `/api/threads/${thread.id}/read`, { read }))
+    // An older read change (open = read, then "Mark as unread") must not undo the newer one.
+    return applyThread(await request<ThreadResult>("POST", `/api/threads/${thread.id}/read`, { read }), number)
   } catch (error) {
-    if (isCurrent(session)) {
+    if (readLatest.get(thread.id) === number && isCurrent(session)) {
       etag = null
       setUnread(thread.unread)
     }
     throw error
+  } finally {
+    readInFlight.set(thread.id, (readInFlight.get(thread.id) ?? 1) - 1)
   }
 }
 

@@ -54,6 +54,7 @@ const AnchorSchema = z
     context: z.string().max(300),
     twins: z.number().int().min(2).max(100_000).optional(),
     fingerprint: z.string().max(16).optional(),
+    repeated: z.boolean().optional(),
     point: Point.optional(),
     rect: Point.extend({ width: z.number().finite(), height: z.number().finite() }).optional(),
     viewport: z.number().int().min(0).max(100_000),
@@ -107,7 +108,9 @@ export function createApp(options: AppOptions) {
         "insert into versions (project, version) values (?, 1) on conflict (project) do update set version = version + 1",
       )
       .run(project)
-  const touch = (threadId: string) => db.query("update threads set updated_at = ? where id = ?").run(now(), threadId)
+  // `updated_at` is the thread revision: it always grows, also for two changes in the same millisecond.
+  const touch = (threadId: string) =>
+    db.query("update threads set updated_at = max(?, updated_at + 1) where id = ?").run(now(), threadId)
   const markRead = (userId: string, threadId: string) => {
     db.query(
       `insert into reads (user_id, thread_id, read_at, unread) values (?, ?, ?, 0)
@@ -340,17 +343,13 @@ export function createApp(options: AppOptions) {
     if ("status" in input) {
       if (input.status !== row.status) {
         const resolved = input.status === "resolved"
-        db.query("update threads set status = ?, resolved_at = ?, resolved_by = ?, updated_at = ? where id = ?").run(
-          input.status,
-          resolved ? now() : null,
-          resolved ? user.id : null,
-          now(),
-          row.id,
-        )
+        db.query(
+          "update threads set status = ?, resolved_at = ?, resolved_by = ?, updated_at = max(?, updated_at + 1) where id = ?",
+        ).run(input.status, resolved ? now() : null, resolved ? user.id : null, now(), row.id)
       }
     } else {
       if (row.created_by !== user.id) throw new HTTPException(403, { message: "Only the author can move this comment" })
-      db.query("update threads set page = ?, anchor = ?, updated_at = ? where id = ?").run(
+      db.query("update threads set page = ?, anchor = ?, updated_at = max(?, updated_at + 1) where id = ?").run(
         input.page,
         JSON.stringify(input.anchor),
         now(),

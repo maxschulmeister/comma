@@ -146,10 +146,12 @@ export function Composer({
     editor.setEditable(false)
     // If the popover closes while it sends, the text is saved as a draft (see cleanup). The user can open it and
     // write something new. Delete the saved draft only if it is still the text that was sent.
-    const sent = JSON.stringify(editor.getJSON())
+    const snapshot = (json: JSONContent | undefined, list: Upload[]) => JSON.stringify([json, list.map((u) => u.key)])
+    const sent = snapshot(editor.getJSON(), current)
     try {
       await onSubmit(editor.isEmpty ? EMPTY_DOC : trimDoc(editor.getJSON()), files)
-      if (JSON.stringify(drafts.get(key)?.json) === sent) drafts.delete(key)
+      const saved = drafts.get(key)
+      if (saved && snapshot(saved.json, saved.uploads) === sent) drafts.delete(key)
       if (!editor.isDestroyed) editor.commands.clearContent(true)
       setUploads([])
     } catch (e) {

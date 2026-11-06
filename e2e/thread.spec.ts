@@ -226,6 +226,37 @@ test("a late answer does not bring back a deleted thread", async ({ page }) => {
   await expect(pins(page)).toHaveCount(0)
 })
 
+test("an old read answer does not undo Mark as unread", async ({ page, context }) => {
+  await withComment(page, "read-order", "Writer")
+  const other = await context.browser()?.newPage()
+  if (!other) throw new Error("no browser")
+  await signIn(other, await guestSession("Reader"))
+  // The first read change (opening marks it read) is answered late.
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let first = true
+  await other.route("**/api/threads/*/read", async (route) => {
+    const response = await route.fetch()
+    if (first) {
+      first = false
+      await held
+    }
+    await route.fulfill({ response })
+  })
+  await other.goto(testPath("read-order"))
+  await pins(other).first().click()
+  const thread = threadPopover(other)
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await other.getByRole("menuitem", { name: "Mark as unread" }).click()
+  await expect(pins(other).first()).toHaveAccessibleName(/unread/)
+  release()
+  await other.waitForTimeout(300)
+  await expect(pins(other).first()).toHaveAccessibleName(/unread/)
+  await other.close()
+})
+
 test("an unsaved edit goes away when another user signs in", async ({ page }) => {
   const thread = await withComment(page, "edit-identify", "Editor")
   const first = thread.getByRole("article").first()
