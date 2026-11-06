@@ -206,3 +206,34 @@ test("a unique element that gets an identical copy is detached", async ({ page }
   })
   expect(await resolved(page)).toBeNull()
 })
+
+test("look-alikes where some share a link: a swap with the other link detaches", async ({ page }) => {
+  await open(page)
+  await pin(page, "doc-x1")
+  await page.evaluate(() => {
+    const cards = document.querySelector('[data-fixture="links3"]') as HTMLElement
+    cards.prepend(cards.lastElementChild as Element)
+  })
+  expect(await resolved(page)).not.toBe("doc-y")
+})
+
+test("a unique link that now points elsewhere is detached", async ({ page }) => {
+  await open(page)
+  const anchor = await page.evaluate(() => {
+    const el = document.querySelector('header a[href="/pricing"]') as Element
+    const r = el.getBoundingClientRect()
+    return window.commaAnchor.createAnchor(el, { point: { x: r.left + 1, y: r.top + 1 } })
+  })
+  await page.evaluate(() => document.querySelector('header a[href="/pricing"]')?.setAttribute("href", "/other"))
+  expect(await resolved(page, anchor)).toBeNull()
+})
+
+test("a stable id wins over a look-alike that took the old context", async ({ page }) => {
+  await open(page)
+  await pin(page, "note")
+  await page.evaluate(() => {
+    ;(document.querySelector('[data-fixture="intro-1"]') as HTMLElement).textContent = "Changed"
+    ;(document.querySelector('[data-fixture="intro-2"]') as HTMLElement).textContent = "Intro"
+  })
+  expect(await resolved(page)).toBe("note")
+})

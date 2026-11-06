@@ -39,3 +39,10 @@ export function pressInsideWidget(details: { reason: string; event?: Event }) {
   if (details.reason !== "outside-press" || !details.event) return false
   return details.event.composedPath().some((node) => node instanceof Element && node.localName === HOST_TAG)
 }
+
+/** True when the event comes from a part of the widget (in its shadow root) that matches the selector. */
+export function fromWidgetPart(event: Event, selector: string) {
+  const path = event.composedPath()
+  const host = path.findIndex((n) => n instanceof Element && n.localName === HOST_TAG)
+  return host > 0 && path.slice(0, host).some((n) => n instanceof Element && n.matches(selector))
+}

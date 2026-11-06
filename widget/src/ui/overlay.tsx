@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { type Box, createAnchor } from "@/anchor"
 import { moveThread } from "@/client"
-import { elementAt, HOST_TAG, isTyping } from "@/lib/dom"
+import { elementAt, fromWidgetPart, HOST_TAG, isTyping } from "@/lib/dom"
 import { useLayoutTick } from "@/live"
 import { getState, setState, useStore } from "@/store"
 
@@ -67,12 +67,7 @@ const center = (el: Element) => {
 
 // Keys in the panel or in a popup belong to them.
 const fromWidgetUi = (event: Event) =>
-  event
-    .composedPath()
-    .some(
-      (n) =>
-        n instanceof Element && (n.localName === "aside" || n.matches("[role=dialog],[role=alertdialog],[role=menu]")),
-    )
+  fromWidgetPart(event, "[data-slot=panel],[role=dialog],[role=alertdialog],[role=menu]")
 
 // Comment mode: hover outlines the element under the cursor, click pins a comment to it,
 // drag draws a region. On touch, a tap pins a comment and the page still scrolls.

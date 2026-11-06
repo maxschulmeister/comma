@@ -70,7 +70,8 @@ function suggestionBridge(kind: SuggestionState["kind"], options: EditorOptions,
         rect: () => current.clientRect?.() ?? null,
         select: (i) => {
           const item = current.items[i]
-          if (item) current.command(item)
+          // Read-only (sending): commands would still change the text.
+          if (item && current.editor.isEditable) current.command(item)
         },
       })
     }
@@ -87,6 +88,7 @@ function suggestionBridge(kind: SuggestionState["kind"], options: EditorOptions,
       },
       onKeyDown({ event }: SuggestionKeyDownProps) {
         if (!props || props.items.length === 0) return false
+        if (!props.editor.isEditable) return true
         const count = props.items.length
         if (event.key === "ArrowDown") index = (index + 1) % count
         else if (event.key === "ArrowUp") index = (index - 1 + count) % count

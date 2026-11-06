@@ -6,6 +6,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { Popover, PopoverContent } from "@/components/ui/popover"
 import { elementAt, pressInsideWidget } from "@/lib/dom"
 import { plural, timeAgo } from "@/lib/format"
+import { NARROW, useMedia } from "@/lib/media"
 import { pageBox, useLayoutTick, useResolved } from "@/live"
 import { type Draft, getState, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
@@ -50,6 +51,10 @@ export function PinsLayer() {
   const pinsVisible = useStore((s) => s.pinsVisible)
   const openThreadId = useStore((s) => s.openThreadId)
   const draft = useStore((s) => s.draft)
+  // On narrow screens the panel covers the page: pins behind it take no focus.
+  const panelOpen = useStore((s) => s.panelOpen)
+  const narrow = useMedia(NARROW)
+  const covered = panelOpen && narrow
   const resolved = useResolved()
   useLayoutTick()
   const [hovered, setHovered] = useState<string | null>(null)
@@ -69,7 +74,7 @@ export function PinsLayer() {
   const regions = items.filter((i) => i.thread.anchor.rect && (i.thread.id === openThreadId || i.thread.id === hovered))
 
   return (
-    <div className="absolute top-0 left-0" data-slot="pins">
+    <div className="absolute top-0 left-0" data-slot="pins" inert={covered}>
       {regions.map(({ thread, box }) => (
         <Region key={thread.id} box={box} />
       ))}

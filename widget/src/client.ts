@@ -35,6 +35,12 @@ function saveSession(session: Session | null) {
   if (session) void refresh()
 }
 
+/**
+ * True while the session that started a request is still the signed-in session.
+ * By token: a poll replaces the session object with a fresh profile, the session stays the same.
+ */
+const isCurrent = (session: Session | null) => getState().session?.token === session?.token
+
 async function request<T>(
   method: string,
   path: string,
@@ -52,9 +58,9 @@ async function request<T>(
   }
   const res = await fetch(`${server}${path}`, init)
   const data = await res.json().catch(() => ({}))
-  if (res.status === 401 && session && getState().session === session) saveSession(null)
+  if (res.status === 401 && session && isCurrent(session)) saveSession(null)
   // The answer belongs to a session that ended (sign-out, other user): it must not change the store.
-  if (getState().session !== session) throw new ApiError(401, "You are signed out.")
+  if (!isCurrent(session)) throw new ApiError(401, "You are signed out.")
   if (!res.ok) throw new ApiError(res.status, data.error ?? "Something went wrong. Try again.")
   return data as T
 }
@@ -131,7 +137,7 @@ export function refresh(): Promise<void> {
       const before = changes
       const result = await requestThreads()
       stale = before !== changes
-      if (result && !stale && getState().session === session) {
+      if (result && !stale && isCurrent(session)) {
         const { data } = result
         etag = result.etag
         setState({
@@ -160,11 +166,11 @@ async function requestThreads() {
   if (res.status === 304) return null
   if (res.status === 401) {
     // Only this session expired. A new one (identify, sign-in) may have started while this request ran.
-    if (getState().session === session) saveSession(null)
+    if (isCurrent(session)) saveSession(null)
     return null
   }
   if (!res.ok) throw new ApiError(res.status, "Could not load comments")
-  if (getState().session !== session) return null
+  if (!isCurrent(session)) return null
   // The caller keeps the ETag only if it uses the data.
   const data = (await res.json()) as { me: User; threads: Thread[]; users: Record<string, User> }
   return { data, etag: res.headers.get("etag") }
@@ -191,9 +197,11 @@ function applyThread({ thread, users }: ThreadResult) {
   etag = null
   changes++
   setState((s) => {
-    const exists = s.threads.some((t) => t.id === thread.id)
+    const current = s.threads.find((t) => t.id === thread.id)
+    // Answers can arrive out of order. An older thread keeps the newer one, with its read state.
+    const next = current && current.updatedAt > thread.updatedAt ? { ...current, unread: thread.unread } : thread
     return {
-      threads: exists ? s.threads.map((t) => (t.id === thread.id ? thread : t)) : [...s.threads, thread],
+      threads: current ? s.threads.map((t) => (t.id === thread.id ? next : t)) : [...s.threads, next],
       users: { ...s.users, ...users },
     }
   })
@@ -250,7 +258,7 @@ export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
   try {
     return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { page, anchor }))
   } catch (error) {
-    if (getState().session === session) applyThread({ thread, users: {} })
+    if (isCurrent(session)) applyThread({ thread, users: {} })
     throw error
   }
 }
@@ -264,7 +272,7 @@ export async function setRead(thread: Thread, read: boolean) {
   try {
     return applyThread(await request<ThreadResult>("POST", `/api/threads/${thread.id}/read`, { read }))
   } catch (error) {
-    if (getState().session === session) {
+    if (isCurrent(session)) {
       etag = null
       setUnread(thread.unread)
     }

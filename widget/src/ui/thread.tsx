@@ -195,7 +195,8 @@ export function ThreadView({
         )}
         {thread.comments.map((comment, index) => (
           <CommentItem
-            key={comment.id}
+            // A new user gets new items: an unsaved edit of the previous user goes away.
+            key={`${comment.id}:${me?.id ?? ""}`}
             comment={comment}
             onDelete={() =>
               setConfirm(
@@ -323,7 +324,7 @@ function CommentItem({
             </DropdownMenu>
           )}
         </div>
-        {editing ? (
+        {editing && own ? (
           <Composer
             draftKey={`edit:${comment.id}`}
             initial={comment.body as never}

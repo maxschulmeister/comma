@@ -140,6 +140,7 @@ export function Composer({
     setSending(true)
     sendingRef.current = true
     setLinkOpen(false)
+    setSuggestion(null)
     setError(null)
     // No typing while it sends: the text is cleared when the server has it.
     editor.setEditable(false)
@@ -237,7 +238,7 @@ export function Composer({
         {!ready && <p className="text-muted-foreground text-xs/relaxed">{placeholder}</p>}
       </div>
 
-      {suggestion && <SuggestionList state={suggestion} id={listId} />}
+      {suggestion && !sending && <SuggestionList state={suggestion} id={listId} />}
 
       {linkOpen && editorRef.current && <LinkInput editor={editorRef.current} onClose={() => setLinkOpen(false)} />}
 

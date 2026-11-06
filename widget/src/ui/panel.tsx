@@ -17,6 +17,7 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Kbd } from "@/components/ui/kbd"
 import { plural, timeAgo } from "@/lib/format"
+import { NARROW } from "@/lib/media"
 import { useResolved } from "@/live"
 import { type Filters, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
@@ -26,7 +27,6 @@ import { threadLink } from "./thread"
 import { UserAvatar } from "./user-avatar"
 
 export const PANEL_WIDTH = 360
-export const NARROW = "(max-width: 639px)"
 
 const lastActivity = (t: Thread) => t.comments.at(-1)?.createdAt ?? t.updatedAt
 

@@ -10,13 +10,13 @@ export type Anchor = {
   text: string
   /** Text of nearby elements. Tells repeated elements apart ("Learn more" in three cards). */
   context: string
-  /**
-   * Set when other elements had the same tag, text and context (look-alikes) when the comment was made.
-   * `fingerprint`: hash of the links, images and labels in the element. It tells this one apart.
-   * `twins`: the look-alikes are fully identical. Only their position tells them apart, so they must all still be
-   * there. If identical twins swap places, nothing on the page shows it, so the pin stays at the position.
-   */
+  /** Hash of the element's identity: its link or image and its label, and the links and images in it. */
   fingerprint?: string
+  /**
+   * Number of look-alikes (same tag, text, context and fingerprint) when the comment was made, if more than one.
+   * Only their position tells them apart, so they must all still be there. If such twins swap places, nothing on
+   * the page shows it, so the pin stays at the position.
+   */
   twins?: number
   /** Pin: position in % of the element box. */
   point?: { x: number; y: number }
@@ -119,12 +119,9 @@ export function createAnchor(el: Element, at: { point: { x: number; y: number } 
   if (own) anchor.selectors.anchor = own
   if (el.id && isStableId(el.id)) anchor.selectors.id = el.id
   anchor.selectors.css = cssPath(el)
-  const lookAlikes = lookAlikesOf(anchor)
-  if (lookAlikes.length > 1) {
-    const fingerprint = fingerprintOf(el)
-    if (lookAlikes.filter((x) => fingerprintOf(x) === fingerprint).length === 1) anchor.fingerprint = fingerprint
-    else anchor.twins = lookAlikes.length
-  }
+  anchor.fingerprint = fingerprintOf(el)
+  const twins = lookAlikesOf(anchor).length
+  if (twins > 1) anchor.twins = twins
   if ("point" in at) anchor.point = { x: round(px(at.point.x)), y: round(py(at.point.y)) }
   else {
     const { x, y, width, height } = at.rect
@@ -160,26 +157,37 @@ export function similarity(a: string, b: string) {
   return (2 * common) / (a.length - 1 + (b.length - 1))
 }
 
-// Elements with the same tag, text and context.
-function lookAlikesOf(anchor: Pick<Anchor, "tag" | "text" | "context">) {
+// Elements with the same tag, text, context and fingerprint.
+function lookAlikesOf(anchor: Pick<Anchor, "tag" | "text" | "context" | "fingerprint">) {
   return Array.from(document.getElementsByTagName(anchor.tag)).filter(
-    (el) => !el.closest("comma-widget") && textOf(el) === anchor.text && contextOf(el) === anchor.context,
+    (el) =>
+      !el.closest("comma-widget") &&
+      textOf(el) === anchor.text &&
+      contextOf(el) === anchor.context &&
+      (!anchor.fingerprint || fingerprintOf(el) === anchor.fingerprint),
   )
 }
 
-const IDENTITY = ["href", "src", "alt", "aria-label", "title", "name", "value", "data-testid"]
+// Attributes that say what an element is or where it goes. Not `title`, `value` or query strings: they change often.
+const OWN_IDENTITY = ["href", "src", "alt", "aria-label", "name", "data-testid"]
+const CHILD_IDENTITY = ["href", "src"]
+const path = (url: string) => url.split(/[?#]/)[0] ?? ""
 
-// Hash (FNV-1a) of the identity attributes of the element and its first 50 descendants with one.
+// Hash (FNV-1a) of the identity attributes of the element and of the links and images in it (first 50).
 function fingerprintOf(el: Element) {
-  const nodes = [el, ...Array.from(el.querySelectorAll(IDENTITY.map((a) => `[${a}]`).join(","))).slice(0, 50)]
-  let hash = 0x811c9dc5
-  for (const node of nodes) {
-    for (const name of IDENTITY) {
-      const value = node.getAttribute(name)
-      if (value === null) continue
-      for (const char of `${name}=${value};`) hash = Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193)
+  const parts: string[] = []
+  for (const name of OWN_IDENTITY) {
+    const value = el.getAttribute(name)
+    if (value !== null) parts.push(`${name}=${name === "href" || name === "src" ? path(value) : value}`)
+  }
+  for (const child of Array.from(el.querySelectorAll("[href],[src]")).slice(0, 50)) {
+    for (const name of CHILD_IDENTITY) {
+      const value = child.getAttribute(name)
+      if (value !== null) parts.push(`>${name}=${path(value)}`)
     }
   }
+  let hash = 0x811c9dc5
+  for (const char of parts.join(";")) hash = Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193)
   return (hash >>> 0).toString(16)
 }
 
@@ -199,8 +207,15 @@ export function resolveAnchor(anchor: Anchor): Element | null {
 
   const byId = query(anchor.selectors.id && `#${CSS.escape(anchor.selectors.id)}`)
   const byCss = query(anchor.selectors.css)
+  // Anchors made before fingerprints existed have none: then any fingerprint is fine.
+  const sameIdentity = (el: Element) => !anchor.fingerprint || fingerprintOf(el) === anchor.fingerprint
 
-  // One pass over all elements with the same tag: exact look-alikes, and scores for changed text.
+  // A stable id is proof, when the element still has about the same text and the same identity.
+  if (byId?.localName === anchor.tag && similarity(textOf(byId), anchor.text) >= MIN_TEXT && sameIdentity(byId)) {
+    return byId
+  }
+
+  // One pass over all elements with the same tag and identity: exact look-alikes, and scores for changed text.
   const short = anchor.text.length < SHORT_TEXT
   const exact: Element[] = []
   let best: { el: Element; score: number } | null = null
@@ -209,34 +224,29 @@ export function resolveAnchor(anchor: Anchor): Element | null {
     if (el.closest("comma-widget")) continue
     const ownText = textOf(el)
     const text = similarity(ownText, anchor.text)
-    if (text < MIN_TEXT) continue
+    if (text < MIN_TEXT || !sameIdentity(el)) continue
     const ownContext = contextOf(el)
     if (ownText === anchor.text && ownContext === anchor.context) exact.push(el)
     const context = anchor.context ? similarity(ownContext, anchor.context) : 1
     if (short && context < MIN_CONTEXT) continue
-    let score = text * 0.7 + context * 0.3
-    // A stable id is proof. A position (CSS path) is not: it can point to a new look-alike.
-    if (el === byId) score += 0.05
+    const score = text * 0.7 + context * 0.3
     if (!best || score > best.score) {
       second = best?.score ?? 0
       best = { el, score }
     } else if (score > second) second = score
   }
 
-  if (anchor.fingerprint) {
-    const matches = exact.filter((el) => fingerprintOf(el) === anchor.fingerprint)
-    return matches.length === 1 ? (matches[0] ?? null) : null
-  }
+  // Twins: they must all still be there, and the position (CSS path) must point to one of them.
   if ((anchor.twins ?? 1) > 1) {
     if (exact.length !== anchor.twins) return null
-    const el = byId ?? byCss
-    return el && exact.includes(el) ? el : null
+    return byCss && exact.includes(byCss) ? byCss : null
   }
   if (exact.length === 1) return exact[0] ?? null
-  // It was unique. Now there are identical copies: only a stable id can tell which one it is.
-  if (exact.length > 1) return byId && exact.includes(byId) ? byId : null
+  // It was unique. Now there are identical copies: no way to tell which one it is.
+  if (exact.length > 1) return null
 
   // The text or the context changed. The best must be clearly better than the second.
+  // A position (CSS path) is no proof here: it can point to a new look-alike.
   if (!best || best.score - second < MIN_LEAD) return null
   return best.el
 }

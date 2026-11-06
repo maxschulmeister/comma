@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { useResolved } from "./live"
+import { pageBox, useResolved } from "./live"
 import { getState, setState, useStore } from "./store"
 import { CommentOverlay } from "./ui/overlay"
 import { Panel } from "./ui/panel"
@@ -22,8 +22,9 @@ function useDeepLink() {
       if (!thread) return
       const el = resolved.get(id)
       el?.scrollIntoView({ block: "center" })
-      // A detached thread opens next to its item in the panel.
-      setState({ openThreadId: id, panelOpen: getState().panelOpen || !el })
+      // Without a visible pin (detached, or the element is hidden), the thread opens next to its item in the panel.
+      const pin = el && pageBox(thread.anchor, el)
+      setState({ openThreadId: id, panelOpen: getState().panelOpen || !pin })
       history.replaceState(history.state, "", location.pathname + location.search)
     }
     open()

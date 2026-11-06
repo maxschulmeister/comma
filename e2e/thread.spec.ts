@@ -1,4 +1,5 @@
 import { type BrowserContext, expect, type Page, test } from "@playwright/test"
+import { sign } from "hono/jwt"
 import {
   addComment,
   appSession,
@@ -153,6 +154,82 @@ test("the author moves the pin with the keyboard", async ({ page }) => {
       Math.abs(((await pins(page).first().boundingBox())?.x ?? 0) - ((link?.x ?? 0) + (link?.width ?? 0) / 2)),
     )
     .toBeLessThan(2)
+})
+
+// Holds requests that match until the returned function is called. "answer": the server answers at once, the
+// page gets the answer late. "request": the request reaches the server late.
+async function hold(page: Page, pattern: string, late: "request" | "answer" = "request") {
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route(pattern, async (route) => {
+    if (late === "request") {
+      await held
+      return route.continue()
+    }
+    const response = await route.fetch()
+    await held
+    await route.fulfill({ response })
+  })
+  return release
+}
+
+test("a poll during a slow reply does not lose the reply", async ({ page }) => {
+  const thread = await withComment(page, "slow-reply", "Slow")
+  const release = await hold(page, "**/api/threads/*/comments")
+  await typeComment(page, thread, "Slow reply")
+  await page.keyboard.press("Enter")
+  // A poll finishes while the reply is still on its way.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await page.waitForResponse("**/api/threads")
+  release()
+  await expect(thread.getByRole("article")).toHaveCount(2)
+  await expect(thread.locator("[data-slot=composer] .ProseMirror")).not.toContainText("Slow reply")
+  await expect(thread.getByRole("alert")).toHaveCount(0)
+})
+
+test("an old answer does not hide a newer reply", async ({ page, context }) => {
+  await withComment(page, "old-answer", "First")
+  const other = await context.browser()?.newPage()
+  if (!other) throw new Error("no browser")
+  await signIn(other, await guestSession("Second"))
+  // Opening the thread marks it read. That answer comes late.
+  const release = await hold(other, "**/api/threads/*/read", "answer")
+  await other.goto(testPath("old-answer"))
+  await pins(other).first().click()
+  const thread = threadPopover(other)
+  await typeComment(other, thread, "Newer reply")
+  await other.keyboard.press("Enter")
+  await expect(thread.getByRole("article")).toHaveCount(2)
+  release()
+  await other.waitForResponse("**/api/threads/*/read")
+  await other.waitForTimeout(200)
+  await expect(thread.getByRole("article")).toHaveCount(2)
+  await other.close()
+})
+
+test("an unsaved edit goes away when another user signs in", async ({ page }) => {
+  const thread = await withComment(page, "edit-identify", "Editor")
+  const first = thread.getByRole("article").first()
+  await first.hover()
+  await first.getByRole("button", { name: "Comment actions" }).click()
+  await page.getByRole("menuitem", { name: "Edit" }).click()
+  await first.locator(".ProseMirror").click()
+  await page.keyboard.type(" unsaved change")
+  const token = await sign(
+    { sub: "e2e:edit-other", name: "Someone else", exp: Math.floor(Date.now() / 1000) + 120 },
+    "e2e-app-secret",
+    "HS256",
+  )
+  await page.evaluate(
+    (t) => (window as unknown as { comma: { identify: (t: string) => void } }).comma.identify(t),
+    token,
+  )
+  await expect(
+    page.getByRole("toolbar", { name: "Comments" }).getByRole("button", { name: "Account: Someone else" }),
+  ).toBeVisible()
+  await expect(thread).not.toContainText("unsaved change")
 })
 
 test("copy link and mark as unread", async ({ page, context, browserName }) => {

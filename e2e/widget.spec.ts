@@ -102,6 +102,21 @@ test.describe("comment mode", () => {
     expect(Math.abs((pin?.x ?? 0) - ((lead?.x ?? 0) + (lead?.width ?? 0) / 2))).toBeLessThan(2)
   })
 
+  test("with the keyboard: elements in the page's own sidebar work too", async ({ page }) => {
+    await signIn(page, await guestSession("Sidebar"))
+    await openTestPage(page, "sidebar")
+    await page.evaluate(() => {
+      const aside = document.createElement("aside")
+      aside.innerHTML = '<a href="#side">Side link</a>'
+      document.body.prepend(aside)
+    })
+    await page.keyboard.press("c")
+    await expect(overlay(page)).toBeAttached()
+    await page.getByRole("link", { name: "Side link" }).focus()
+    await page.keyboard.press("Enter")
+    await expect(newCommentPopover(page)).toBeVisible()
+  })
+
   test("a drag draws a region", async ({ page }) => {
     await signIn(page, await guestSession("Region"))
     await openTestPage(page, "region")

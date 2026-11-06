@@ -1,7 +1,7 @@
-import { isTyping } from "@/lib/dom"
+import { fromWidgetPart, isTyping } from "@/lib/dom"
+import { NARROW } from "@/lib/media"
 import { getState, setState } from "@/store"
 import { preloadEditor } from "./composer"
-import { NARROW } from "./panel"
 
 const PINS_KEY = "comma:pins"
 
@@ -36,7 +36,7 @@ export function startShortcuts() {
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTyping(event)) return
     // In the panel, Escape closes the panel (see Panel).
-    if (event.key === "Escape" && event.composedPath().some((n) => n instanceof Element && n.localName === "aside")) {
+    if (event.key === "Escape" && fromWidgetPart(event, "[data-slot=panel]")) {
       return
     }
     const state = getState()
