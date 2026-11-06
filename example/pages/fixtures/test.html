@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Test page</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="site-header"><a class="logo" href="/">Example</a><nav><a href="/">Home</a></nav></header>
+    <main>
+      <section class="hero">
+        <h1 data-testid="title">Test page title</h1>
+        <p data-testid="lead">A paragraph that people comment on in tests.</p>
+      </section>
+      <div class="grid" id="cards">
+        <div class="card"><h3>Alpha</h3><p data-testid="alpha">First card text.</p></div>
+        <div class="card"><h3>Beta</h3><p data-testid="beta">Second card text.</p></div>
+      </div>
+      <div class="picture" data-testid="picture" role="img" aria-label="Picture"></div>
+    </main>
+    <script src="{{COMMA_URL}}/c.js" data-project="example" defer></script>
+  </body>
+</html>

@@ -1,0 +1,389 @@
+import { ArrowUpIcon, AtIcon, ImageIcon, LinkIcon, XIcon } from "@phosphor-icons/react"
+import { cn } from "cn"
+import { type ClipboardEvent, type DragEvent, useEffect, useRef, useState } from "react"
+import { searchUsers, uploadFile } from "@/client"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
+import type { Editor, EditorOptions, JSONContent, SuggestionState } from "@/editor/editor"
+import { initials, userColor } from "@/lib/format"
+import type { FileRef } from "@/types"
+import { EmojiButton, searchEmoji } from "./emoji"
+
+const MAX_FILES = 5
+const MAX_BYTES = 5 * 1024 * 1024
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
+
+let editorModule: Promise<typeof import("@/editor/editor")> | null = null
+
+/** Loads the editor chunk. Call it early (comment mode, idle time) so the composer opens fast. */
+export function preloadEditor() {
+  editorModule ??= import("@/editor/editor").catch((error) => {
+    editorModule = null
+    throw error
+  })
+  return editorModule
+}
+
+type Upload = { key: string; preview: string; ref?: FileRef; error?: string }
+
+// Drafts stay when the popover closes. Key: "new", "reply:<thread id>".
+const drafts = new Map<string, { json: JSONContent; uploads: Upload[] }>()
+
+export function hasDraft(key: string) {
+  return drafts.has(key)
+}
+
+const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+
+// Removes empty paragraphs at the start and end.
+function trimDoc(doc: JSONContent): JSONContent {
+  const content = [...(doc.content ?? [])]
+  const empty = (n: JSONContent | undefined) => n?.type === "paragraph" && !n.content?.length
+  while (content.length > 1 && empty(content.at(-1))) content.pop()
+  while (content.length > 1 && empty(content[0])) content.shift()
+  return { ...doc, content }
+}
+
+type Props = {
+  draftKey: string
+  initial?: JSONContent
+  placeholder: string
+  label: string
+  submitLabel: string
+  allowFiles?: boolean
+  autoFocus?: boolean
+  onSubmit: (body: JSONContent, files: string[]) => Promise<unknown>
+  onCancel?: () => void
+}
+
+export function Composer({
+  draftKey,
+  initial,
+  placeholder,
+  label,
+  submitLabel,
+  allowFiles = true,
+  autoFocus = true,
+  onSubmit,
+  onCancel,
+}: Props) {
+  const mountRef = useRef<HTMLDivElement>(null)
+  const editorRef = useRef<Editor | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [ready, setReady] = useState(false)
+  const [empty, setEmpty] = useState(true)
+  const [suggestion, setSuggestion] = useState<SuggestionState | null>(null)
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [uploads, setUploads] = useState<Upload[]>(() => drafts.get(draftKey)?.uploads ?? [])
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const uploadsRef = useRef(uploads)
+  uploadsRef.current = uploads
+  const submittedRef = useRef(false)
+
+  const addFiles = (files: File[]) => {
+    const images = files.filter((f) => IMAGE_TYPES.includes(f.type))
+    if (images.length === 0) return
+    const room = MAX_FILES - uploadsRef.current.length
+    if (room <= 0 || images.length > room) setError(`You can add up to ${MAX_FILES} images.`)
+    for (const file of images.slice(0, Math.max(0, room))) {
+      const key = crypto.randomUUID()
+      const upload: Upload = { key, preview: URL.createObjectURL(file) }
+      if (file.size > MAX_BYTES) upload.error = "Over 5 MB"
+      setUploads((list) => [...list, upload])
+      if (upload.error) continue
+      uploadFile(file).then(
+        (ref) => setUploads((list) => list.map((u) => (u.key === key ? { ...u, ref } : u))),
+        (e: Error) => setUploads((list) => list.map((u) => (u.key === key ? { ...u, error: e.message } : u))),
+      )
+    }
+  }
+
+  const submitRef = useRef<() => void>(() => {})
+  submitRef.current = async () => {
+    const editor = editorRef.current
+    if (!editor || sending) return
+    const current = uploadsRef.current
+    if (current.some((u) => !u.ref && !u.error)) {
+      setError("Wait for the images to upload.")
+      return
+    }
+    const files = current.flatMap((u) => (u.ref ? [u.ref.id] : []))
+    if (editor.isEmpty && files.length === 0) return
+    setSending(true)
+    setError(null)
+    try {
+      await onSubmit(editor.isEmpty ? EMPTY_DOC : trimDoc(editor.getJSON()), files)
+      submittedRef.current = true
+      drafts.delete(draftKey)
+      editor.commands.clearContent(true)
+      setUploads([])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not send. Try again.")
+    } finally {
+      setSending(false)
+    }
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the editor is created once per composer.
+  useEffect(() => {
+    let destroyed = false
+    preloadEditor().then(
+      ({ createEditor }) => {
+        if (destroyed || !mountRef.current) return
+        const options: EditorOptions = {
+          element: mountRef.current,
+          content: drafts.get(draftKey)?.json ?? initial ?? null,
+          placeholder,
+          label,
+          onChange: (editor) => {
+            setEmpty(editor.isEmpty)
+            setError(null)
+          },
+          onSubmit: () => submitRef.current(),
+          onLink: () => setLinkOpen(true),
+          onSuggestion: setSuggestion,
+          searchUsers: async (q) =>
+            (await searchUsers(q)).map((u) => ({ id: u.id, label: u.name, avatar: u.avatarUrl })),
+          searchEmoji,
+        }
+        const editor = createEditor(options)
+        editorRef.current = editor
+        setEmpty(editor.isEmpty)
+        setReady(true)
+        const dom = editor.view.dom as HTMLElement
+        dom.addEventListener("paste", (event) => onPaste(event as unknown as ClipboardEvent))
+        if (autoFocus) editor.commands.focus("end")
+      },
+      () => setError("Could not load the editor. Check your connection and try again."),
+    )
+    return () => {
+      destroyed = true
+      const editor = editorRef.current
+      if (editor) {
+        if (!submittedRef.current && (!editor.isEmpty || uploadsRef.current.length > 0) && !initial) {
+          drafts.set(draftKey, { json: editor.getJSON(), uploads: uploadsRef.current })
+        }
+        editor.destroy()
+      }
+      editorRef.current = null
+    }
+  }, [])
+
+  const onPaste = (event: ClipboardEvent) => {
+    if (!allowFiles) return
+    const files = Array.from(event.clipboardData?.files ?? [])
+    if (files.some((f) => IMAGE_TYPES.includes(f.type))) {
+      event.preventDefault()
+      addFiles(files)
+    }
+  }
+
+  const onDrop = (event: DragEvent) => {
+    if (!allowFiles) return
+    const files = Array.from(event.dataTransfer?.files ?? [])
+    if (files.length === 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    addFiles(files)
+  }
+
+  const canSend = ready && !sending && (!empty || uploads.some((u) => u.ref))
+
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: drop target for images; the image button does the same.
+    <div
+      className="flex flex-col gap-1.5"
+      onDragOver={(e) => allowFiles && e.preventDefault()}
+      onDrop={onDrop}
+      data-slot="composer"
+    >
+      <div className="relative rounded-md border border-input bg-background px-2 py-1.5 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
+        <div ref={mountRef} className="comma-prose max-h-48 min-h-[18px] overflow-y-auto text-xs/relaxed" />
+        {!ready && <p className="text-muted-foreground text-xs/relaxed">{placeholder}</p>}
+      </div>
+
+      {suggestion && <SuggestionList state={suggestion} />}
+
+      {linkOpen && editorRef.current && <LinkInput editor={editorRef.current} onClose={() => setLinkOpen(false)} />}
+
+      {uploads.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5" aria-label="Images">
+          {uploads.map((u) => (
+            <li key={u.key} className="relative size-14 overflow-hidden rounded-md border bg-muted">
+              <img src={u.preview} alt="" className={cn("size-full object-cover", !u.ref && "opacity-50")} />
+              {!u.ref && !u.error && <Spinner className="absolute inset-0 m-auto" />}
+              {u.error && (
+                <span className="absolute inset-x-0 bottom-0 bg-destructive/90 px-0.5 text-center text-[9px] text-white">
+                  {u.error}
+                </span>
+              )}
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="secondary"
+                className="absolute top-0.5 right-0.5"
+                aria-label="Remove image"
+                onClick={() => setUploads((list) => list.filter((x) => x.key !== u.key))}
+              >
+                <XIcon />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {error && (
+        <p role="alert" className="text-destructive text-xs">
+          {error}
+        </p>
+      )}
+
+      <div className="flex items-center gap-0.5">
+        <EmojiButton onSelect={(emoji) => editorRef.current?.chain().focus().insertContent(emoji).run()} />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Mention someone"
+          title="Mention someone"
+          disabled={!ready}
+          onClick={() => editorRef.current?.chain().focus().insertContent(" @").run()}
+        >
+          <AtIcon />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Add link"
+          title="Add link"
+          disabled={!ready}
+          onClick={() => setLinkOpen(true)}
+        >
+          <LinkIcon />
+        </Button>
+        {allowFiles && (
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Add image"
+              title="Add image"
+              disabled={uploads.length >= MAX_FILES}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <ImageIcon />
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={IMAGE_TYPES.join(",")}
+              multiple
+              hidden
+              onChange={(e) => {
+                addFiles(Array.from(e.currentTarget.files ?? []))
+                e.currentTarget.value = ""
+              }}
+            />
+          </>
+        )}
+        <span className="flex-1" />
+        {onCancel && (
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="icon-sm"
+          aria-label={submitLabel}
+          title={`${submitLabel} (Enter)`}
+          disabled={!canSend}
+          onClick={() => submitRef.current()}
+        >
+          {sending ? <Spinner /> : <ArrowUpIcon weight="bold" />}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function SuggestionList({ state }: { state: SuggestionState }) {
+  return (
+    <div
+      role="listbox"
+      aria-label={state.kind === "mention" ? "People" : "Emoji"}
+      className="max-h-48 overflow-y-auto rounded-md bg-popover p-1 shadow-md ring-1 ring-foreground/10"
+    >
+      {state.items.map((item, i) => (
+        <div
+          key={item.id}
+          role="option"
+          tabIndex={-1}
+          aria-selected={i === state.index}
+          // Keep the focus in the editor.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => state.select(i)}
+          onKeyDown={undefined}
+          className="flex min-h-7 cursor-default items-center gap-2 rounded-md px-2 py-1 text-xs aria-selected:bg-accent aria-selected:text-accent-foreground"
+        >
+          {state.kind === "mention" ? (
+            <span
+              className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full text-[9px] font-medium text-white"
+              style={{ backgroundColor: userColor(item.id) }}
+            >
+              {item.avatar ? <img src={item.avatar} alt="" className="size-full object-cover" /> : initials(item.label)}
+            </span>
+          ) : (
+            <span className="text-base leading-none">{item.label}</span>
+          )}
+          <span className="truncate">{state.kind === "mention" ? item.label : item.detail}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function LinkInput({ editor, onClose }: { editor: Editor; onClose: () => void }) {
+  const current = editor.getAttributes("link").href as string | undefined
+  const [value, setValue] = useState(current ?? "")
+  const apply = () => {
+    let href = value.trim()
+    if (href && !/^(https?:|mailto:)/i.test(href)) href = `https://${href}`
+    const chain = editor.chain().focus().extendMarkRange("link")
+    if (!href) chain.unsetLink().run()
+    else if (editor.state.selection.empty && !current) {
+      chain.insertContent({ type: "text", text: value.trim(), marks: [{ type: "link", attrs: { href } }] }).run()
+    } else chain.setLink({ href }).run()
+    onClose()
+  }
+  return (
+    <div className="flex items-center gap-1">
+      <Input
+        autoFocus
+        aria-label="Link address"
+        placeholder="Paste a link"
+        value={value}
+        className="h-7"
+        onChange={(e) => setValue(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            apply()
+          } else if (e.key === "Escape") {
+            e.preventDefault()
+            e.stopPropagation()
+            onClose()
+            editor.commands.focus()
+          }
+        }}
+      />
+      <Button type="button" size="sm" variant="outline" onClick={apply}>
+        {value.trim() ? "Add" : "Remove"}
+      </Button>
+    </div>
+  )
+}

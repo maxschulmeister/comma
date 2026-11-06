@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Example: App</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="site-header"><a class="logo" href="/">Example</a><nav><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/docs">Docs</a><a href="/app">App</a></nav></header>
+    <main>
+      <h1>Dashboard</h1>
+      <p>Signed in as <strong>{{USER}}</strong>. <a href="/logout">Sign out</a></p>
+      <div class="grid">
+        <div class="card"><h3>Visitors</h3><p class="price">12,480</p></div>
+        <div class="card"><h3>Sign-ups</h3><p class="price">342</p></div>
+        <div class="card"><h3>Revenue</h3><p class="price">$8,210</p></div>
+      </div>
+    </main>
+    <script src="{{COMMA_URL}}/c.js" data-project="example" defer></script>
+    <script type="module">
+      // In your app: get a token from your backend and give it to comma.
+      const res = await fetch("/comma-token")
+      if (res.ok) window.comma.identify((await res.json()).token)
+    </script>
+  </body>
+</html>

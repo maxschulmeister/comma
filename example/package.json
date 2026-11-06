@@ -4,5 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "bun app.ts"
+  },
+  "dependencies": {
+    "hono": "^4.13.16"
   }
 }

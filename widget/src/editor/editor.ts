@@ -29,6 +29,8 @@ export type EditorOptions = {
   element: HTMLElement
   content?: JSONContent | null
   placeholder: string
+  /** Accessible name of the text box. */
+  label: string
   onChange: (editor: Editor) => void
   onSubmit: () => void
   onLink: () => void
@@ -155,6 +157,7 @@ export function createEditor(options: EditorOptions) {
     element: options.element,
     injectCSS: false,
     content: options.content ?? undefined,
+    editorProps: { attributes: { "aria-label": options.label, role: "textbox", "aria-multiline": "true" } },
     extensions: [
       Document,
       Paragraph,
@@ -167,7 +170,6 @@ export function createEditor(options: EditorOptions) {
         openOnClick: false,
         autolink: true,
         defaultProtocol: "https",
-        protocols: ["mailto"],
         isAllowedUri: (url, ctx) =>
           /^(https?:|mailto:)/i.test(url) || (!/^[a-z][a-z0-9+.-]*:/i.test(url) && ctx.defaultValidate(url)),
         HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },

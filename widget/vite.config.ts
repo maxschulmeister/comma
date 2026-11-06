@@ -18,7 +18,7 @@ const preactCompat = [
 function shadowCss(): PostcssPlugin {
   return {
     postcssPlugin: "comma-shadow-css",
-    OnceExit(root, { rule, decl }) {
+    OnceExit(root, { rule, decl, atRule }) {
       const initial: Rule = rule({ selector: ":host, *, ::before, ::after, ::backdrop" })
       root.walkAtRules("property", (at) => {
         let value: string | undefined
@@ -28,7 +28,8 @@ function shadowCss(): PostcssPlugin {
         initial.append(decl({ prop: at.params, value: value ?? "initial" }))
         at.remove()
       })
-      if (initial.nodes.length > 0) root.prepend(initial)
+      // In the lowest layer, so utilities that set these variables win.
+      if (initial.nodes.length > 0) root.prepend(atRule({ name: "layer", params: "properties", nodes: [initial] }))
       root.walkRules((r) => {
         r.selectors = r.selectors.map((s) => s.replace(/:root\b/g, ":host"))
         r.selectors = [...new Set(r.selectors)]
@@ -42,25 +43,29 @@ function shadowCss(): PostcssPlugin {
 
 const fonts = ["instrument-sans-latin-wght-normal.woff2", "instrument-sans-latin-ext-wght-normal.woff2"]
 
-function emitFonts(): Plugin {
+const fromModules = (path: string) => readFileSync(resolve(import.meta.dirname, "node_modules", path))
+
+// Static files the widget loads from the comma server: fonts, and emoji data for the picker and `:name:`.
+function emitStatic(): Plugin {
   return {
-    name: "comma-fonts",
+    name: "comma-static",
     generateBundle() {
       for (const name of fonts) {
         this.emitFile({
           type: "asset",
           fileName: `fonts/${name}`,
-          source: readFileSync(
-            resolve(import.meta.dirname, "node_modules/@fontsource-variable/instrument-sans/files", name),
-          ),
+          source: fromModules(`@fontsource-variable/instrument-sans/files/${name}`),
         })
+      }
+      for (const name of ["data.json", "messages.json"]) {
+        this.emitFile({ type: "asset", fileName: `emoji/en/${name}`, source: fromModules(`emojibase-data/en/${name}`) })
       }
     },
   }
 }
 
 export default defineConfig({
-  plugins: [tailwindcss(), emitFonts()],
+  plugins: [tailwindcss(), emitStatic()],
   css: { postcss: { plugins: [shadowCss()] } },
   resolve: {
     alias: [{ find: "@", replacement: resolve(import.meta.dirname, "./src") }, ...preactCompat],

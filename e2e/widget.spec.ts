@@ -1,0 +1,151 @@
+import { expect, test } from "@playwright/test"
+import {
+  addComment,
+  clickAt,
+  guestSession,
+  newCommentPopover,
+  openTestPage,
+  panel,
+  pins,
+  signIn,
+  threadPopover,
+  toolbar,
+  typeComment,
+} from "./helpers"
+
+test.describe("comment mode", () => {
+  test("C starts comment mode, Esc ends it", async ({ page }) => {
+    await openTestPage(page, "mode")
+    const button = toolbar(page).getByRole("button", { name: "Comment mode" })
+    await expect(button).toHaveAttribute("aria-pressed", "false")
+    await page.keyboard.press("c")
+    await expect(button).toHaveAttribute("aria-pressed", "true")
+    await expect(panel(page)).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(button).toHaveAttribute("aria-pressed", "false")
+  })
+
+  test("a guest signs in from the composer and pins a comment to an element", async ({ page }) => {
+    await openTestPage(page, "guest")
+    await page.keyboard.press("c")
+    await clickAt(page, page.getByTestId("lead"), 0.5)
+    const popover = newCommentPopover(page)
+    await popover.getByLabel("Your name").fill("Ada")
+    await popover.getByRole("button", { name: "Continue as guest" }).click()
+    await typeComment(page, popover, "Fix this sentence")
+    await page.keyboard.press("Enter")
+    await expect(threadPopover(page)).toContainText("Fix this sentence")
+    await expect(threadPopover(page)).toContainText("Ada")
+    await expect(pins(page)).toHaveCount(1)
+
+    // After a reload the pin is still on the paragraph, at the same place.
+    await page.reload()
+    const pin = pins(page).first()
+    await expect(pin).toBeVisible()
+    const lead = await page.getByTestId("lead").boundingBox()
+    const box = await pin.boundingBox()
+    expect(box && lead && Math.abs(box.x - (lead.x + lead.width * 0.5))).toBeLessThan(2)
+    expect(box && lead && Math.abs(box.y + box.height - (lead.y + lead.height * 0.5))).toBeLessThan(2)
+  })
+
+  test("a drag draws a region", async ({ page }) => {
+    await signIn(page, await guestSession("Region"))
+    await openTestPage(page, "region")
+    await page.keyboard.press("c")
+    const picture = await page.getByTestId("picture").boundingBox()
+    if (!picture) throw new Error("no box")
+    await page.mouse.move(picture.x + 20, picture.y + 20)
+    await page.mouse.down()
+    await page.mouse.move(picture.x + 120, picture.y + 60, { steps: 5 })
+    await page.mouse.up()
+    await typeComment(page, newCommentPopover(page), "This area")
+    await page.keyboard.press("Enter")
+    await expect(threadPopover(page)).toContainText("This area")
+    const region = page.locator("[data-slot=pins] > div.border-primary").first()
+    await expect(region).toBeVisible()
+    const box = await region.boundingBox()
+    expect(Math.round(box?.width ?? 0)).toBe(100)
+    expect(Math.round(box?.height ?? 0)).toBe(40)
+  })
+
+  test("Shift+C hides and shows comments, and the choice stays after reload", async ({ page }) => {
+    await signIn(page, await guestSession("Hider"))
+    await openTestPage(page, "hide")
+    await addComment(page, page.getByTestId("title"), "Hello")
+    await page.keyboard.press("Escape")
+    await page.keyboard.press("Escape")
+    await expect(pins(page)).toHaveCount(1)
+    await page.keyboard.press("Shift+C")
+    await expect(pins(page)).toHaveCount(0)
+    await page.reload()
+    await expect(toolbar(page)).toBeVisible()
+    await page.waitForTimeout(500)
+    await expect(pins(page)).toHaveCount(0)
+    await page.keyboard.press("Shift+C")
+    await expect(pins(page)).toHaveCount(1)
+  })
+
+  test("pins close together merge into a cluster", async ({ page }) => {
+    await signIn(page, await guestSession("Cluster"))
+    await openTestPage(page, "cluster")
+    const lead = page.getByTestId("lead")
+    await addComment(page, lead, "One", 0.3)
+    await page.keyboard.press("Escape")
+    // Left of the first pin (a pin covers 28 px to the right of its point).
+    await addComment(page, lead, "Two", 0.28)
+    await page.keyboard.press("Escape")
+    await page.keyboard.press("Escape")
+    const cluster = page.locator("[data-slot=cluster]")
+    await expect(cluster).toHaveAccessibleName("2 comments")
+    await cluster.click()
+    await page.getByRole("dialog", { name: "Comments here" }).getByRole("button", { name: /One/ }).click()
+    await expect(threadPopover(page)).toContainText("One")
+  })
+
+  test("the author drags a pin to another element", async ({ page }) => {
+    await signIn(page, await guestSession("Mover"))
+    await openTestPage(page, "move")
+    await addComment(page, page.getByTestId("title"), "Move me")
+    await page.keyboard.press("Escape")
+    await page.keyboard.press("Escape")
+    const pin = pins(page).first()
+    const from = await pin.boundingBox()
+    const beta = await page.getByTestId("beta").boundingBox()
+    if (!from || !beta) throw new Error("no box")
+    await page.mouse.move(from.x + 10, from.y + 10)
+    await page.mouse.down()
+    await page.mouse.move(beta.x + 30, beta.y + 10, { steps: 8 })
+    await page.mouse.up()
+    await expect(threadPopover(page)).toBeHidden()
+    await expect(pins(page).first()).toHaveAttribute("aria-label", /Move me/)
+    await page.waitForTimeout(300)
+    await page.reload()
+    await expect(pins(page).first()).toBeVisible()
+    const after = await page.getByTestId("beta").boundingBox()
+    const moved = await pins(page).first().boundingBox()
+    expect(Math.abs((moved?.x ?? 0) - ((after?.x ?? 0) + 30))).toBeLessThan(3)
+  })
+
+  test("hovering a pin shows a preview", async ({ page }) => {
+    await signIn(page, await guestSession("Preview"))
+    await openTestPage(page, "preview")
+    await addComment(page, page.getByTestId("title"), "A preview text")
+    await page.keyboard.press("Escape")
+    await page.keyboard.press("Escape")
+    await pins(page).first().hover()
+    await expect(page.locator("[data-slot=hover-card-content]")).toContainText("A preview text")
+  })
+})
+
+test.describe("touch", () => {
+  test.use({ hasTouch: true, isMobile: false, viewport: { width: 390, height: 800 } })
+  test("a tap pins a comment", async ({ page }) => {
+    await signIn(page, await guestSession("Toucher"))
+    await openTestPage(page, "touch")
+    await toolbar(page).getByRole("button", { name: "Comment mode" }).tap()
+    const lead = await page.getByTestId("lead").boundingBox()
+    if (!lead) throw new Error("no box")
+    await page.touchscreen.tap(lead.x + 20, lead.y + 5)
+    await expect(newCommentPopover(page)).toBeVisible()
+  })
+})

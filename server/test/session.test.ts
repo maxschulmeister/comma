@@ -134,3 +134,15 @@ describe("CORS", () => {
     expect(res.headers.get("vary")).toContain("Origin")
   })
 })
+
+describe("project info", () => {
+  test("tells the widget which sign-in methods the project has", async () => {
+    const { request } = setup()
+    const acme = await request("GET", "/api/projects/acme")
+    expect(acme.status).toBe(200)
+    expect(acme.json).toEqual({ id: "acme", popupSignIn: true })
+    const other = await request("GET", "/api/projects/other", { origin: OTHER })
+    expect(other.json).toEqual({ id: "other", popupSignIn: false })
+    expect((await request("GET", "/api/projects/acme", { origin: OTHER })).status).toBe(403)
+  })
+})

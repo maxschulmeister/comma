@@ -180,6 +180,11 @@ export function createApp(options: AppOptions) {
     return project
   }
 
+  app.get("/api/projects/:id", (c) => {
+    const project = projectFor(c.req.param("id"), c.req.header("origin"))
+    return c.json({ id: project.id, popupSignIn: !!(project.signInUrl && project.appSecret) })
+  })
+
   app.post("/api/session/guest", async (c) => {
     const input = parse(z.object({ project: z.string(), name: z.string().trim().min(1).max(60) }), await json(c))
     const project = projectFor(input.project, c.req.header("origin"))
