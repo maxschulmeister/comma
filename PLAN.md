@@ -25,11 +25,12 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 
 ### Create
 
-- **Comment mode**: press `C` or the toolbar button. `Esc` exits. The panel opens with comment mode.
+- **Comment mode**: press `C` or the toolbar button. `Esc` exits. The panel opens with comment mode (on narrow screens it closes, because it covers the page).
+  - The shortcut is the letter on the key, also on other keyboard layouts. Without a Latin letter: the key's place. `data-shortcut` on the script tag sets another letter, or `none`.
 - **Element pin**: hover outlines the element under the cursor. Click pins a comment to that element.
 - **Region**: drag draws a rectangle. It is anchored to the element under its center.
 - **Touch**: in comment mode, tap pins a comment.
-- The composer opens at the pin.
+- The composer opens at the pin. The element (or the region) shows an outline while the composer or thread is open.
 
 ### Composer
 
@@ -43,7 +44,11 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
   - GIFs stay as they are, so animation stays.
   - 4 MB fits the request limits of Lambda and Vercel (see DEPLOY.md).
 - `Enter` sends. `Shift+Enter` adds a line.
-- The draft stays if the popover closes.
+- Drafts:
+  - A new comment's draft stays on its pin when the popover closes. A click on the pin opens it again.
+  - A click on another place while the draft has text asks: "Move here" or "Discard and start new". The draft never moves without a question.
+  - "Discard" in the composer removes the draft.
+  - Drafts stay after a reload: `sessionStorage`, per person and page (new threads) or thread (replies). Sign-out deletes them.
 
 ### Pins
 
@@ -59,24 +64,31 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 
 - Replies.
 - Reactions on each comment: quick set and picker.
-- Menu: copy link, mark as unread, edit (own), delete comment (own), delete thread (author or admin).
+- Header: the element ("Heading: Pricing"). Under it: the assignee, and where the comment was made (window size, browser, system; the full URL on hover).
+- Menu: copy link, move (author), mark as unread, edit (own), delete comment (own), delete thread (author or admin).
 - Deleting the first comment deletes the thread.
-- Resolve and reopen.
+- Resolve and reopen. A resolved thread says who resolved it and when.
+- Assign: anyone in the project assigns the thread to a person (search). The thread becomes unread for them.
+- Element not found (detached): the thread says what it was on ("Paragraph “A paragraph…”"). The author can move it.
+- Status messages: one `role="status"` region. "Thread resolved" has Undo and stays until it is closed. Other messages ("Link copied") go after 4 s.
 
 ### Panel (push mode)
 
-- Each item: author, page, first lines, reply count, unread state, time.
+- Each item: author, page (title and path), first lines, reply count, assignee, unread state, time.
+  - Unread: the newest comment by someone else ("Bob replied"), with the first comment as context.
 - Search in comment text.
 - Sort: date, or unread first.
-- Filters: this page or all pages, only my threads (I created, replied or was mentioned), show resolved.
+- Filters: this page or all pages, only my threads (I created, replied or was mentioned), assigned to me, show resolved. The filter button shows when a filter is on.
+- Empty list: says why, and offers the way out: "Clear search", "Clear filters", "Show all pages" (with the count on other pages), "Show resolved", "Add comment".
 - `↑`/`↓` move between threads. `Enter` opens one.
 - A thread on another page: click navigates to that page and opens the thread.
-- Detached threads show with a "detached" label.
-- Screens narrower than 640 px: the panel covers the full screen.
+- Detached threads show with an "Element not found" label.
+- Screens narrower than 640 px: the panel covers the full screen. The toolbar hides while it is open. A thread with a pin opens at its pin, and the panel closes.
 
 ### Toolbar
 
 - Small floating bar: comment mode, panel button with unread count, user menu (name, avatar, sign in or out, show or hide pins).
+- Project setting `toolbar: "signed-in"`: visitors see no toolbar and no shortcut until they sign in. `?comma` in the URL, or a link to a thread, shows the sign-in.
 
 ### Unread and updates (in the widget)
 
@@ -89,6 +101,8 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 ### Identity
 
 - Guest name, `identify(token)` in your app, popup sign-in on other sites (see "Login").
+- Guests: project setting `guests`. Default: on without `appSecret`, off with it. Anyone can type any name, so guests show "Guest" next to their name everywhere.
+- The sign-in button names the app: "Sign in with Acme" (project setting `name`).
 - Avatar from the app token. Else initials on a color from the user id.
 - Admin: app token claim `admin: true`. Admins can delete any thread.
 
@@ -98,6 +112,11 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 - **Detached comments**: show in the panel, not on the page.
 - **Rate limit**: 100 comments per hour per user (same as Figma).
 - **Accessibility**: all actions work with the keyboard. Popovers and the panel manage focus. Controls have labels.
+  - Focus rings: solid, 4.7:1 on white. Small text: 4.5:1 or more (avatar initials, unread count, muted text).
+  - Touch: controls that show on hover (comment menu, add reaction) always show.
+  - `prefers-reduced-motion`: no slides, zooms or smooth scroll.
+  - The widget root has `lang="en"`.
+- **Text size**: comments 14 px. The composer 16 px on narrow screens (iOS Safari zooms into smaller fields).
 
 Out (later, maybe):
 
@@ -229,7 +248,7 @@ One rule: **your app signs a short token, comma trusts it.**
 Details:
 
 - App token: JWT, HS256, signed with the project secret. Claims: `sub`, `name`, optional `email` and `avatar`. Expiry ≤ 5 minutes.
-- The widget exchanges an app token or a guest name for a **comma session token** (JWT, signed by the server, bound to one project).
+- The widget exchanges an app token or a guest name for a **comma session token** (JWT, signed by the server, bound to one project). App sessions last 7 days, guest sessions 90 days: someone who leaves the app loses access within a week.
 - The widget keeps the session token in `localStorage` and sends it as `Authorization: Bearer …`. No cookies, so Safari and Firefox work. Users sign in once per site.
 - `postMessage` and redirects go only to origins registered for the project.
 - In the app, the work is one endpoint that signs the token (~20–30 lines).
@@ -266,7 +285,8 @@ export default {
 ```
 users      id, project, kind (guest|app), external_id, name, email, avatar_url, is_admin, created_at
 threads    id, project, page (URL path), anchor (JSON), status (open|resolved),
-           created_by, created_at, updated_at, resolved_at, resolved_by
+           created_by, created_at, updated_at, resolved_at, resolved_by,
+           context (JSON: url, title, viewport, dpr, browser, os), assignee_id
 comments   id, thread_id, author_id, body (Tiptap JSON), text (plain, for search), created_at, edited_at
 mentions   comment_id, user_id   (from the body)
 reactions  comment_id, user_id, emoji
@@ -286,8 +306,8 @@ POST   /api/session/app          { project, appToken }  → { token, user }
 GET    /auth/start               ?project&origin        → redirect to signInUrl
 GET    /auth/callback            ?token&state           → page: postMessage session to opener, close
 GET    /api/threads                         → all threads with comments, reactions, read state (ETag)
-POST   /api/threads                         { page, anchor, body, files } → thread
-PATCH  /api/threads/:id                     { status } | { page, anchor }
+POST   /api/threads                         { page, anchor, body, files, context? } → thread
+PATCH  /api/threads/:id                     { status } | { page, anchor } | { assignee: user id | null }
 DELETE /api/threads/:id
 POST   /api/threads/:id/read                { read: true|false }
 POST   /api/threads/:id/comments            { body, files }

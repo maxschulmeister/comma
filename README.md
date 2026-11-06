@@ -3,9 +3,11 @@
 Comments pinned to any website. One script tag. Your own service.
 
 - Press `C`, click an element, write a comment. Drag to comment on a region.
-- Threads with replies, reactions, mentions, images, resolve and unread state.
+- Threads with replies, reactions, mentions, images, assignees, resolve (with undo) and unread state.
+- Each thread keeps where it was made: the page title and URL, the window size, the browser and the system.
+- Unsent comments stay on their pin, also after a reload.
 - A panel with all comments of the site. Search, filters, keyboard navigation.
-- Pins stay on their element when the page changes. If comma cannot find the element, the comment is "detached". It never moves to a wrong element.
+- Pins stay on their element when the page changes. If comma cannot find the element, the thread says "Element not found" and what it was on. It never moves to a wrong element.
 
 ## Run it
 
@@ -58,6 +60,27 @@ To deploy, see [DEPLOY.md](DEPLOY.md).
 
 People sign in as guests with a name. To use the accounts of your app, see below.
 
+### Project settings
+
+| Setting     |                                                                                                                                                                                                             |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`        | Required. Lowercase letters, digits, `-` and `_`.                                                                                                                                                           |
+| `origins`   | Required. The sites that may use the project.                                                                                                                                                               |
+| `name`      | The name of your app, on the sign-in button: "Sign in with Acme".                                                                                                                                           |
+| `appSecret` | Sign in with your app (see below).                                                                                                                                                                          |
+| `signInUrl` | Popup sign-in on sites outside your app (see below).                                                                                                                                                        |
+| `guests`    | `true`: people can sign in as guests with only a name. Anyone can use any name. Default: `true` without `appSecret`, `false` with it. Guests show as "Guest" next to their name.                            |
+| `toolbar`   | `"always"` (default) or `"signed-in"`: visitors see no toolbar until they sign in. To sign in, open a page with `?comma` in the URL (`https://www.acme.com/?comma`). Links to a thread also ask to sign in. |
+
+`guests` is a change for projects with `appSecret` that used guests before: set `guests: true` to keep them.
+
+### Script tag settings
+
+| Attribute       |                                                                                                                   |
+| --------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `data-project`  | Required. The project id.                                                                                         |
+| `data-shortcut` | The key for comment mode, one letter. Default: `c`. `none`: no shortcut, for apps that use the letter themselves. |
+
 comma can run behind a proxy, also on the same origin as the site. Set `COMMA_URL` to its public address. If the proxy changes the `Host` header, it must send `X-Forwarded-Host`.
 
 Add `data-comment-anchor="pricing"` to an element to give it a very stable anchor. Comments on it find it again, also when its text changes or it moves.
@@ -83,6 +106,8 @@ Add one endpoint that signs a token for the signed-in user. JWT, HS256, signed w
 | `email`, `avatar` | Optional. `avatar` is an image URL.               |
 | `admin`           | Optional. `true` lets the user delete any thread. |
 | `exp`             | Required. 5 minutes or less from now.             |
+
+A session of an app user lasts 7 days, a guest session 90 days. In your app, `identify` signs in again on each page load. Someone who leaves your app keeps comma access for at most 7 days.
 
 ```ts
 import { sign } from "hono/jwt" // or any JWT library
@@ -148,7 +173,7 @@ comma sends the session to the site that opened the popup, only if that site is 
 
 | Key                       |                                                                                                                       |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `C`                       | Comment mode on or off                                                                                                |
+| `C`                       | Comment mode on or off (the key in `data-shortcut`; the letter on the key, also on other keyboard layouts)            |
 | `↑` `↓`, then `Enter`     | In comment mode: pick an element and comment on it (`Tab` to a control works too). `Shift+Enter`: comment on its area |
 | `Esc`                     | Close the popover, then leave comment mode                                                                            |
 | `Shift+C`                 | Show or hide comments                                                                                                 |
