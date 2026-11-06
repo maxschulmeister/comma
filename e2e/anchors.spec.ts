@@ -706,3 +706,11 @@ test("a control in a card without links or images: another order number is anoth
   const order = `document.querySelector('[data-fixture="contact"] p').textContent = "Order 1235"`
   expect(await afterCode(page, order)).toEqual({ kept: false, found: null })
 })
+
+test("an image in a control: another record in the card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "trash-icon")
+  expect(await resolved(page)).toBe("trash-icon")
+  const name = `document.querySelector('[data-fixture="contact-icon"] h3').textContent = "Dee Moss"`
+  expect(await afterCode(page, name)).toEqual({ kept: false, found: null })
+})

@@ -297,6 +297,25 @@ test("pins follow client-side navigation", async ({ page }) => {
   await expect(pins(page)).toHaveCount(1)
 })
 
+test("a page that changes all the time: pins still follow their elements", async ({ page }) => {
+  await signIn(page, await guestSession("Ticker"))
+  await openTestPage(page, "ticker")
+  await addComment(page, page.getByTestId("lead"), "On the lead")
+  await endCommentMode(page)
+  await expect(pins(page)).toHaveCount(1)
+  // A ticker changes the page every 50 ms, then the pinned element shows something else.
+  await page.evaluate(() => {
+    const ticker = document.createElement("p")
+    document.body.append(ticker)
+    setInterval(() => {
+      ticker.textContent = String(Math.random())
+    }, 50)
+    const lead = document.querySelector('[data-testid="lead"]') as HTMLElement
+    lead.textContent = "Something else entirely, written by the app."
+  })
+  await expect(pins(page)).toHaveCount(0)
+})
+
 test.describe("touch", () => {
   test.use({ hasTouch: true, isMobile: false, viewport: { width: 390, height: 800 } })
   test("a tap pins a comment", async ({ page }) => {

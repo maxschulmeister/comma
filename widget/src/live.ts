@@ -37,9 +37,14 @@ function resolveAll() {
   }
 }
 
+// At most one check per 120 ms. A check that is on its way is not moved: a page that changes all the time
+// (a ticker) must not stop the checks.
 function scheduleResolve(delay = 120) {
-  clearTimeout(timer)
-  timer = setTimeout(resolveAll, delay)
+  if (timer !== undefined) return
+  timer = setTimeout(() => {
+    timer = undefined
+    resolveAll()
+  }, delay)
 }
 
 /** The element of the thread on this page, as shown now. null: detached. */

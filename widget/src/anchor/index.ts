@@ -146,10 +146,10 @@ const cardSet = (node: Element, el: Element, text: boolean) => cardEvidence(node
 
 // The largest small container of a label with evidence of the item it belongs to (see Anchor.card).
 // The largest, not the closest: an action row ("Add to cart", "Size guide", a policy link) is the same on every card.
-// A link or image is its own identity: no card.
+// A link or image is its own identity: no card. Not an icon in a control: the same trash icon is on every record.
 function cardOf(el: Element): Anchor["card"] {
-  if (el.matches(URL_SELECTOR)) return undefined
   const text = !!el.closest(CONTROL_SELECTOR)
+  if (el.matches(URL_SELECTOR) && !text) return undefined
   let card: Anchor["card"]
   for (let depth = 1; depth <= MAX_CARD_DEPTH; depth++) {
     const node = ancestorAt(el, depth)
@@ -240,7 +240,7 @@ export function createAnchor(el: Element, at: { point: { x: number; y: number } 
     anchor.repeated = true
     anchor.scope = scopeOf(el, lookAlikes)
   }
-  // Short labels and controls say little about which item they belong to: their card does.
+  // Short labels and controls (also their icons) say little about which item they belong to: their card does.
   if (anchor.text.length < SHORT_TEXT || el.closest(CONTROL_SELECTOR)) anchor.card = cardOf(el)
   const twins = lookAlikesOf(anchor).length
   if (twins > 1) anchor.twins = twins
