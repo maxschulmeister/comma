@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { anchor, setup, text } from "./helpers"
+import { createClient } from "@libsql/client"
+import { migrate } from "../src/db"
+import { anchor, OTHER, setup, text } from "./helpers"
 
 async function withThread(s: Awaited<ReturnType<typeof setup>>, body = text("First")) {
   const author = await s.guest("Author")
@@ -281,4 +283,90 @@ test("the server keeps every anchor field the widget sends", async () => {
     body: { page: "/", anchor: full, body: text("x") },
   })
   expect(res.json.thread.anchor).toEqual(full)
+})
+
+describe("page context", () => {
+  const context = {
+    url: "https://acme.test/pricing?plan=pro",
+    title: "Pricing | Acme",
+    viewport: { width: 820, height: 1180 },
+    dpr: 2,
+    browser: "Safari 17",
+    os: "iPadOS",
+  }
+
+  test("a thread keeps where it was made: URL, title, screen and browser", async () => {
+    const s = await setup()
+    const { token } = await s.guest()
+    const res = await s.request("POST", "/api/threads", {
+      token,
+      body: { page: "/pricing", anchor, body: text("Wraps on tablets"), context },
+    })
+    expect(res.status).toBe(200)
+    expect(res.json.thread.context).toEqual(context)
+    const list = await s.request("GET", "/api/threads", { token })
+    expect(list.json.threads[0].context).toEqual(context)
+  })
+
+  test("the context is optional, and only http links are kept", async () => {
+    const s = await setup()
+    const { token } = await s.guest()
+    const plain = await s.request("POST", "/api/threads", { token, body: { page: "/", anchor, body: text("x") } })
+    expect(plain.json.thread.context).toBeNull()
+    const bad = await s.request("POST", "/api/threads", {
+      token,
+      body: { page: "/", anchor, body: text("x"), context: { ...context, url: "javascript:alert(1)" } },
+    })
+    expect(bad.status).toBe(400)
+  })
+
+  test("a database made before the context column gets it", async () => {
+    const db = createClient({ url: ":memory:" })
+    await db.execute(`create table threads (
+      id text primary key, project text not null, page text not null, anchor text not null,
+      status text not null default 'open', created_by text not null, created_at integer not null,
+      updated_at integer not null, resolved_at integer, resolved_by text)`)
+    await migrate(db, true)
+    const columns = (await db.execute("select name from pragma_table_info('threads')")).rows.map((r) => r.name)
+    expect(columns).toContain("context")
+    expect(columns).toContain("assignee_id")
+  })
+})
+
+describe("assignee", () => {
+  test("a member assigns a thread to someone; it becomes unread for them; null unassigns", async () => {
+    const s = await setup()
+    const { author, thread } = await withThread(s)
+    const bob = await s.guest("Bob")
+    // Bob reads the thread, so only the assignment makes it unread again.
+    await s.request("POST", `/api/threads/${thread.id}/read`, { token: bob.token, body: { read: true } })
+
+    const assign = await s.request("PATCH", `/api/threads/${thread.id}`, {
+      token: author.token,
+      body: { assignee: bob.user.id },
+    })
+    expect(assign.status).toBe(200)
+    expect(assign.json.thread.assigneeId).toBe(bob.user.id)
+    expect(assign.json.users[bob.user.id]).toMatchObject({ name: "Bob" })
+
+    const forBob = await s.request("GET", "/api/threads", { token: bob.token })
+    expect(forBob.json.threads[0]).toMatchObject({ assigneeId: bob.user.id, unread: true })
+
+    const unassign = await s.request("PATCH", `/api/threads/${thread.id}`, {
+      token: bob.token,
+      body: { assignee: null },
+    })
+    expect(unassign.json.thread.assigneeId).toBeNull()
+  })
+
+  test("only people of the same project can be assigned", async () => {
+    const s = await setup()
+    const { author, thread } = await withThread(s)
+    const stranger = await s.guest("Stranger", OTHER, "other")
+    const res = await s.request("PATCH", `/api/threads/${thread.id}`, {
+      token: author.token,
+      body: { assignee: stranger.user.id },
+    })
+    expect(res.status).toBe(400)
+  })
 })

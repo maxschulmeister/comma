@@ -13,6 +13,8 @@ type ThreadRow = {
   updated_at: number
   resolved_at: number | null
   resolved_by: string | null
+  context: string | null
+  assignee_id: string | null
 }
 type CommentRow = {
   id: string
@@ -47,6 +49,8 @@ export type Thread = {
   updatedAt: number
   resolvedAt: number | null
   resolvedBy: string | null
+  context: unknown
+  assigneeId: string | null
   unread: boolean
   comments: Comment[]
 }
@@ -155,6 +159,7 @@ export async function loadThreads(db: Db, project: string, me: UserRow, onlyThre
   const result: Thread[] = threads.map((t) => {
     userIds.add(t.created_by)
     if (t.resolved_by) userIds.add(t.resolved_by)
+    if (t.assignee_id) userIds.add(t.assignee_id)
     const list = commentsBy.get(t.id) ?? []
     const read = reads.get(t.id)
     const unread =
@@ -170,6 +175,8 @@ export async function loadThreads(db: Db, project: string, me: UserRow, onlyThre
       updatedAt: t.updated_at,
       resolvedAt: t.resolved_at,
       resolvedBy: t.resolved_by,
+      context: t.context ? JSON.parse(t.context) : null,
+      assigneeId: t.assignee_id,
       unread,
       comments: list,
     }

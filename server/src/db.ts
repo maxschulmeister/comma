@@ -30,7 +30,9 @@ create table if not exists threads (
   created_at integer not null,
   updated_at integer not null,
   resolved_at integer,
-  resolved_by text references users (id)
+  resolved_by text references users (id),
+  context text,
+  assignee_id text references users (id)
 );
 create index if not exists threads_project on threads (project, updated_at);
 
@@ -93,8 +95,20 @@ export async function migrate(db: Db, local: boolean) {
   if (local)
     await db.executeMultiple("pragma journal_mode = wal; pragma foreign_keys = on; pragma busy_timeout = 5000;")
   await db.executeMultiple(SCHEMA)
+  // Columns added after the first release. `create table if not exists` does not add them to an old table.
+  const columns = new Set(
+    (await db.execute("select name from pragma_table_info('threads')")).rows.map((r) => String(r.name)),
+  )
+  for (const [name, type] of ADDED_THREAD_COLUMNS) {
+    if (!columns.has(name)) await db.execute(`alter table threads add column ${name} ${type}`)
+  }
   return db
 }
+
+const ADDED_THREAD_COLUMNS = [
+  ["context", "text"],
+  ["assignee_id", "text references users (id)"],
+] as const
 
 export const sql = (text: string, ...args: InValue[]): InStatement => ({ sql: text, args })
 

@@ -80,11 +80,27 @@ const Page = z
   .max(2000)
   .regex(/^\/[^\s#?]*$/, "A page is a URL path")
 const FileIds = z.array(z.string().max(100)).max(MAX_FILES).default([])
+// Where the comment was made. Shown to the team, so they can see the page as the author saw it.
+const PageContext = z.object({
+  url: z.url({ protocol: /^https?$/ }).max(2000),
+  title: z.string().max(200),
+  viewport: z.object({ width: z.number().int().min(0).max(100_000), height: z.number().int().min(0).max(100_000) }),
+  dpr: z.number().positive().max(16),
+  browser: z.string().max(60),
+  os: z.string().max(60),
+})
 
-const CreateThread = z.object({ page: Page, anchor: AnchorSchema, body: z.unknown(), files: FileIds })
+const CreateThread = z.object({
+  page: Page,
+  anchor: AnchorSchema,
+  body: z.unknown(),
+  files: FileIds,
+  context: PageContext.optional(),
+})
 const UpdateThread = z.union([
   z.object({ status: z.enum(["open", "resolved"]) }),
   z.object({ page: Page, anchor: AnchorSchema }),
+  z.object({ assignee: z.string().max(100).nullable() }),
 ])
 const CreateComment = z.object({ body: z.unknown(), files: FileIds })
 const UpdateComment = z.object({ body: z.unknown() })
@@ -324,8 +340,8 @@ export function createApp(options: AppOptions) {
     return parsed
   }
 
-  // Mentions of users in the same project only.
-  const mentionsOf = async (user: UserRow, ids: string[]) => {
+  // Users in the same project only (mentions, assignees).
+  const projectUsers = async (user: UserRow, ids: string[]) => {
     if (ids.length === 0) return []
     const rows = await all<{ id: string }>(
       db,
@@ -356,7 +372,7 @@ export function createApp(options: AppOptions) {
       parsed.text,
       now(),
     ),
-    ...saveMentions(id, await mentionsOf(user, parsed.mentions)),
+    ...saveMentions(id, await projectUsers(user, parsed.mentions)),
     // `comment_id is null`: of two comments at the same time with the same image, only one gets it.
     ...files.map((fileId) => sql("update files set comment_id = ? where id = ? and comment_id is null", id, fileId)),
   ]
@@ -398,11 +414,12 @@ export function createApp(options: AppOptions) {
     await db.batch(
       [
         sql(
-          "insert into threads (id, project, page, anchor, created_by, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)",
+          "insert into threads (id, project, page, anchor, context, created_by, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
           id,
           user.project,
           input.page,
           JSON.stringify(input.anchor),
+          input.context ? JSON.stringify(input.context) : null,
           user.id,
           now(),
           now(),
@@ -433,6 +450,31 @@ export function createApp(options: AppOptions) {
             now(),
             row.id,
           ),
+        )
+      }
+    } else if ("assignee" in input) {
+      const assignee = input.assignee
+      if (assignee && (await projectUsers(user, [assignee])).length === 0) {
+        throw new HTTPException(400, { message: "Unknown user" })
+      }
+      changes.push(
+        sql(
+          "update threads set assignee_id = ?, updated_at = max(?, updated_at + 1) where id = ?",
+          assignee,
+          now(),
+          row.id,
+        ),
+      )
+      // The thread shows as unread for the new assignee, so they see it in their list.
+      if (assignee && assignee !== user.id) {
+        changes.push(
+          sql(
+            `insert into reads (user_id, thread_id, read_at, unread) values (?, ?, 0, 1)
+             on conflict (user_id, thread_id) do update set unread = 1`,
+            assignee,
+            row.id,
+          ),
+          sql("update users set reads_version = reads_version + 1 where id = ?", assignee),
         )
       }
     } else {
@@ -521,7 +563,7 @@ export function createApp(options: AppOptions) {
           now(),
           row.id,
         ),
-        ...saveMentions(row.id, await mentionsOf(user, parsed.mentions)),
+        ...saveMentions(row.id, await projectUsers(user, parsed.mentions)),
         touch(row.thread_id),
         bump(user.project),
       ],
