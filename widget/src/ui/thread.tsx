@@ -228,7 +228,8 @@ export function ThreadView({
       <div className="border-t p-2">
         {me ? (
           <Composer
-            key={thread.id}
+            // A new user gets a new composer with their own draft.
+            key={`${thread.id}:${me.id}`}
             draftKey={`reply:${thread.id}`}
             placeholder="Reply"
             label="Reply"

@@ -1,7 +1,6 @@
-import { HOST_TAG, isTyping } from "@/lib/dom"
+import { isTyping } from "@/lib/dom"
 import { getState, setState } from "@/store"
 import { preloadEditor } from "./composer"
-import { placeAt } from "./overlay"
 import { NARROW } from "./panel"
 
 const PINS_KEY = "comma:pins"
@@ -45,13 +44,6 @@ export function startShortcuts() {
       setState({ moving: null })
     } else if (event.key === "Escape" && state.commentMode && !state.draft && !state.openThreadId) {
       setCommentMode(false)
-    } else if (event.key === "Enter" && (state.commentMode || state.moving) && !state.draft) {
-      // Keyboard: comment on (or move the pin to) the focused page element.
-      const el = document.activeElement
-      if (!el || el === document.body || el.localName === HOST_TAG) return
-      event.preventDefault()
-      const r = el.getBoundingClientRect()
-      placeAt(el, { point: { x: r.left + r.width / 2, y: r.top + r.height / 2 } })
     } else if (event.code === "KeyC" && event.shiftKey) {
       event.preventDefault()
       togglePins()

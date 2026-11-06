@@ -53,6 +53,7 @@ const AnchorSchema = z
     text: z.string().max(300),
     context: z.string().max(300),
     twins: z.number().int().min(2).max(100_000).optional(),
+    fingerprint: z.string().max(16).optional(),
     point: Point.optional(),
     rect: Point.extend({ width: z.number().finite(), height: z.number().finite() }).optional(),
     viewport: z.number().int().min(0).max(100_000),

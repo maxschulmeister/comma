@@ -180,3 +180,29 @@ test("identical twins: when one goes away, the pin is detached, not moved to the
   await page.evaluate(() => document.querySelector('[data-fixture="twin-1"]')?.closest(".card")?.remove())
   expect(await resolved(page)).toBeNull()
 })
+
+test("look-alikes that differ in a link follow their link when they swap places", async ({ page }) => {
+  await open(page)
+  await pin(page, "open-b")
+  await page.evaluate(() => {
+    const cards = document.querySelector('[data-fixture="links"]') as HTMLElement
+    cards.prepend(cards.lastElementChild as Element)
+  })
+  expect(await resolved(page)).toBe("open-b")
+})
+
+test("a unique element that gets an identical copy is detached", async ({ page }) => {
+  await open(page)
+  await pin(page, "faq-2")
+  // An identical copy with the same neighbors: there is no way to tell which one is the original.
+  await page.evaluate(() => {
+    const section = document.querySelector('[data-fixture="faq"]') as HTMLElement
+    const copy = section.cloneNode(true) as HTMLElement
+    for (const el of copy.querySelectorAll("[data-fixture], [data-comment-anchor]")) {
+      el.removeAttribute("data-fixture")
+      el.removeAttribute("data-comment-anchor")
+    }
+    section.before(copy)
+  })
+  expect(await resolved(page)).toBeNull()
+})

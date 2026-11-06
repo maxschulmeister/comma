@@ -107,7 +107,12 @@ export function Composer({
       (e: Error) => setUploads((list) => list.map((u) => (u.key === upload.key ? { ...u, error: e.message } : u))),
     )
 
+  // While it sends, nothing changes the comment: the server gets what was there when the user sent it.
+  const sendingRef = useRef(false)
+  sendingRef.current = sending
+
   const addFiles = (files: File[]) => {
+    if (sendingRef.current) return
     const images = files.filter((f) => IMAGE_TYPES.includes(f.type))
     if (images.length === 0) return
     const room = MAX_FILES - uploadsRef.current.length
@@ -133,13 +138,15 @@ export function Composer({
     const files = current.flatMap((u) => (u.ref ? [u.ref.id] : []))
     if (editor.isEmpty && files.length === 0) return
     setSending(true)
+    sendingRef.current = true
+    setLinkOpen(false)
     setError(null)
     // No typing while it sends: the text is cleared when the server has it.
     editor.setEditable(false)
     try {
       await onSubmit(editor.isEmpty ? EMPTY_DOC : trimDoc(editor.getJSON()), files)
       drafts.delete(key)
-      editor.commands.clearContent(true)
+      if (!editor.isDestroyed) editor.commands.clearContent(true)
       setUploads([])
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not send. Try again.")
@@ -174,6 +181,7 @@ export function Composer({
             (await searchUsers(q)).map((u) => ({ id: u.id, label: u.name, avatar: u.avatarUrl })),
           searchEmoji,
           onFiles: (files) => {
+            if (sendingRef.current) return true
             if (!allowFiles || !files.some((f) => IMAGE_TYPES.includes(f.type))) return false
             addFiles(files)
             return true
@@ -254,6 +262,7 @@ export function Composer({
                 variant="secondary"
                 className="absolute top-0.5 right-0.5"
                 aria-label="Remove image"
+                disabled={sending}
                 onClick={() => setUploads((list) => list.filter((x) => x.key !== u.key))}
               >
                 <XIcon />
@@ -271,6 +280,7 @@ export function Composer({
 
       <div className="flex items-center gap-0.5">
         <EmojiButton
+          disabled={sending}
           onSelect={(emoji) => editorRef.current?.chain().insertContent(emoji).run()}
           returnFocus={() => editorRef.current?.view.dom as HTMLElement | undefined}
         />
@@ -280,7 +290,7 @@ export function Composer({
           size="icon-sm"
           aria-label="Mention someone"
           title="Mention someone"
-          disabled={!ready}
+          disabled={!ready || sending}
           onClick={() => editorRef.current?.chain().focus().insertContent(" @").run()}
         >
           <AtIcon />
@@ -291,7 +301,7 @@ export function Composer({
           size="icon-sm"
           aria-label="Add link"
           title="Add link"
-          disabled={!ready}
+          disabled={!ready || sending}
           onClick={() => setLinkOpen(true)}
         >
           <LinkIcon />
@@ -304,7 +314,7 @@ export function Composer({
               size="icon-sm"
               aria-label="Add image"
               title="Add image"
-              disabled={uploads.length >= MAX_FILES}
+              disabled={uploads.length >= MAX_FILES || sending}
               onClick={() => fileInputRef.current?.click()}
             >
               <ImageIcon />

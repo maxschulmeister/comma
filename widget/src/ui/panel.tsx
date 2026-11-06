@@ -30,10 +30,17 @@ export const NARROW = "(max-width: 639px)"
 
 const lastActivity = (t: Thread) => t.comments.at(-1)?.createdAt ?? t.updatedAt
 
-/** Threads in the panel: filters, search and sort. */
-export function visibleThreads(threads: Thread[], filters: Filters, page: string, me: string | undefined) {
+/** Threads in the panel: filters, search and sort. The open thread always shows (it can need its item as anchor). */
+export function visibleThreads(
+  threads: Thread[],
+  filters: Filters,
+  page: string,
+  me: string | undefined,
+  open: string | null,
+) {
   const q = filters.query.trim().toLowerCase()
   const list = threads.filter((t) => {
+    if (t.id === open) return true
     if (filters.scope === "page" && t.page !== page) return false
     if (!filters.resolved && t.status === "resolved") return false
     if (filters.mine && (!me || !t.comments.some((c) => c.authorId === me || c.mentions.includes(me)))) return false
@@ -119,7 +126,10 @@ function PanelContent() {
   const listRef = useRef<HTMLUListElement>(null)
   const asideRef = useRef<HTMLElement>(null)
   useFocusManagement(asideRef)
-  const list = useMemo(() => visibleThreads(threads, filters, page, me), [threads, filters, page, me])
+  const list = useMemo(
+    () => visibleThreads(threads, filters, page, me, openThreadId),
+    [threads, filters, page, me, openThreadId],
+  )
   const setFilters = (patch: Partial<Filters>) => setState((s) => ({ filters: { ...s.filters, ...patch } }))
 
   const activate = (thread: Thread) => {

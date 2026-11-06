@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { sign } from "hono/jwt"
 import {
   appSession,
   clickAt,
@@ -158,6 +159,22 @@ test("the draft stays when the popover closes, also after a sent reply", async (
   await endCommentMode(page)
   await pins(page).first().click()
   await expect(threadPopover(page).locator("[data-slot=composer] .ProseMirror")).toHaveText("unsent reply")
+})
+
+test("an open draft is not shown to another user who signs in with identify", async ({ page }) => {
+  const popover = await startComment(page, "draft-identify")
+  await typeComment(page, popover, "draft of the first user")
+  const token = await sign(
+    { sub: "e2e:other-user", name: "Other user", exp: Math.floor(Date.now() / 1000) + 120 },
+    "e2e-app-secret",
+    "HS256",
+  )
+  await page.evaluate(
+    (t) => (window as unknown as { comma: { identify: (t: string) => void } }).comma.identify(t),
+    token,
+  )
+  await expect(toolbar(page).getByRole("button", { name: "Account: Other user" })).toBeVisible()
+  await expect(popover.locator(".ProseMirror")).not.toContainText("draft of the first user")
 })
 
 test("a draft is not shown to the next person who signs in", async ({ page }) => {

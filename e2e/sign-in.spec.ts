@@ -35,6 +35,36 @@ test("in the app, comma.identify signs people in without a sign-in screen", asyn
   await expect(toolbar(page).getByRole("button", { name: "Account: Linus" })).toBeVisible()
 })
 
+test("identify works when the page calls a stub that it read before the widget loaded", async ({ page }) => {
+  // Signed in to the app (cookie). The test page itself does not call identify.
+  await page.goto("/login?next=/")
+  await page.getByLabel("Name").fill("Stubby")
+  await page.getByRole("button", { name: "Sign in" }).click()
+  await expect(page.getByRole("heading", { name: "Ship websites your team agrees on" })).toBeVisible()
+
+  // Hold the widget back, so the page reads the stub from c.js first.
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route("**/w/main.js", async (route) => {
+    await held
+    await route.continue()
+  })
+  await page.goto(testPath("stub"), { waitUntil: "domcontentloaded" })
+  await page.waitForFunction(() => "comma" in window)
+  await page.evaluate(async () => {
+    const w = window as unknown as { comma: { identify: (t: string) => void }; callStub: () => void }
+    const stub = w.comma.identify
+    const token = (await (await fetch("/comma-token")).json()).token
+    w.callStub = () => stub(token)
+  })
+  release()
+  await expect(toolbar(page)).toBeVisible()
+  await page.evaluate(() => (window as unknown as { callStub: () => void }).callStub())
+  await expect(toolbar(page).getByRole("button", { name: "Account: Stubby" })).toBeVisible()
+})
+
 test("a guest signs in with a name", async ({ page }) => {
   await page.goto(testPath("guest-sign-in"))
   await toolbar(page).getByRole("button", { name: "Account", exact: true }).click()

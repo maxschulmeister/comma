@@ -366,13 +366,16 @@ function DraftComposer({ draft }: { draft: Draft }) {
         >
           {me ? (
             <Composer
+              // A new user gets a new composer with their own draft.
+              key={me.id}
               draftKey="new"
               placeholder="Add a comment"
               label="Comment"
               submitLabel="Post comment"
               onSubmit={async (body, files) => {
                 const thread = await createThread({ page: draft.page, anchor: draft.anchor, body, files })
-                setState({ draft: null, openThreadId: thread.id })
+                // A slow answer: the user may be on another page or writing another comment by now.
+                if (getState().draft === draft) setState({ draft: null, openThreadId: thread.id })
               }}
             />
           ) : (

@@ -170,6 +170,22 @@ test("the panel takes the focus and gives it back", async ({ page }) => {
   await expect(button).toBeFocused()
 })
 
+test("a link opens a resolved, detached thread", async ({ page }) => {
+  const me = await guestSession("Linked")
+  const path = testPath("deep-resolved")
+  const thread = await apiThread(me, path, "Old and resolved", "This heading is gone")
+  const api = await request.newContext()
+  await api.patch(`${COMMA}/api/threads/${thread.id}`, {
+    headers: { origin: SITE, authorization: `Bearer ${me.token}` },
+    data: { status: "resolved" },
+  })
+  await api.dispose()
+  await signIn(page, me)
+  await page.goto(`${path}#comma=${thread.id}`)
+  await expect(threadPopover(page)).toContainText("Old and resolved")
+  await expect(threadPopover(page)).toContainText("Resolved")
+})
+
 test.describe("narrow screens", () => {
   test.use({ viewport: { width: 400, height: 800 } })
   test("the panel covers the full screen and does not push the page", async ({ page }) => {

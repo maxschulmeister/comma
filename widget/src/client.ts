@@ -51,12 +51,11 @@ async function request<T>(
     init.body = JSON.stringify(body)
   }
   const res = await fetch(`${server}${path}`, init)
-  if (res.status === 304) return null as T
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    if (res.status === 401 && session && getState().session === session) saveSession(null)
-    throw new ApiError(res.status, data.error ?? "Something went wrong. Try again.")
-  }
+  if (res.status === 401 && session && getState().session === session) saveSession(null)
+  // The answer belongs to a session that ended (sign-out, other user): it must not change the store.
+  if (getState().session !== session) throw new ApiError(401, "You are signed out.")
+  if (!res.ok) throw new ApiError(res.status, data.error ?? "Something went wrong. Try again.")
   return data as T
 }
 
@@ -130,9 +129,11 @@ export function refresh(): Promise<void> {
     try {
       const session = getState().session
       const before = changes
-      const data = await requestThreads()
+      const result = await requestThreads()
       stale = before !== changes
-      if (data && !stale && getState().session === session) {
+      if (result && !stale && getState().session === session) {
+        const { data } = result
+        etag = result.etag
         setState({
           threads: data.threads,
           users: data.users,
@@ -164,8 +165,9 @@ async function requestThreads() {
   }
   if (!res.ok) throw new ApiError(res.status, "Could not load comments")
   if (getState().session !== session) return null
-  etag = res.headers.get("etag")
-  return (await res.json()) as { me: User; threads: Thread[]; users: Record<string, User> }
+  // The caller keeps the ETag only if it uses the data.
+  const data = (await res.json()) as { me: User; threads: Thread[]; users: Record<string, User> }
+  return { data, etag: res.headers.get("etag") }
 }
 
 const POLL_MS = 15_000
@@ -241,13 +243,14 @@ export async function setStatus(thread: Thread, status: Thread["status"]) {
 }
 
 export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
+  const { session } = getState()
   // Show the new place at once. The server answer replaces it.
   changes++
   setState((s) => ({ threads: s.threads.map((t) => (t.id === thread.id ? { ...t, page, anchor } : t)) }))
   try {
     return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { page, anchor }))
   } catch (error) {
-    applyThread({ thread, users: {} })
+    if (getState().session === session) applyThread({ thread, users: {} })
     throw error
   }
 }
@@ -255,13 +258,16 @@ export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
 export async function setRead(thread: Thread, read: boolean) {
   const setUnread = (unread: boolean) =>
     setState((s) => ({ threads: s.threads.map((t) => (t.id === thread.id ? { ...t, unread } : t)) }))
+  const { session } = getState()
   changes++
   setUnread(!read)
   try {
     return applyThread(await request<ThreadResult>("POST", `/api/threads/${thread.id}/read`, { read }))
   } catch (error) {
-    etag = null
-    setUnread(thread.unread)
+    if (getState().session === session) {
+      etag = null
+      setUnread(thread.unread)
+    }
     throw error
   }
 }

@@ -47,10 +47,17 @@ function start({ __queue: queue, __script: script }: Loader) {
     identify: (token: string) => identify(token),
     signOut: () => signOut(),
   }
-  ;(window as unknown as { comma: typeof api }).comma = api
-  for (const [name, args] of queue) {
+  const run = ([name, args]: [string, unknown[]]) => {
     if (name === "identify" && typeof args[0] === "string") void api.identify(args[0]).catch(() => {})
     else if (name === "signOut") api.signOut()
+  }
+  ;(window as unknown as { comma: typeof api }).comma = api
+  for (const call of queue.splice(0)) run(call)
+  // Code can still hold a stub from c.js: `window.comma.identify(await getToken())` reads the function
+  // before the await. Such late calls run now.
+  queue.push = (...calls) => {
+    for (const call of calls) run(call)
+    return 0
   }
 
   const { root } = createShadowHost(new URL("w/", script.src).href)

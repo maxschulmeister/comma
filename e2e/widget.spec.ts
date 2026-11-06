@@ -83,6 +83,25 @@ test.describe("comment mode", () => {
     expect(Math.abs((pin?.x ?? 0) - ((link?.x ?? 0) + (link?.width ?? 0) / 2))).toBeLessThan(2)
   })
 
+  test("with the keyboard: arrow keys pick any element, Enter comments on it", async ({ page }) => {
+    await signIn(page, await guestSession("Arrows"))
+    await openTestPage(page, "arrows")
+    await page.keyboard.press("c")
+    await expect(overlay(page)).toBeAttached()
+    const announcement = page.locator("[aria-live=polite]")
+    for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowDown")
+    await expect(announcement).toHaveText(
+      "Paragraph: A paragraph that people comment on in tests.. Press Enter to comment.",
+    )
+    await page.keyboard.press("Enter")
+    await typeComment(page, newCommentPopover(page), "Picked with arrows")
+    await page.keyboard.press("Enter")
+    await expect(threadPopover(page)).toContainText("Picked with arrows")
+    const lead = await page.getByTestId("lead").boundingBox()
+    const pin = await pins(page).first().boundingBox()
+    expect(Math.abs((pin?.x ?? 0) - ((lead?.x ?? 0) + (lead?.width ?? 0) / 2))).toBeLessThan(2)
+  })
+
   test("a drag draws a region", async ({ page }) => {
     await signIn(page, await guestSession("Region"))
     await openTestPage(page, "region")

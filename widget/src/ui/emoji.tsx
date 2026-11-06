@@ -65,11 +65,13 @@ export function EmojiButton({
   onSelect,
   label = "Add emoji",
   className,
+  disabled,
   returnFocus,
 }: {
   onSelect: (emoji: string) => void
   label?: string
   className?: string
+  disabled?: boolean
   /** Where the focus goes after a pick. Default: the button. */
   returnFocus?: () => HTMLElement | null | undefined
 }) {
@@ -78,7 +80,15 @@ export function EmojiButton({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={
-          <Button type="button" variant="ghost" size="icon-sm" aria-label={label} title={label} className={className} />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={label}
+            title={label}
+            className={className}
+            disabled={disabled}
+          />
         }
       >
         <SmileyIcon />
