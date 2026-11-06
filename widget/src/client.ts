@@ -193,19 +193,34 @@ async function requestThreads() {
 }
 
 const POLL_MS = 15_000
+const IDLE_MS = 5 * 60_000
+// Input that shows someone uses the page. Focus and a visible tab count too.
+const ACTIVITY = ["pointermove", "pointerdown", "keydown", "wheel", "scroll", "touchstart", "focus"]
 
-/** Polls every 15 s while the tab is visible, and when the window gets focus. */
+/**
+ * Polls every 15 s while the tab is visible and someone uses the page. After 5 minutes with no input it stops,
+ * so a tab that stays open costs no requests. The next input, focus or visible tab polls at once.
+ */
 export function startPolling() {
+  let lastActivity = Date.now()
+  const idle = () => Date.now() - lastActivity > IDLE_MS
   const tick = () => {
-    if (document.visibilityState === "visible") void refresh()
+    if (document.visibilityState === "visible" && !idle()) void refresh()
   }
+  const onActivity = (e: Event) => {
+    const wasIdle = idle()
+    lastActivity = Date.now()
+    // Window focus polls at once. Focus on an element in the page only counts as input.
+    if (wasIdle || (e.type === "focus" && e.target === window) || e.type === "visibilitychange") tick()
+  }
+  const options = { capture: true, passive: true }
   const timer = setInterval(tick, POLL_MS)
-  window.addEventListener("focus", tick)
-  document.addEventListener("visibilitychange", tick)
+  for (const type of ACTIVITY) window.addEventListener(type, onActivity, options)
+  document.addEventListener("visibilitychange", onActivity)
   return () => {
     clearInterval(timer)
-    window.removeEventListener("focus", tick)
-    document.removeEventListener("visibilitychange", tick)
+    for (const type of ACTIVITY) window.removeEventListener(type, onActivity, options)
+    document.removeEventListener("visibilitychange", onActivity)
   }
 }
 

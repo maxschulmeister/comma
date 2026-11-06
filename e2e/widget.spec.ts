@@ -328,3 +328,34 @@ test.describe("touch", () => {
     await expect(newCommentPopover(page)).toBeVisible()
   })
 })
+
+test("polling stops after 5 minutes with no input, the next input polls at once", async ({ page }) => {
+  await page.clock.install()
+  await signIn(page, await guestSession("Idle"))
+  let polls = 0
+  page.on("request", (r) => {
+    if (r.method() === "GET" && new URL(r.url()).pathname === "/api/threads") polls++
+  })
+  // Moves the clock in 15 s steps. Each poll finishes before the next step.
+  const wait = async (minutes: number) => {
+    for (let i = 0; i < minutes * 4; i++) {
+      await page.clock.runFor(15_000)
+      await page.waitForTimeout(50)
+    }
+  }
+  await openTestPage(page, "idle")
+  await page.mouse.move(10, 10)
+  const start = polls
+  await wait(1)
+  expect(polls - start).toBeGreaterThanOrEqual(3)
+  // No input for more than 5 minutes.
+  await wait(6)
+  const idle = polls
+  await wait(10)
+  expect(polls).toBe(idle)
+  await page.mouse.move(20, 20)
+  await expect.poll(() => polls).toBe(idle + 1)
+  // Polling runs again.
+  await wait(1)
+  expect(polls).toBeGreaterThanOrEqual(idle + 3)
+})
