@@ -32,10 +32,11 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 
 ### Composer
 
-- Markdown subset: bold, italic, strikethrough, inline code, link, bulleted and numbered lists.
+- Rich text (formatting shows while you type): bold, italic, strikethrough, inline code, link, bulleted and numbered lists.
+- Markdown input rules: `**bold**`, `*italic*`, `~strike~`, `` `code` ``, `- ` and `1. ` start lists.
 - Shortcuts: `⌘B`, `⌘I`, `⌘⇧X`, `⌘E`, `⌘K`, `⌘⇧7`, `⌘⇧8` (`Ctrl` on Windows and Linux).
 - `@` mentions with a picker. You can mention people known to the project (signed-in users and people who commented).
-- Emoji: picker button and `:name:` autocomplete.
+- Emoji: picker button and `:name:` autocomplete. Both insert the Unicode character.
 - Images: up to 5 per comment (PNG, JPEG, GIF, WebP, ≤ 5 MB each), by paste, drop or button.
 - `Enter` sends. `Shift+Enter` adds a line.
 - The draft stays if the popover closes.
@@ -95,7 +96,7 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 Out (later, maybe):
 
 - Page screenshots, console and network capture.
-- Email and Slack notifications (see "Open questions").
+- Email and Slack notifications (decided: not in v1).
 - Issue-tracker sync.
 - Realtime push (SSE or WebSocket). v1 polls.
 - User groups, notification settings.
@@ -138,8 +139,16 @@ window.comma.identify(token); // token from your backend, see "Login"
   - **Panel**: fixed on the right.
   - **Toolbar**: floating, bottom right.
 - No iframe in v1.
-- Composer: a plain text field with Markdown syntax and shortcuts. The thread shows the rendered result. A rich text editor (formatting shows while you type) is much more code. Add it later if needed.
-- Size target: `c.js` ≤ 35 kB gzip. Emoji data loads on demand.
+- Composer: [Tiptap](https://tiptap.dev) v3 (MIT), core only, no React binding. Preact mounts it with a ref.
+  - Extensions: Document, Paragraph, Text, Bold, Italic, Strike, Code, Link, lists, HardBreak, UndoRedo, Placeholder, Mention. Not StarterKit (it adds what we do not use).
+  - `:name:` autocomplete: `@tiptap/suggestion` with our own emoji list. Not `@tiptap/extension-emoji` (measured: +~70 kB gzip, and it stores emoji as nodes).
+  - `injectCSS: false`: Tiptap puts its CSS in `document.head`, which does not reach the Shadow DOM. Add the ProseMirror base CSS to our own styles.
+  - ProseMirror supports Shadow DOM, with fixes for Safari (`getComposedRanges`). Step 1 checks this in all browsers.
+- Thread view: does not use Tiptap. A small renderer turns the stored JSON into Preact elements. Only known nodes and marks, no `innerHTML`.
+- Size:
+  - `c.js` ≤ 35 kB gzip: toolbar, pins, threads, panel. Preact is ~6 kB of this.
+  - Editor chunk ~135 kB gzip (measured: Tiptap core + ProseMirror + the extensions above). Loads on demand. Preload it when comment mode starts or when the browser is idle.
+  - Emoji data: loads on demand.
 
 ### Push panel
 
@@ -195,7 +204,9 @@ Details:
 - Hono on Bun, SQLite with `bun:sqlite`. One file database.
 - Validate all input at the entry point (zod).
 - CORS and `Origin` check: only the project's registered origins.
-- Comment text is stored as Markdown. The widget escapes all HTML, then renders the Markdown subset. Links: only `http`, `https` and `mailto`, with `rel="noopener noreferrer"`.
+- Comment body is stored as Tiptap JSON. The server checks it against the allowed nodes and marks (zod), with a size limit. It rejects anything else.
+- The server reads mentions from the mention nodes, and plain text (for search) from the text nodes. The client does not send them separately.
+- Links: only `http`, `https` and `mailto`. Rendered with `rel="noopener noreferrer"` and `target="_blank"`.
 - Images: stored in SQLite (one file to back up). Check type by file content, not by name. Uploads that no comment uses after 24 h are deleted.
 - Rate limit in memory (one server process).
 
@@ -220,8 +231,8 @@ export default {
 users      id, project, kind (guest|app), external_id, name, email, avatar_url, is_admin, created_at
 threads    id, project, page (URL path), anchor (JSON), status (open|resolved),
            created_by, created_at, updated_at, resolved_at, resolved_by
-comments   id, thread_id, author_id, body (Markdown), created_at, edited_at
-mentions   comment_id, user_id
+comments   id, thread_id, author_id, body (Tiptap JSON), text (plain, for search), created_at, edited_at
+mentions   comment_id, user_id   (from the body)
 reactions  comment_id, user_id, emoji
 reads      user_id, thread_id, read_at
 files      id, project, comment_id (null until used), uploaded_by, mime, size, width, height, data, created_at
@@ -239,12 +250,12 @@ POST   /api/session/app          { project, appToken }  → { token, user }
 GET    /auth/start               ?project&origin        → redirect to signInUrl
 GET    /auth/callback            ?token&state           → page: postMessage session to opener, close
 GET    /api/threads                         → all threads with comments, reactions, read state (ETag)
-POST   /api/threads                         { page, anchor, body, mentions, files } → thread
+POST   /api/threads                         { page, anchor, body, files } → thread
 PATCH  /api/threads/:id                     { status } | { page, anchor }
 DELETE /api/threads/:id
 POST   /api/threads/:id/read                { read: true|false }
-POST   /api/threads/:id/comments            { body, mentions, files }
-PATCH  /api/comments/:id                    { body, mentions }
+POST   /api/threads/:id/comments            { body, files }
+PATCH  /api/comments/:id                    { body }
 DELETE /api/comments/:id
 PUT    /api/comments/:id/reactions/:emoji
 DELETE /api/comments/:id/reactions/:emoji
@@ -260,6 +271,7 @@ All `/api/*` routes except sessions need a session token. The project comes from
 Each step uses TDD: write a failing test first.
 
 1. **Repo setup**: Bun workspaces, TypeScript strict, Biome, Playwright.
+   - Spike: Tiptap in an open Shadow DOM. Typing, selection, shortcuts, input rules and the mention popup work in Chromium, Firefox and WebKit. If a browser fails: fix it, or move only the editor into the page DOM with scoped styles.
 2. **Anchors** (Playwright on fixture pages, real layout):
    - A pin stays on its element after a section is added above it.
    - A pin stays on its element after a reload and a viewport resize.
@@ -271,7 +283,7 @@ Each step uses TDD: write a failing test first.
    - Origin check, CORS, rate limit.
 4. **Server extras**: mentions, reactions, read state, user search, files, `ETag`.
 5. **Widget shell**: Shadow DOM, toolbar, comment mode, outline, pins, clusters, move pin, `Shift+C`, touch.
-6. **Composer**: Markdown subset and shortcuts, safe render, mentions, emoji, images, drafts.
+6. **Composer**: Tiptap with shortcuts and input rules, mentions, emoji, images, drafts, on-demand loading. Thread renderer from JSON.
 7. **Thread popover**: replies, reactions, menu, resolve, mark as unread, copy link.
 8. **Panel**: push mode, list, search, sort, filters, keyboard, other-page threads, deep link, narrow screens, polling.
 9. **Popup sign-in**: `/auth/start`, `/auth/callback`, origin checks. A fake app in `example/` signs tokens.
@@ -283,12 +295,7 @@ Each step uses TDD: write a failing test first.
 - `bun test`: server and pure logic.
 - `bunx playwright test`: anchors and end-to-end.
 - `bunx biome check`, `tsc --noEmit`.
-- Size check on `c.js`.
-
-## Open questions
-
-1. **Email for mentions and replies in v1?** Figma sends these. Without email, people see mentions only when they open the widget. Email needs a provider (for example Resend or SMTP). Guests have no email unless they give one.
-2. **Composer**: plain text with Markdown (planned), or a rich text editor?
+- Size check on `c.js` and the editor chunk.
 
 ## References
 
