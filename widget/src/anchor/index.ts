@@ -33,9 +33,10 @@ export type Anchor = {
    * For a short label or a control that is not a link or image itself ("Add to cart"): the largest small container
    * with links or images (its card). `urls`: hashes of those links and images, one per occurrence, without icons in
    * buttons. They must all still be in the card, as often as before. A filter that shows another product in the card
-   * removes them. A sort, or another product added to a small list, does not.
+   * removes them. A sort, or another product added to a small list, does not. More than 50: `all`, and `urls` is one
+   * hash of all of them, which must stay the same.
    */
-  card?: { depth: number; urls: string[] }
+  card?: { depth: number; urls: string[]; all?: true }
   /** Pin: position in % of the element box. */
   point?: { x: number; y: number }
   /** Region: box in % of the element box. Can be < 0 or > 100. */
@@ -143,7 +144,9 @@ function cardOf(el: Element): Anchor["card"] {
     const node = ancestorAt(el, depth)
     if (!node || normalize(node.textContent).length > MAX_CARD_TEXT) break
     const urls = cardSet(node)
-    if (urls.length > 0) card = { depth, urls: urls.slice(0, MAX_CARD_URLS) }
+    // Too many to store: one hash of all of them, which must stay the same (a sort keeps it, any change detaches).
+    if (urls.length > MAX_CARD_URLS) card = { depth, urls: [hashOf(urls.join(","))], all: true }
+    else if (urls.length > 0) card = { depth, urls }
   }
   return card
 }
@@ -270,6 +273,7 @@ const inScope = (anchor: Anchor, el: Element) => {
   if (!anchor.card) return true
   const card = ancestorAt(el, anchor.card.depth)
   if (!card) return false
+  if (anchor.card.all) return hashOf(cardSet(card).join(",")) === anchor.card.urls[0]
   // Each stored link or image must still be there as often as before. A picker that selects another item keeps
   // the old link in its thumbnail, but shows it once less.
   const count = new Map<string, number>()

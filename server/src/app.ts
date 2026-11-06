@@ -57,7 +57,11 @@ const AnchorSchema = z
     repeated: z.boolean().optional(),
     scope: z.object({ depth: z.number().int().min(1).max(10), hash: z.string().max(16) }).optional(),
     card: z
-      .object({ depth: z.number().int().min(1).max(10), urls: z.array(z.string().max(16)).min(1).max(50) })
+      .object({
+        depth: z.number().int().min(1).max(10),
+        urls: z.array(z.string().max(16)).min(1).max(50),
+        all: z.literal(true).optional(),
+      })
       .optional(),
     point: Point.optional(),
     rect: Point.extend({ width: z.number().finite(), height: z.number().finite() }).optional(),

@@ -652,3 +652,42 @@ test("a picker: another selected item is another element, also when its old link
   )
   expect(after).toEqual({ kept: false, found: null })
 })
+
+test("a picker with many thumbnails: another selected item is another element, a sort is not", async ({ page }) => {
+  await open(page)
+  // Every item as the selected one: the evidence of each must count, not only a sample.
+  const wrong = await page.evaluate(() => {
+    const failures: string[] = []
+    for (let selected = 1; selected <= 40; selected++) {
+      document.querySelector('[data-fixture="big-picker"]')?.remove()
+      const thumbs = Array.from(
+        { length: 40 },
+        (_, i) => `<a href="/img/p-${i + 1}.jpg"><img src="/img/p-${i + 1}.jpg" alt="" width="4" height="4"></a>`,
+      ).join("")
+      document
+        .querySelector("main")
+        ?.insertAdjacentHTML(
+          "beforeend",
+          `<div data-fixture="big-picker"><a href="/img/p-${selected}.jpg" class="preview"><img src="/img/p-${selected}.jpg" alt="" width="8" height="8"></a><div class="thumbs">${thumbs}</div><button type="button">Use the selected one</button></div>`,
+        )
+      const picker = document.querySelector('[data-fixture="big-picker"]') as HTMLElement
+      const button = picker.querySelector("button") as HTMLElement
+      const r = button.getBoundingClientRect()
+      const anchor = window.commaAnchor.createAnchor(button, { point: { x: r.left + 1, y: r.top + 1 } })
+      // A sort keeps it.
+      const list = picker.querySelector(".thumbs") as HTMLElement
+      for (const thumb of Array.from(list.children)) list.prepend(thumb)
+      if (window.commaAnchor.resolveAnchor(anchor) !== button) failures.push(`sort ${selected}`)
+      // Another selected item detaches it.
+      const preview = picker.querySelector(".preview") as HTMLElement
+      const other = selected === 40 ? 1 : selected + 1
+      preview.setAttribute("href", `/img/p-${other}.jpg`)
+      preview.querySelector("img")?.setAttribute("src", `/img/p-${other}.jpg`)
+      if (window.commaAnchor.resolveAnchor(anchor, button) || window.commaAnchor.resolveAnchor(anchor)) {
+        failures.push(`select ${selected}`)
+      }
+    }
+    return failures
+  })
+  expect(wrong).toEqual([])
+})
