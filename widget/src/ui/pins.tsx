@@ -122,6 +122,7 @@ function Pin({
   const first = thread.comments[0]
   const replies = thread.comments.length - 1
   const dragged = useRef(false)
+  const [preview, setPreview] = useState(false)
   const canMove = !!me && me.id === thread.createdBy
 
   // Drag to move. Only the thread author. A click without movement opens the thread.
@@ -153,8 +154,9 @@ function Pin({
 
   const label = `Comment by ${author?.name ?? "Unknown"}${thread.unread ? ", unread" : ""}: ${first?.text.slice(0, 80) ?? ""}`
 
+  // No preview while the thread is open: it would also take the Escape key.
   return (
-    <HoverCard>
+    <HoverCard open={preview && !open} onOpenChange={setPreview}>
       <HoverCardTrigger
         delay={300}
         closeDelay={100}
@@ -291,6 +293,7 @@ function ThreadPopover() {
   const page = useStore((s) => s.page)
   const resolved = useResolved()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
   const id = thread?.id
 
   // The pin or cluster on the page, else the item in the panel.
@@ -315,9 +318,10 @@ function ThreadPopover() {
         collisionPadding={8}
         className="w-80 gap-0 p-0"
         aria-label="Comment thread"
+        initialFocus={listRef}
         finalFocus={anchor?.isConnected ? { current: anchor } : true}
       >
-        {thread && <ThreadView thread={thread} detached={detached} />}
+        {thread && <ThreadView thread={thread} detached={detached} listRef={listRef} />}
       </PopoverContent>
     </Popover>
   )

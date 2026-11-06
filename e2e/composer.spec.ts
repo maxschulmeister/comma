@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test"
 import {
   appSession,
   clickAt,
+  endCommentMode,
   guestSession,
   mod,
   newCommentPopover,
@@ -147,9 +148,7 @@ test("the draft stays when the popover closes", async ({ page }) => {
   await typeComment(page, popover, "first")
   await page.keyboard.press("Enter")
   await typeComment(page, threadPopover(page), "unsent reply")
-  await page.keyboard.press("Escape")
-  await expect(threadPopover(page)).toBeHidden()
-  await page.keyboard.press("Escape")
+  await endCommentMode(page)
   await pins(page).first().click()
   await expect(threadPopover(page).locator("[data-slot=composer] .ProseMirror")).toHaveText("unsent reply")
 })

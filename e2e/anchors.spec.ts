@@ -148,3 +148,21 @@ test("a region keeps its size relative to the element, also outside the element"
   expect(result.box.width).toBeCloseTo(result.r2.width * ((result.anchor.rect?.width ?? 0) / 100), 1)
   expect(result.box.x).toBeLessThan(result.r2.left)
 })
+
+test("a short text whose context changed is detached, not moved to a look-alike", async ({ page }) => {
+  await open(page)
+  await pin(page, "btn-ent")
+  // The Enterprise card goes away. Two other "Learn more" buttons stay.
+  await page.evaluate(() => document.querySelector('[data-fixture="btn-ent"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+test("a long text is found even when its neighbors change", async ({ page }) => {
+  await open(page)
+  await pin(page, "lead")
+  await page.evaluate(() => {
+    const title = document.querySelector('[data-fixture="title"]') as HTMLElement
+    title.textContent = "A new title"
+  })
+  expect(await resolved(page)).toBe("lead")
+})

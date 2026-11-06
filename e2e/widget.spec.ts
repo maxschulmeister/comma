@@ -4,7 +4,10 @@ import {
   clickAt,
   guestSession,
   newCommentPopover,
+  closeThread,
+  endCommentMode,
   openTestPage,
+  overlay,
   panel,
   pins,
   signIn,
@@ -52,6 +55,7 @@ test.describe("comment mode", () => {
     await signIn(page, await guestSession("Region"))
     await openTestPage(page, "region")
     await page.keyboard.press("c")
+    await expect(overlay(page)).toBeAttached()
     const picture = await page.getByTestId("picture").boundingBox()
     if (!picture) throw new Error("no box")
     await page.mouse.move(picture.x + 20, picture.y + 20)
@@ -72,8 +76,7 @@ test.describe("comment mode", () => {
     await signIn(page, await guestSession("Hider"))
     await openTestPage(page, "hide")
     await addComment(page, page.getByTestId("title"), "Hello")
-    await page.keyboard.press("Escape")
-    await page.keyboard.press("Escape")
+    await endCommentMode(page)
     await expect(pins(page)).toHaveCount(1)
     await page.keyboard.press("Shift+C")
     await expect(pins(page)).toHaveCount(0)
@@ -90,11 +93,10 @@ test.describe("comment mode", () => {
     await openTestPage(page, "cluster")
     const lead = page.getByTestId("lead")
     await addComment(page, lead, "One", 0.3)
-    await page.keyboard.press("Escape")
+    await closeThread(page)
     // Left of the first pin (a pin covers 28 px to the right of its point).
     await addComment(page, lead, "Two", 0.28)
-    await page.keyboard.press("Escape")
-    await page.keyboard.press("Escape")
+    await endCommentMode(page)
     const cluster = page.locator("[data-slot=cluster]")
     await expect(cluster).toHaveAccessibleName("2 comments")
     await cluster.click()
@@ -106,8 +108,7 @@ test.describe("comment mode", () => {
     await signIn(page, await guestSession("Mover"))
     await openTestPage(page, "move")
     await addComment(page, page.getByTestId("title"), "Move me")
-    await page.keyboard.press("Escape")
-    await page.keyboard.press("Escape")
+    await endCommentMode(page)
     const pin = pins(page).first()
     const from = await pin.boundingBox()
     const beta = await page.getByTestId("beta").boundingBox()
@@ -130,8 +131,7 @@ test.describe("comment mode", () => {
     await signIn(page, await guestSession("Preview"))
     await openTestPage(page, "preview")
     await addComment(page, page.getByTestId("title"), "A preview text")
-    await page.keyboard.press("Escape")
-    await page.keyboard.press("Escape")
+    await endCommentMode(page)
     await pins(page).first().hover()
     await expect(page.locator("[data-slot=hover-card-content]")).toContainText("A preview text")
   })

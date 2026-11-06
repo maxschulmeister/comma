@@ -11,7 +11,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react"
 import { cn } from "cn"
-import { useEffect, useRef, useState } from "react"
+import { type RefObject, useEffect, useState } from "react"
 import { deleteComment, deleteThread, editComment, fileUrl, reply, setRead, setStatus, toggleReaction } from "@/client"
 import {
   AlertDialog,
@@ -49,12 +49,20 @@ export const threadLink = (thread: Thread) => `${location.origin}${thread.page}#
 type Confirm = { title: string; description: string; action: string; run: () => Promise<unknown> }
 
 /** The content of the thread popover: comments, reactions, actions and the reply box. */
-export function ThreadView({ thread, detached }: { thread: Thread; detached?: boolean }) {
+export function ThreadView({
+  thread,
+  detached,
+  listRef,
+}: {
+  thread: Thread
+  detached?: boolean
+  /** The comment list. The popover focuses it first, so no button (and its tooltip) gets the focus. */
+  listRef: RefObject<HTMLDivElement | null>
+}) {
   const me = useStore((s) => s.session?.user)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
-  const listRef = useRef<HTMLDivElement>(null)
   const close = () => setState({ openThreadId: null })
 
   // Opening a thread marks it as read.
@@ -172,7 +180,7 @@ export function ThreadView({ thread, detached }: { thread: Thread; detached?: bo
         </Button>
       </div>
 
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-1">
+      <div ref={listRef} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto py-1 outline-none">
         {resolved && (
           <p className="flex items-center gap-1.5 px-3 py-1 text-muted-foreground text-xs">
             <CheckIcon /> Resolved

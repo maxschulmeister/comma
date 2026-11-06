@@ -21,7 +21,9 @@ export type Anchor = {
 const TEXT_LENGTH = 120
 const CONTEXT_LENGTH = 60
 const MIN_TEXT = 0.8
-const MIN_SCORE = 0.75
+// Short texts ("Learn more", "Pricing") repeat on pages. Their context must match too.
+const SHORT_TEXT = 25
+const MIN_CONTEXT = 0.8
 const MIN_LEAD = 0.02
 
 const normalize = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim()
@@ -167,13 +169,16 @@ export function resolveAnchor(anchor: Anchor): Element | null {
   }
 
   // Score all elements with the same tag. The best must be clearly better than the second.
+  const short = anchor.text.length < SHORT_TEXT
   let best: { el: Element; score: number } | null = null
   let second = 0
   for (const el of Array.from(document.getElementsByTagName(anchor.tag))) {
     if (el.closest("comma-widget")) continue
     const text = similarity(textOf(el), anchor.text)
     if (text < MIN_TEXT) continue
-    let score = text * 0.7 + similarity(contextOf(el), anchor.context) * 0.3
+    const context = anchor.context ? similarity(contextOf(el), anchor.context) : 1
+    if (short && context < MIN_CONTEXT) continue
+    let score = text * 0.7 + context * 0.3
     if (el === byId) score += 0.05
     if (el === byCss) score += 0.03
     if (!best || score > best.score) {
@@ -181,7 +186,7 @@ export function resolveAnchor(anchor: Anchor): Element | null {
       best = { el, score }
     } else if (score > second) second = score
   }
-  if (!best || best.score < MIN_SCORE || best.score - second < MIN_LEAD) return null
+  if (!best || best.score - second < MIN_LEAD) return null
   return best.el
 }
 

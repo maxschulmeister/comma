@@ -60,8 +60,11 @@ export const threadPopover = (page: Page) => page.getByRole("dialog", { name: "C
 export const newCommentPopover = (page: Page) => page.getByRole("dialog", { name: "New comment" })
 export const pins = (page: Page) => page.locator("[data-slot=pin]")
 
+export const overlay = (page: Page) => page.locator("[data-slot=comment-overlay]")
+
 /** Clicks the page in comment mode, at a % of the element box. */
 export async function clickAt(page: Page, target: Locator, x = 0.2, y = 0.5) {
+  await expect(overlay(page)).toBeAttached()
   const box = await target.boundingBox()
   if (!box) throw new Error("No box")
   await page.mouse.click(box.x + box.width * x, box.y + box.height * y)
@@ -89,3 +92,15 @@ export async function addComment(page: Page, target: Locator, text: string, x = 
 
 export const mod = (browserName: string) =>
   browserName === "webkit" || process.platform === "darwin" ? "Meta" : "Control"
+
+/** Escape closes the open popover, a second Escape ends comment mode. Waits for each. */
+export async function closeThread(page: Page) {
+  await page.keyboard.press("Escape")
+  await expect(threadPopover(page)).toBeHidden()
+}
+
+export async function endCommentMode(page: Page) {
+  await closeThread(page)
+  await page.keyboard.press("Escape")
+  await expect(toolbar(page).getByRole("button", { name: "Comment mode" })).toHaveAttribute("aria-pressed", "false")
+}
