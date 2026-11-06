@@ -59,13 +59,16 @@
   --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  /* 4.6:1 on --muted (selected rows), not only on white. */
+  --muted-foreground: oklch(0.54 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  /* 4.9:1 on its own 10% tint (destructive buttons). */
+  --destructive: oklch(0.54 0.22 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* Focus rings: 4.7:1 on white, 4.3:1 on --muted. */
+  --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -118,7 +121,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
 }
 
@@ -132,6 +135,17 @@
   font-size: 14px;
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
+}
+
+/* Reduced motion: popups, pins and menus change at once, without slides and zooms.
+   Outside a layer, so it wins over the Tailwind utilities (they are in layers). */
+@media (prefers-reduced-motion: reduce) {
+  .comma-root *,
+  .comma-root *::before,
+  .comma-root *::after {
+    animation-duration: 0.01ms;
+    transition-duration: 0.01ms;
+  }
 }
 
 /* ProseMirror base CSS. Tiptap cannot inject it into the shadow root (`injectCSS: false`). */

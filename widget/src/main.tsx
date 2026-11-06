@@ -63,6 +63,8 @@ function start({ __queue: queue, __script: script }: Loader) {
   const { root } = createShadowHost(new URL("w/", script.src).href)
   const portal = document.createElement("div")
   portal.className = "comma-root"
+  portal.lang = "en"
+  portal.dir = "ltr"
   root.after(portal)
   createRoot(root).render(
     <PortalContainer.Provider value={portal}>

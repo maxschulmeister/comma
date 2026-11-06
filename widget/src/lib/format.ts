@@ -28,11 +28,11 @@ export function initials(name: string) {
   return (first + last).toUpperCase()
 }
 
-/** A stable color for a user id. */
+/** A stable color for a user id. White initials on it have 4.5:1 or more on every hue. */
 export function userColor(id: string) {
   let hash = 0
   for (const char of id) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) | 0
-  return `oklch(0.62 0.15 ${Math.abs(hash) % 360})`
+  return `oklch(0.52 0.13 ${Math.abs(hash) % 360})`
 }
 
 export function plural(n: number, one: string, many: string) {

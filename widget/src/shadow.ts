@@ -33,6 +33,9 @@ export function createShadowHost(assetBase: string) {
 
   const root = document.createElement("div")
   root.className = "comma-root"
+  // The widget text is English. The page can be in another language.
+  root.lang = "en"
+  root.dir = "ltr"
   shadow.append(root)
   return { host, shadow, root }
 }

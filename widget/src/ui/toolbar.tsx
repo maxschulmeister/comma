@@ -87,7 +87,7 @@ export function Toolbar() {
             <span
               aria-hidden
               data-slot="unread-count"
-              className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 font-medium text-[10px] text-white tabular-nums"
+              className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 font-medium text-[10px] text-white tabular-nums"
             >
               {unread > 99 ? "99+" : unread}
             </span>

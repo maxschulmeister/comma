@@ -359,3 +359,13 @@ test("polling stops after 5 minutes with no input, the next input polls at once"
   await wait(1)
   expect(polls).toBeGreaterThanOrEqual(idle + 3)
 })
+
+test("the widget says it is English, and keeps still with reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await signIn(page, await guestSession("Still"))
+  await openTestPage(page, "still")
+  await expect(page.locator("comma-widget .comma-root").first()).toHaveAttribute("lang", "en")
+  await addComment(page, page.getByTestId("lead"), "Still")
+  const seconds = await threadPopover(page).evaluate((el) => Number.parseFloat(getComputedStyle(el).animationDuration))
+  expect(seconds).toBeLessThan(0.001)
+})
