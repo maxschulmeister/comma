@@ -143,7 +143,6 @@ function PanelContent() {
   }
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: Escape closes the panel; its controls are buttons.
     <aside
       ref={asideRef}
       aria-label="Comments"

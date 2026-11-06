@@ -352,6 +352,7 @@ function SuggestionList({ state, id }: { state: SuggestionState; id: string }) {
       className="max-h-48 overflow-y-auto rounded-md bg-popover p-1 shadow-md ring-1 ring-foreground/10"
     >
       {state.items.map((item, i) => (
+        // biome-ignore lint/a11y/useKeyWithClickEvents: arrow keys and Enter in the text pick options (aria-activedescendant).
         <div
           key={item.id}
           id={`${id}-${i}`}
