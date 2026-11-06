@@ -65,6 +65,7 @@
         "@types/node": "^24",
         "@types/react": "^19",
         "@types/react-dom": "^19",
+        "postcss": "^8.5.32",
         "typescript": "~6.0.2",
         "vite": "^8",
       },

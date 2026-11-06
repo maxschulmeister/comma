@@ -37,6 +37,8 @@ export type EditorOptions = {
   onSuggestion: (state: SuggestionState | null) => void
   searchUsers: (query: string) => Promise<SuggestionItem[]>
   searchEmoji: (query: string) => Promise<SuggestionItem[]>
+  /** Image files pasted or dropped into the text. Return true when handled. */
+  onFiles: (files: File[]) => boolean
 }
 
 // `~strike~` (one tilde), as in Slack and Figma. `⌘⇧X` as in Figma.
@@ -157,7 +159,11 @@ export function createEditor(options: EditorOptions) {
     element: options.element,
     injectCSS: false,
     content: options.content ?? undefined,
-    editorProps: { attributes: { "aria-label": options.label, role: "textbox", "aria-multiline": "true" } },
+    editorProps: {
+      attributes: { "aria-label": options.label, role: "textbox", "aria-multiline": "true" },
+      handlePaste: (_view, event) => options.onFiles(Array.from(event.clipboardData?.files ?? [])),
+      handleDrop: (_view, event) => options.onFiles(Array.from(event.dataTransfer?.files ?? [])),
+    },
     extensions: [
       Document,
       Paragraph,

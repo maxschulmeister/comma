@@ -1,6 +1,6 @@
 import { ArrowUpIcon, AtIcon, ImageIcon, LinkIcon, XIcon } from "@phosphor-icons/react"
 import { cn } from "cn"
-import { type ClipboardEvent, type DragEvent, useEffect, useRef, useState } from "react"
+import { type DragEvent, useEffect, useRef, useState } from "react"
 import { searchUsers, uploadFile } from "@/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -147,13 +147,16 @@ export function Composer({
           searchUsers: async (q) =>
             (await searchUsers(q)).map((u) => ({ id: u.id, label: u.name, avatar: u.avatarUrl })),
           searchEmoji,
+          onFiles: (files) => {
+            if (!allowFiles || !files.some((f) => IMAGE_TYPES.includes(f.type))) return false
+            addFiles(files)
+            return true
+          },
         }
         const editor = createEditor(options)
         editorRef.current = editor
         setEmpty(editor.isEmpty)
         setReady(true)
-        const dom = editor.view.dom as HTMLElement
-        dom.addEventListener("paste", (event) => onPaste(event as unknown as ClipboardEvent))
         if (autoFocus) editor.commands.focus("end")
       },
       () => setError("Could not load the editor. Check your connection and try again."),
@@ -171,19 +174,11 @@ export function Composer({
     }
   }, [])
 
-  const onPaste = (event: ClipboardEvent) => {
-    if (!allowFiles) return
-    const files = Array.from(event.clipboardData?.files ?? [])
-    if (files.some((f) => IMAGE_TYPES.includes(f.type))) {
-      event.preventDefault()
-      addFiles(files)
-    }
-  }
-
   const onDrop = (event: DragEvent) => {
     if (!allowFiles) return
     const files = Array.from(event.dataTransfer?.files ?? [])
-    if (files.length === 0) return
+    // The text handles drops on itself (see onFiles).
+    if (files.length === 0 || event.defaultPrevented) return
     event.preventDefault()
     event.stopPropagation()
     addFiles(files)
@@ -211,7 +206,11 @@ export function Composer({
       {uploads.length > 0 && (
         <ul className="flex flex-wrap gap-1.5" aria-label="Images">
           {uploads.map((u) => (
-            <li key={u.key} className="relative size-14 overflow-hidden rounded-md border bg-muted">
+            <li
+              key={u.key}
+              data-state={u.error ? "error" : u.ref ? "done" : "uploading"}
+              className="relative size-14 overflow-hidden rounded-md border bg-muted"
+            >
               <img src={u.preview} alt="" className={cn("size-full object-cover", !u.ref && "opacity-50")} />
               {!u.ref && !u.error && <Spinner className="absolute inset-0 m-auto" />}
               {u.error && (
@@ -241,7 +240,10 @@ export function Composer({
       )}
 
       <div className="flex items-center gap-0.5">
-        <EmojiButton onSelect={(emoji) => editorRef.current?.chain().focus().insertContent(emoji).run()} />
+        <EmojiButton
+          onSelect={(emoji) => editorRef.current?.chain().insertContent(emoji).run()}
+          returnFocus={() => editorRef.current?.view.dom as HTMLElement | undefined}
+        />
         <Button
           type="button"
           variant="ghost"
@@ -350,15 +352,20 @@ function SuggestionList({ state }: { state: SuggestionState }) {
 function LinkInput({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const current = editor.getAttributes("link").href as string | undefined
   const [value, setValue] = useState(current ?? "")
+  // Move the focus to the text before the input unmounts, so the focus does not go to the popover.
+  const close = () => {
+    editor.view.focus()
+    onClose()
+  }
   const apply = () => {
     let href = value.trim()
     if (href && !/^(https?:|mailto:)/i.test(href)) href = `https://${href}`
-    const chain = editor.chain().focus().extendMarkRange("link")
+    const chain = editor.chain().extendMarkRange("link")
     if (!href) chain.unsetLink().run()
     else if (editor.state.selection.empty && !current) {
       chain.insertContent({ type: "text", text: value.trim(), marks: [{ type: "link", attrs: { href } }] }).run()
     } else chain.setLink({ href }).run()
-    onClose()
+    close()
   }
   return (
     <div className="flex items-center gap-1">
@@ -376,8 +383,7 @@ function LinkInput({ editor, onClose }: { editor: Editor; onClose: () => void })
           } else if (e.key === "Escape") {
             e.preventDefault()
             e.stopPropagation()
-            onClose()
-            editor.commands.focus()
+            close()
           }
         }}
       />

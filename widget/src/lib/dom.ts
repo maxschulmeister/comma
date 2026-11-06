@@ -28,3 +28,9 @@ export function isTyping(event: Event) {
 }
 
 export const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+
+/**
+ * Runs after the current event is done. Use it to close a nested popover from a click inside it:
+ * if it closes during the click, the parent popover sees a click outside and closes too.
+ */
+export const afterEvent = (fn: () => void) => setTimeout(fn, 0)

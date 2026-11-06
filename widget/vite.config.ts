@@ -57,7 +57,7 @@ function emitStatic(): Plugin {
           source: fromModules(`@fontsource-variable/instrument-sans/files/${name}`),
         })
       }
-      for (const name of ["data.json", "messages.json"]) {
+      for (const name of ["data.json", "messages.json", "shortcodes/iamcal.json"]) {
         this.emitFile({ type: "asset", fileName: `emoji/en/${name}`, source: fromModules(`emojibase-data/en/${name}`) })
       }
     },
@@ -69,6 +69,7 @@ export default defineConfig({
   css: { postcss: { plugins: [shadowCss()] } },
   resolve: {
     alias: [{ find: "@", replacement: resolve(import.meta.dirname, "./src") }, ...preactCompat],
+    dedupe: ["preact"],
   },
   build: {
     target: "es2022",
