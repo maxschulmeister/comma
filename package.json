@@ -1,0 +1,22 @@
+{
+  "name": "comma",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "widget",
+    "example"
+  ],
+  "scripts": {
+    "build": "bun run --cwd widget build",
+    "dev": "bun run --cwd widget build --watch & bun run --cwd server dev",
+    "start": "bun run --cwd server start",
+    "test": "bun test server",
+    "e2e": "bunx playwright test",
+    "check": "bunx biome check . && bun run --cwd server typecheck && bun run --cwd widget typecheck"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.5",
+    "@playwright/test": "^1.65.0"
+  }
+}

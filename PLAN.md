@@ -125,7 +125,7 @@ Any site:
 In your app, when the user is signed in:
 
 ```js
-window.comma.identify(token); // token from your backend, see "Login"
+window.comma.identify(token) // token from your backend, see "Login"
 ```
 
 ### Widget
@@ -207,11 +207,11 @@ Rules:
 
 One rule: **your app signs a short token, comma trusts it.**
 
-| Where | How |
-|---|---|
-| Inside your app | The app backend signs a token. The frontend calls `comma.identify(token)`. No login screen. |
+| Where           | How                                                                                                                                                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Inside your app | The app backend signs a token. The frontend calls `comma.identify(token)`. No login screen.                                                                                                                           |
 | On another site | "Sign in" opens a popup → comma redirects to the app sign-in URL → the app (after its normal login) redirects back with a signed token → the popup sends a comma session to the widget with `postMessage` and closes. |
-| No account | Guest: enter a name. |
+| No account      | Guest: enter a name.                                                                                                                                                                                                  |
 
 Details:
 
@@ -244,7 +244,7 @@ export default {
       signInUrl: "https://app.acme.com/comma-sign-in", // optional: enables popup sign-in
     },
   ],
-};
+}
 ```
 
 ### Data

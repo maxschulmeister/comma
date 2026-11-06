@@ -1,0 +1,8 @@
+{
+  "name": "example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun app.ts"
+  }
+}
