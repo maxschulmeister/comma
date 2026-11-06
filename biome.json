@@ -27,7 +27,7 @@
   },
   "linter": {
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
         "noComponentHookFactories": "off"
       }

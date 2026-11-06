@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Anchor fixture</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; }
+      main { max-width: 900px; margin: 0 auto; padding: 24px; }
+      section { padding: 32px 0; border-bottom: 1px solid #ddd; }
+      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+      .card { border: 1px solid #ccc; padding: 16px; }
+      .hero-img { width: 100%; height: 120px; background: #eef; }
+    </style>
+  </head>
+  <body>
+    <header id=":r3:"><nav><a href="/">Home</a> <a href="/pricing">Pricing</a></nav></header>
+    <main>
+      <section data-fixture="intro">
+        <h1 data-fixture="title">Comments on any website</h1>
+        <p data-fixture="lead">Pin a comment to any element on the page and talk about it with your team.</p>
+        <div class="hero-img" data-fixture="hero" role="img" aria-label="Hero picture"></div>
+      </section>
+      <section id="pricing" data-fixture="pricing">
+        <h2 data-fixture="pricing-title">Pricing</h2>
+        <div class="cards">
+          <div class="card"><h3>Free</h3><p>For small teams.</p><button data-fixture="btn-free">Learn more</button></div>
+          <div class="card"><h3>Pro</h3><p>For growing teams.</p><button data-fixture="btn-pro">Learn more</button></div>
+          <div class="card"><h3>Enterprise</h3><p>For large teams.</p><button data-fixture="btn-ent">Learn more</button></div>
+        </div>
+      </section>
+      <section data-fixture="faq">
+        <h2>Questions</h2>
+        <p data-fixture="faq-1">Alpha answer about billing and invoices.</p>
+        <p data-fixture="faq-2">Beta answer about security and data storage.</p>
+        <div data-comment-anchor="signup" data-fixture="signup"><button>Sign up</button></div>
+      </section>
+    </main>
+  </body>
+</html>
