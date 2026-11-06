@@ -78,15 +78,20 @@ function ancestorAt(el: Element, depth: number) {
 
 const scopeHash = (el: Element | null) => (el ? hashOf(normalize(el.textContent).slice(0, SCOPE_LENGTH)) : "")
 
-// The closest container of `el` that holds none of the look-alikes and has another text than their containers.
+// The container of `el` that tells it apart from the most look-alikes: the closest one that tells it apart from all,
+// else the one that tells it apart from most ("Free shipping" in two of three cards: the card title, not the wrapper).
+// It holds none of the look-alikes.
 function scopeOf(el: Element, others: Element[]): Anchor["scope"] {
+  let best: { depth: number; hash: string; apart: number } | undefined
   for (let depth = 1; depth <= MAX_SCOPE_DEPTH; depth++) {
     const node = ancestorAt(el, depth)
-    if (!node || others.some((o) => node.contains(o))) return undefined
+    if (!node || others.some((o) => node.contains(o))) break
     const hash = scopeHash(node)
-    if (others.some((o) => scopeHash(ancestorAt(o, depth)) !== hash)) return { depth, hash }
+    const apart = others.filter((o) => scopeHash(ancestorAt(o, depth)) !== hash).length
+    if (apart > (best?.apart ?? 0)) best = { depth, hash, apart }
+    if (apart === others.length) break
   }
-  return undefined
+  return best && { depth: best.depth, hash: best.hash }
 }
 
 // Ids made by frameworks change between builds or renders: ":r3:", "radix-…", "headlessui-…", "ember123".
@@ -153,9 +158,11 @@ export function createAnchor(el: Element, at: { point: { x: number; y: number } 
   if (el.id && isStableId(el.id)) anchor.selectors.id = el.id
   anchor.selectors.css = cssPath(el)
   anchor.fingerprint = fingerprintOf(el)
+  // Look-alikes elsewhere on the page. Not the element's own wrappers or labels (`<button><span>Add</span>`).
   const lookAlikes = Array.from(document.getElementsByTagName(anchor.tag)).filter(
     (x) =>
-      x !== el &&
+      !x.contains(el) &&
+      !el.contains(x) &&
       !x.closest("comma-widget") &&
       similarity(textOf(x), anchor.text) >= MIN_TEXT &&
       fingerprintOf(x) === anchor.fingerprint,

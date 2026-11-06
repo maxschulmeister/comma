@@ -386,3 +386,26 @@ test("look-alikes in different cards: the card tells them apart when the cards c
   await page.evaluate(() => document.querySelector('[data-fixture="cart-desk"]')?.closest(".card")?.remove())
   expect(await resolved(page)).toBeNull()
 })
+
+// Moves the first card to the end, then removes the card of `name`: the pin follows its card, then detaches.
+async function reorderThenRemove(page: Page, cards: string, name: string) {
+  await page.evaluate((cards) => {
+    const list = document.querySelector(`[data-fixture="${cards}"]`) as HTMLElement
+    list.append(list.firstElementChild as Element)
+  }, cards)
+  expect(await resolved(page)).toBe(name)
+  await page.evaluate((name) => document.querySelector(`[data-fixture="${name}"]`)?.closest(".card")?.remove(), name)
+  expect(await resolved(page)).toBeNull()
+}
+
+test("look-alikes in three cards: the card title tells them apart, not only the closest wrapper", async ({ page }) => {
+  await open(page)
+  await pin(page, "buy-desk")
+  await reorderThenRemove(page, "shop-cards", "buy-desk")
+})
+
+test("look-alikes with nested labels: the label inside a button is told apart by its card", async ({ page }) => {
+  await open(page)
+  await pin(page, "label-red")
+  await reorderThenRemove(page, "label-cards", "label-red")
+})
