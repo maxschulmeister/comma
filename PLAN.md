@@ -17,6 +17,7 @@ Comments pinned to any website. Vercel-style comment UX. One script tag. Your ow
 - One central service holds the data. Sites do not host a backend.
 - Good UX first. v1 has at least the features of Figma comments (see "v1 scope"). Leave out what is not needed for that.
 - A comment never points to a wrong element. If we cannot find its element, the comment is "detached".
+- All UI is built with [shadcn/ui](https://ui.shadcn.com) components (see "UI").
 
 ## v1 scope
 
@@ -130,7 +131,7 @@ window.comma.identify(token); // token from your backend, see "Login"
 ### Widget
 
 - One host element on `<html>` with an open Shadow DOM. Open, so Playwright can reach it.
-- Preact: React-style code, ~4 kB, no conflict with React on the page.
+- Preact: React-style code, ~4 kB, no conflict with React on the page. shadcn components use it through `preact/compat` (see "UI").
 - Reset inherited styles with `:host { all: initial }`. Use `px` or own variables, not `rem` (the page can change the root font size).
 - Layers:
   - **Pins**: positioned on their elements. Update on scroll, resize and DOM changes (one `requestAnimationFrame` per frame).
@@ -139,6 +140,27 @@ window.comma.identify(token); // token from your backend, see "Login"
   - **Panel**: fixed on the right.
   - **Toolbar**: floating, bottom right.
 - No iframe in v1.
+
+### UI
+
+- Build all UI with shadcn/ui components: toolbar, pins, popovers, menus, panel, forms, sign-in. Do not write a custom component when a shadcn component does the job. Change shadcn components only to fit the widget (Shadow DOM, sizes).
+- Set up with the preset:
+
+  ```sh
+  bunx shadcn@latest create --preset bdw1GxIe
+  ```
+
+  Preset `base-mira`: [Base UI](https://base-ui.com) primitives (`@base-ui/react`), Tailwind v4, `tw-animate-css`, Phosphor icons, Instrument Sans, zinc base, yellow primary, radius `0.45rem`, light and dark tokens.
+- Shadow DOM fixes:
+  - Tailwind CSS goes into the shadow root (constructable stylesheet), not `document.head`.
+  - Theme variables on `:host`, not `:root`. Dark mode: `.dark` class on the host element.
+  - Tailwind v4 `@property` rules do not work inside a shadow root. Add them once to the page document, or give fallback values.
+  - Convert `rem` to `px` at build time (the page can change the root font size).
+  - `@font-face` does not work in a shadow root in Chromium. Add the Instrument Sans `@font-face` to the page document.
+  - Base UI portals: render into a container inside the shadow root.
+- Trade-offs:
+  - Base UI under `preact/compat` is not proven. Step 1 checks it. If it fails: use React for the widget and raise the size budget.
+  - Base UI, Tailwind CSS and icons add size. Import icons one by one. Measure in step 1.
 - Composer: [Tiptap](https://tiptap.dev) v3 (MIT), core only, no React binding. Preact mounts it with a ref.
   - Extensions: Document, Paragraph, Text, Bold, Italic, Strike, Code, Link, lists, HardBreak, UndoRedo, Placeholder, Mention. Not StarterKit (it adds what we do not use).
   - `:name:` autocomplete: `@tiptap/suggestion` with our own emoji list. Not `@tiptap/extension-emoji` (measured: +~70 kB gzip, and it stores emoji as nodes).
@@ -146,7 +168,7 @@ window.comma.identify(token); // token from your backend, see "Login"
   - ProseMirror supports Shadow DOM, with fixes for Safari (`getComposedRanges`). Step 1 checks this in all browsers.
 - Thread view: does not use Tiptap. A small renderer turns the stored JSON into Preact elements. Only known nodes and marks, no `innerHTML`.
 - Size:
-  - `c.js` ≤ 35 kB gzip: toolbar, pins, threads, panel. Preact is ~6 kB of this.
+  - `c.js` ≤ 35 kB gzip: toolbar, pins, threads, panel. Preact is ~6 kB of this. Base UI and Tailwind CSS are also in this budget. Check the budget after the step 1 spike.
   - Editor chunk ~135 kB gzip (measured: Tiptap core + ProseMirror + the extensions above). Loads on demand. Preload it when comment mode starts or when the browser is idle.
   - Emoji data: loads on demand.
 
@@ -271,6 +293,8 @@ All `/api/*` routes except sessions need a session token. The project comes from
 Each step uses TDD: write a failing test first.
 
 1. **Repo setup**: Bun workspaces, TypeScript strict, Biome, Playwright.
+   - shadcn: `bunx shadcn@latest create --preset bdw1GxIe` in `widget/`. Wire Tailwind CSS into the shadow root (see "UI").
+   - Spike: shadcn Button, Popover, Dropdown Menu and Dialog with `preact/compat` in the Shadow DOM. Focus, keyboard, portals and styles work in Chromium, Firefox and WebKit. Measure the gzip size.
    - Spike: Tiptap in an open Shadow DOM. Typing, selection, shortcuts, input rules and the mention popup work in Chromium, Firefox and WebKit. If a browser fails: fix it, or move only the editor into the page DOM with scoped styles.
 2. **Anchors** (Playwright on fixture pages, real layout):
    - A pin stays on its element after a section is added above it.
