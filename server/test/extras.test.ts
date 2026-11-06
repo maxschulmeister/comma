@@ -325,3 +325,12 @@ describe("popup sign-in", () => {
     ).toBe(401)
   })
 })
+
+describe("upload limit", () => {
+  test("a user can upload 100 images per hour", async () => {
+    const s = setup()
+    const a = await s.guest("Uploader")
+    for (let i = 0; i < 100; i++) expect((await upload(s, a.token)).status).toBe(200)
+    expect((await upload(s, a.token)).status).toBe(429)
+  })
+})

@@ -95,6 +95,7 @@ export function createApp(options: AppOptions) {
   const projects = new Map(config.projects.map((p) => [p.id, p]))
   const allOrigins = new Set(config.projects.flatMap((p) => p.origins))
   const rateLimit = new RateLimit(100, 60 * 60 * 1000)
+  const uploadLimit = new RateLimit(100, 60 * 60 * 1000)
 
   const bump = (project: string) =>
     db
@@ -486,6 +487,8 @@ export function createApp(options: AppOptions) {
     }
     const file = form.get("file")
     if (!(file instanceof File)) throw new HTTPException(400, { message: "Send the image in the field 'file'" })
+    if (!uploadLimit.take(user.id, now()))
+      throw new HTTPException(429, { message: "Too many images. Try again later." })
     if (file.size > MAX_IMAGE_BYTES) throw new HTTPException(413, { message: "Images can be up to 5 MB" })
     const data = new Uint8Array(await file.arrayBuffer())
     const info = readImage(data)
