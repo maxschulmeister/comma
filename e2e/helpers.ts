@@ -46,7 +46,7 @@ export async function signIn(page: Page, session: Session, origin = SITE) {
 
 // A page of its own for each test, browser and run: threads on other pages do not show.
 const RUN = Date.now().toString(36)
-export const testPath = (name: string) => `/t/${name}-${test.info().project.name}-${test.info().repeatEachIndex}-${RUN}`
+export const testPath = (name: string) => `/t/${name}-${test.info().testId}-${test.info().repeatEachIndex}-${RUN}`
 
 export async function openTestPage(page: Page, name: string) {
   await page.goto(testPath(name))

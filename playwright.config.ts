@@ -13,8 +13,10 @@ const env = {
 export default defineConfig({
   testDir: "e2e",
   fullyParallel: true,
+  // Many browsers run at once. Loading the editor and emoji data can take a few seconds.
+  expect: { timeout: 10_000 },
   reporter: "list",
-  use: { baseURL: "http://localhost:4900", trace: "retain-on-failure" },
+  use: { baseURL: "http://localhost:4900", trace: "retain-on-failure", screenshot: "only-on-failure" },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },
