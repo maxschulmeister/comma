@@ -31,9 +31,9 @@ export type Anchor = {
   scope?: { depth: number; hash: string }
   /**
    * For a short label or a control that is not a link or image itself ("Add to cart"): the largest small container
-   * with links or images (its card). `urls`: hashes of those links and images, without icons in buttons.
-   * They must all still be in the card. A filter that shows another product in the card removes them. A sort, or
-   * another product added to a small list, does not.
+   * with links or images (its card). `urls`: hashes of those links and images, one per occurrence, without icons in
+   * buttons. They must all still be in the card, as often as before. A filter that shows another product in the card
+   * removes them. A sort, or another product added to a small list, does not.
    */
   card?: { depth: number; urls: string[] }
   /** Pin: position in % of the element box. */
@@ -129,8 +129,9 @@ function cardUrls(node: Element) {
   return urls
 }
 
-// Hashes of the links and images of a container (see Anchor.card). A set: a sort does not change it.
-const cardSet = (node: Element) => [...new Set(cardUrls(node).map(hashOf))].sort()
+// Hashes of the links and images of a container, one per occurrence (see Anchor.card). Sorted: a sort of the
+// items does not change them.
+const cardSet = (node: Element) => cardUrls(node).map(hashOf).sort()
 
 // The largest small container of a label with links or images: they say which item it is (see Anchor.card).
 // The largest, not the closest: an action row ("Add to cart", "Size guide", a policy link) has links that are on every
@@ -269,8 +270,15 @@ const inScope = (anchor: Anchor, el: Element) => {
   if (!anchor.card) return true
   const card = ancestorAt(el, anchor.card.depth)
   if (!card) return false
-  const urls = new Set(cardSet(card))
-  return anchor.card.urls.every((url) => urls.has(url))
+  // Each stored link or image must still be there as often as before. A picker that selects another item keeps
+  // the old link in its thumbnail, but shows it once less.
+  const count = new Map<string, number>()
+  for (const url of cardSet(card)) count.set(url, (count.get(url) ?? 0) + 1)
+  return anchor.card.urls.every((url) => {
+    const left = count.get(url) ?? 0
+    count.set(url, left - 1)
+    return left > 0
+  })
 }
 
 // Elements with the same tag, text, context, fingerprint and container.

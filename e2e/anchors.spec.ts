@@ -635,3 +635,20 @@ test("a product card in a list: another product added to the list does not detac
   })
   expect(await resolved(page)).toBe("shirt-red")
 })
+
+test("a picker: another selected item is another element, also when its old link stays in a thumbnail", async ({
+  page,
+}) => {
+  await open(page)
+  await pin(page, "use-pick")
+  expect(await resolved(page)).toBe("use-pick")
+  const after = await afterCode(
+    page,
+    `(() => {
+      const preview = document.querySelector('[data-fixture="picker"] .preview')
+      preview.setAttribute("href", "/img/lake.jpg")
+      preview.querySelector("img").setAttribute("src", "/img/lake.jpg")
+    })()`,
+  )
+  expect(after).toEqual({ kept: false, found: null })
+})
