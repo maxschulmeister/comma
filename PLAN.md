@@ -38,7 +38,10 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 - Shortcuts: `⌘B`, `⌘I`, `⌘⇧X`, `⌘E`, `⌘K`, `⌘⇧7`, `⌘⇧8` (`Ctrl` on Windows and Linux).
 - `@` mentions with a picker. You can mention people known to the project (signed-in users and people who commented).
 - Emoji: picker button and `:name:` autocomplete. Both insert the Unicode character.
-- Images: up to 5 per comment (PNG, JPEG, GIF, WebP, ≤ 5 MB each), by paste, drop or button.
+- Images: up to 5 per comment (PNG, JPEG, GIF, WebP, ≤ 4 MB each), by paste, drop or button.
+  - Before the upload, the widget makes images larger than 2560 px on the long side smaller, with a canvas. It encodes them as WebP. Where the browser cannot encode WebP (Safari), it uses JPEG for photos and PNG for images with transparency.
+  - GIFs stay as they are, so animation stays.
+  - 4 MB fits the request limits of Lambda and Vercel (see DEPLOY.md).
 - `Enter` sends. `Shift+Enter` adds a line.
 - The draft stays if the popover closes.
 
@@ -80,6 +83,8 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 - Read state per user and thread. A thread is unread when it has a comment by someone else after your last read.
 - The panel button shows the count of unread threads.
 - Poll every 15 s while the tab is visible, and when the window gets focus. `ETag`, so no change costs little.
+- Stop polling after 5 minutes with no input (pointer, keys, scroll). On the next input or focus, poll at once and start again. Tabs that stay open do not cost requests.
+- No push (SSE or WebSocket) in v1: each target needs a different solution. For team use, polling stays in the free tiers.
 
 ### Identity
 
