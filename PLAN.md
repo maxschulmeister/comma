@@ -236,14 +236,15 @@ Details:
 
 ### Server
 
-- Hono on Bun, SQLite with `bun:sqlite`. One file database.
+- Hono. Runs on Bun (Docker), AWS Lambda, Cloudflare Workers and Vercel (see DEPLOY.md).
+- SQLite through libSQL: one local file, or a remote database (Turso) on serverless targets. Writes go in one `batch`.
 - Validate all input at the entry point (zod).
 - CORS and `Origin` check: only the project's registered origins.
 - Comment body is stored as Tiptap JSON. The server checks it against the allowed nodes and marks (zod), with a size limit. It rejects anything else.
 - The server reads mentions from the mention nodes, and plain text (for search) from the text nodes. The client does not send them separately.
 - Links: only `http`, `https` and `mailto`. Rendered with `rel="noopener noreferrer"` and `target="_blank"`.
-- Images: stored in SQLite (one file to back up). Check type by file content, not by name. Uploads that no comment uses after 24 h are deleted.
-- Rate limit in memory (one server process).
+- Images: stored in the database (one file to back up), or in S3 or R2 (serverless). Check type by file content, not by name. Uploads that no comment uses after 24 h are deleted.
+- Rate limit in memory. One process on Docker. On serverless, each instance counts alone.
 
 Projects live in `comma.config.ts`. Secrets come from env:
 

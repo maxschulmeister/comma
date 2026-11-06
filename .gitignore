@@ -12,3 +12,7 @@ playwright-report
 
 # Static widget files for Workers and Vercel (scripts/public.ts)
 /public
+
+# AWS SAM: build output, and parameters with secrets (sam deploy --guided)
+.aws-sam
+samconfig.toml
