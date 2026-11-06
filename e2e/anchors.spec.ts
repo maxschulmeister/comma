@@ -314,3 +314,10 @@ test("on the open page, the same element stays when only its neighbors change", 
   )
   expect(kept).toBe(true)
 })
+
+test("repeated text: similar neighbors are not enough (another product)", async ({ page }) => {
+  await open(page)
+  await pin(page, "delivery-14")
+  await page.evaluate(() => document.querySelector('[data-fixture="delivery-14"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})

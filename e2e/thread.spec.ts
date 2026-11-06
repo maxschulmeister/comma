@@ -257,6 +257,38 @@ test("an old read answer does not undo Mark as unread", async ({ page, context }
   await other.close()
 })
 
+test("a poll does not undo Mark as unread that is on its way", async ({ page, context }) => {
+  await withComment(page, "read-poll", "Writer")
+  const other = await asOther(context, "read-poll", await guestSession("Reader"))
+  await expect(pins(other).first()).not.toHaveAccessibleName(/unread/)
+  // "Mark as unread" is held on its way to the server.
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await other.route("**/api/threads/*/read", async (route) => {
+    await held
+    await route.continue()
+  })
+  const thread = threadPopover(other)
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await other.getByRole("menuitem", { name: "Mark as unread" }).click()
+  await expect(pins(other).first()).toHaveAccessibleName(/unread/)
+  // Another change makes the next poll return new data, still with the old read state.
+  const first = threadPopover(page).getByRole("article").first()
+  await first.hover()
+  await first.getByRole("button", { name: "Add reaction" }).click()
+  await page.getByRole("button", { name: "React with 🎉" }).click()
+  await expect(first.getByRole("button", { name: /^🎉 1/ })).toBeVisible()
+  const polled = other.waitForResponse((r) => r.url().endsWith("/api/threads") && r.status() === 200)
+  await other.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await polled
+  await other.waitForTimeout(200)
+  await expect(pins(other).first()).toHaveAccessibleName(/unread/)
+  release()
+  await other.close()
+})
+
 test("an unsaved edit goes away when another user signs in", async ({ page }) => {
   const thread = await withComment(page, "edit-identify", "Editor")
   const first = thread.getByRole("article").first()

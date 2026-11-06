@@ -167,6 +167,37 @@ test.describe("comment mode", () => {
     expect(Math.abs((box?.y ?? 0) + (box?.height ?? 0) - drop.y)).toBeLessThan(2)
   })
 
+  test("moving a region keeps it after its neighbors changed", async ({ page }) => {
+    await signIn(page, await guestSession("Region keeper"))
+    await openTestPage(page, "region-neighbors")
+    await page.keyboard.press("c")
+    await expect(overlay(page)).toBeAttached()
+    const picture = await page.getByTestId("picture").boundingBox()
+    if (!picture) throw new Error("no box")
+    await page.mouse.move(picture.x + 20, picture.y + 20)
+    await page.mouse.down()
+    await page.mouse.move(picture.x + 120, picture.y + 60, { steps: 5 })
+    await page.mouse.up()
+    await typeComment(page, newCommentPopover(page), "Region with new neighbors")
+    await page.keyboard.press("Enter")
+    await endCommentMode(page)
+    // The cards next to the picture change: the pin stays on this page.
+    await page.evaluate(() => {
+      for (const p of document.querySelectorAll("#cards p")) p.textContent = "Changed card text."
+    })
+    await page.waitForTimeout(300)
+    const pin = await pins(page).first().boundingBox()
+    if (!pin) throw new Error("no pin")
+    await page.mouse.move(pin.x + 5, pin.y + 20)
+    await page.mouse.down()
+    await page.mouse.move(pin.x + 105, pin.y + 40, { steps: 8 })
+    await page.mouse.up()
+    await pins(page).first().click()
+    const box = await page.locator("[data-slot=pins] > div.border-primary").first().boundingBox()
+    expect(Math.round(box?.width ?? 0)).toBe(100)
+    expect(Math.round(box?.height ?? 0)).toBe(40)
+  })
+
   test("a drag draws a region", async ({ page }) => {
     await signIn(page, await guestSession("Region"))
     await openTestPage(page, "region")

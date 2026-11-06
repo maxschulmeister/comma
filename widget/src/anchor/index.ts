@@ -265,8 +265,11 @@ export function resolveAnchor(anchor: Anchor, previous?: Element | null): Elemen
     if (ownText === anchor.text && ownContext === anchor.context) exact.push(el)
     const context = anchor.context ? similarity(ownContext, anchor.context) : 1
     // Changed text needs the same neighbors: "plan A" and "plan B" headings are similar, their neighbors are not.
-    // Short text repeats on pages ("Learn more"), and so does repeated text: they always need them.
-    if ((short || anchor.repeated || text < 1) && context < MIN_CONTEXT) continue
+    // Short text repeats on pages ("Learn more"), so it always needs them.
+    if ((short || text < 1) && context < MIN_CONTEXT) continue
+    // Text that was on the page more than once: only its exact neighbors tell the copies apart.
+    // "MacBook Pro 14-inch" and "16-inch" are similar neighbors of the same "Free delivery" text.
+    if (anchor.repeated && context < 1) continue
     // No neighbors to compare: changed text cannot be checked, and a position is no proof.
     if (!anchor.context && text < 1) continue
     const score = text * 0.7 + context * 0.3

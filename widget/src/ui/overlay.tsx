@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { anchorBox, type Box, createAnchor, resolveAnchor } from "@/anchor"
+import { anchorBox, type Box, createAnchor } from "@/anchor"
 import { moveThread } from "@/client"
 import { elementAt, fromWidgetPart, HOST_TAG, isTyping } from "@/lib/dom"
-import { useLayoutTick } from "@/live"
+import { resolvedElement, useLayoutTick } from "@/live"
 import { getState, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
 
@@ -20,10 +20,11 @@ const rectOf = (d: Drag): Box => ({
 /**
  * The anchor of a thread moved so that its pin tip is at (x, y), in viewport coordinates.
  * A region keeps its size: it ends at the point (the pin is at its bottom-right corner).
+ * A detached region has no size on this page any more: it becomes a point.
  * `el`: the new element. Default: the element under the point (or under the region's center).
  */
 export function movedAnchor(thread: Thread, x: number, y: number, el?: Element) {
-  const old = thread.anchor.rect ? resolveAnchor(thread.anchor) : null
+  const old = thread.anchor.rect ? resolvedElement(thread.id) : null
   if (old) {
     const box = anchorBox(thread.anchor, old)
     const rect = { x: x - box.width, y: y - box.height, width: box.width, height: box.height }

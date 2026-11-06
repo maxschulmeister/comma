@@ -150,8 +150,14 @@ export function refresh(): Promise<void> {
       if (result && !stale && isCurrent(session)) {
         const { data } = result
         etag = result.etag
+        // A read change on its way sets the read state when its answer comes (see setRead).
+        const local = new Map(getState().threads.map((t) => [t.id, t]))
+        const threads = data.threads.map((t) => {
+          const current = local.get(t.id)
+          return current && readInFlight.get(t.id) ? { ...t, unread: current.unread } : t
+        })
         setState({
-          threads: data.threads,
+          threads,
           users: data.users,
           loaded: true,
           session: session && { ...session, user: data.me },

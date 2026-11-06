@@ -42,6 +42,9 @@ function scheduleResolve(delay = 120) {
   timer = setTimeout(resolveAll, delay)
 }
 
+/** The element of the thread on this page, as shown now. null: detached. */
+export const resolvedElement = (threadId: string) => resolved.get(threadId) ?? null
+
 /** Element of each thread on this page. null: detached. */
 export function useResolved() {
   return useSyncExternalStore(
