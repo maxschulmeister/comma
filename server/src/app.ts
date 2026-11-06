@@ -61,6 +61,7 @@ const AnchorSchema = z
         depth: z.number().int().min(1).max(10),
         urls: z.array(z.string().max(16)).min(1).max(50),
         all: z.literal(true).optional(),
+        text: z.literal(true).optional(),
       })
       .optional(),
     point: Point.optional(),

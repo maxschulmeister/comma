@@ -691,3 +691,18 @@ test("a picker with many thumbnails: another selected item is another element, a
   })
   expect(wrong).toEqual([])
 })
+
+test("a control in a card without links or images: another record in the card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "delete-contact")
+  expect(await resolved(page)).toBe("delete-contact")
+  const name = `document.querySelector('[data-fixture="contact"] h3').textContent = "Ben Jones"`
+  expect(await afterCode(page, name)).toEqual({ kept: false, found: null })
+})
+
+test("a control in a card without links or images: another order number is another record", async ({ page }) => {
+  await open(page)
+  await pin(page, "delete-contact")
+  const order = `document.querySelector('[data-fixture="contact"] p').textContent = "Order 1235"`
+  expect(await afterCode(page, order)).toEqual({ kept: false, found: null })
+})

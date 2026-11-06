@@ -32,11 +32,11 @@ export type Anchor = {
   /**
    * For a short label or a control that is not a link or image itself ("Add to cart"): the largest small container
    * with links or images (its card). `urls`: hashes of those links and images, one per occurrence, without icons in
-   * buttons. They must all still be in the card, as often as before. A filter that shows another product in the card
+   * buttons. `text`: for a control, the card's texts count too ("Ada Lee", "Order 1234"), without button labels. They must all still be in the card, as often as before. A filter that shows another product in the card
    * removes them. A sort, or another product added to a small list, does not. More than 50: `all`, and `urls` is one
    * hash of all of them, which must stay the same.
    */
-  card?: { depth: number; urls: string[]; all?: true }
+  card?: { depth: number; urls: string[]; all?: true; text?: true }
   /** Pin: position in % of the element box. */
   point?: { x: number; y: number }
   /** Region: box in % of the element box. Can be < 0 or > 100. */
@@ -116,37 +116,49 @@ function scopeOf(el: Element, others: Element[]): Anchor["scope"] {
   return best && { depth: best.depth, hash: best.hash }
 }
 
-// The links and images in a container that say which item it shows. Not icons in buttons: the same cart or heart
-// icon is on every card, and it changes when a user toggles it.
-function cardUrls(node: Element) {
-  const urls: string[] = []
+// What a container shows that says which item it is: its links and images, and for a control also its texts
+// ("Ada Lee", "Order 1234"). Not icons and labels in buttons: the same cart icon and "Add to cart" are on every card,
+// and they change when a user toggles them. Not the element itself.
+function cardEvidence(node: Element, el: Element, text: boolean) {
+  const out: string[] = []
   for (const x of [node, ...Array.from(node.querySelectorAll(URL_SELECTOR))]) {
     if (!x.matches(URL_SELECTOR) || x.closest(BUTTON_SELECTOR)) continue
     for (const name of CHILD_IDENTITY) {
       const value = x.getAttribute(name)
-      if (value !== null) urls.push(`${name}=${identityUrl(name, value)}`)
+      if (value !== null) out.push(`${name}=${identityUrl(name, value)}`)
     }
   }
-  return urls
+  if (text) {
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
+    for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+      const parent = t.parentElement
+      const value = normalize(t.nodeValue)
+      if (!value || !parent || el.contains(parent) || parent.closest(`${BUTTON_SELECTOR},script,style`)) continue
+      out.push(`text=${value}`)
+    }
+  }
+  return out
 }
 
-// Hashes of the links and images of a container, one per occurrence (see Anchor.card). Sorted: a sort of the
-// items does not change them.
-const cardSet = (node: Element) => cardUrls(node).map(hashOf).sort()
+// Hashes of the evidence of a container, one per occurrence (see Anchor.card). Sorted: a sort of the items does not
+// change them.
+const cardSet = (node: Element, el: Element, text: boolean) => cardEvidence(node, el, text).map(hashOf).sort()
 
-// The largest small container of a label with links or images: they say which item it is (see Anchor.card).
-// The largest, not the closest: an action row ("Add to cart", "Size guide", a policy link) has links that are on every
-// card. A link or image is its own identity: no card.
+// The largest small container of a label with evidence of the item it belongs to (see Anchor.card).
+// The largest, not the closest: an action row ("Add to cart", "Size guide", a policy link) is the same on every card.
+// A link or image is its own identity: no card.
 function cardOf(el: Element): Anchor["card"] {
   if (el.matches(URL_SELECTOR)) return undefined
+  const text = !!el.closest(CONTROL_SELECTOR)
   let card: Anchor["card"]
   for (let depth = 1; depth <= MAX_CARD_DEPTH; depth++) {
     const node = ancestorAt(el, depth)
     if (!node || normalize(node.textContent).length > MAX_CARD_TEXT) break
-    const urls = cardSet(node)
+    const urls = cardSet(node, el, text)
     // Too many to store: one hash of all of them, which must stay the same (a sort keeps it, any change detaches).
     if (urls.length > MAX_CARD_URLS) card = { depth, urls: [hashOf(urls.join(","))], all: true }
     else if (urls.length > 0) card = { depth, urls }
+    if (card && text) card.text = true
   }
   return card
 }
@@ -273,11 +285,12 @@ const inScope = (anchor: Anchor, el: Element) => {
   if (!anchor.card) return true
   const card = ancestorAt(el, anchor.card.depth)
   if (!card) return false
-  if (anchor.card.all) return hashOf(cardSet(card).join(",")) === anchor.card.urls[0]
+  const evidence = cardSet(card, el, !!anchor.card.text)
+  if (anchor.card.all) return hashOf(evidence.join(",")) === anchor.card.urls[0]
   // Each stored link or image must still be there as often as before. A picker that selects another item keeps
   // the old link in its thumbnail, but shows it once less.
   const count = new Map<string, number>()
-  for (const url of cardSet(card)) count.set(url, (count.get(url) ?? 0) + 1)
+  for (const url of evidence) count.set(url, (count.get(url) ?? 0) + 1)
   return anchor.card.urls.every((url) => {
     const left = count.get(url) ?? 0
     count.set(url, left - 1)
