@@ -169,6 +169,19 @@ test.describe("comment mode", () => {
   })
 })
 
+test("pins follow client-side navigation", async ({ page }) => {
+  await signIn(page, await guestSession("Navigator"))
+  await openTestPage(page, "spa")
+  await addComment(page, page.getByTestId("lead"), "On the first page")
+  await endCommentMode(page)
+  await expect(pins(page)).toHaveCount(1)
+  const path = new URL(page.url()).pathname
+  await page.evaluate(() => history.pushState({}, "", `${location.pathname}-next`))
+  await expect(pins(page)).toHaveCount(0)
+  await page.evaluate((p) => history.pushState({}, "", p), path)
+  await expect(pins(page)).toHaveCount(1)
+})
+
 test.describe("touch", () => {
   test.use({ hasTouch: true, isMobile: false, viewport: { width: 390, height: 800 } })
   test("a tap pins a comment", async ({ page }) => {

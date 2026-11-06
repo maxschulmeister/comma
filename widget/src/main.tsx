@@ -5,7 +5,7 @@ import { identify, loadProject, loadSession, refresh, signOut, startPolling } fr
 import { PortalContainer } from "./lib/portal"
 import { startTracking, watchPage } from "./live"
 import { createShadowHost } from "./shadow"
-import { initStore, setState } from "./store"
+import { getState, initStore, setState } from "./store"
 import { preloadEditor } from "./ui/composer"
 import { loadPinsVisible, startShortcuts } from "./ui/shortcuts"
 
@@ -62,7 +62,10 @@ function start({ __queue: queue, __script: script }: Loader) {
     </PortalContainer.Provider>,
   )
 
-  watchPage((page) => setState({ page }))
+  // Client-side navigation: a draft or an open thread belongs to the old page.
+  watchPage((page) => {
+    if (page !== getState().page) setState({ page, draft: null, openThreadId: null })
+  })
   startTracking()
   startShortcuts()
   startPolling()
