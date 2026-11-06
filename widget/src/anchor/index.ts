@@ -226,13 +226,15 @@ function query(selector: string | undefined) {
  * The element of the anchor, or null (detached).
  * `previous`: the element found before on this page. If it is still there with the same text and identity, it stays,
  * also when its neighbors changed. After a reload there is no previous element, so the neighbors must match again.
+ * Repeated text is the exception: only its neighbors tell the copies apart (a list can reuse a row for another item).
  */
 export function resolveAnchor(anchor: Anchor, previous?: Element | null): Element | null {
   if (
     previous?.isConnected &&
     previous.localName === anchor.tag &&
     textOf(previous) === anchor.text &&
-    (!anchor.fingerprint || fingerprintOf(previous) === anchor.fingerprint)
+    (!anchor.fingerprint || fingerprintOf(previous) === anchor.fingerprint) &&
+    (!anchor.repeated || contextOf(previous) === anchor.context)
   ) {
     return previous
   }
@@ -268,8 +270,9 @@ export function resolveAnchor(anchor: Anchor, previous?: Element | null): Elemen
     // Short text repeats on pages ("Learn more"), so it always needs them.
     if ((short || text < 1) && context < MIN_CONTEXT) continue
     // Text that was on the page more than once: only its exact neighbors tell the copies apart.
-    // "MacBook Pro 14-inch" and "16-inch" are similar neighbors of the same "Free delivery" text.
-    if (anchor.repeated && context < 1) continue
+    // "MacBook Pro 14-inch" and "16-inch" are similar neighbors of the same "Free delivery" text,
+    // and "London to Paris" and "Paris to London" have the same letter pairs (similarity 1).
+    if (anchor.repeated && ownContext !== anchor.context) continue
     // No neighbors to compare: changed text cannot be checked, and a position is no proof.
     if (!anchor.context && text < 1) continue
     const score = text * 0.7 + context * 0.3

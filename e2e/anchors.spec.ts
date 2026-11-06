@@ -321,3 +321,22 @@ test("repeated text: similar neighbors are not enough (another product)", async 
   await page.evaluate(() => document.querySelector('[data-fixture="delivery-14"]')?.closest(".card")?.remove())
   expect(await resolved(page)).toBeNull()
 })
+
+test("repeated text: neighbors with the same words in another order are other neighbors", async ({ page }) => {
+  await open(page)
+  await pin(page, "cancel-lp")
+  await page.evaluate(() => document.querySelector('[data-fixture="cancel-lp"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+test("repeated text on the open page: a reused row with another product is detached", async ({ page }) => {
+  await open(page)
+  await pin(page, "delivery-14")
+  // A list reuses the row for another product: the paragraph element stays, its heading changes.
+  const kept = await page.evaluate(() => {
+    const heading = window.target?.closest(".card")?.querySelector("h3")
+    if (heading) heading.textContent = "MacBook Air 13-inch"
+    return window.commaAnchor.resolveAnchor(window.saved, window.target)
+  })
+  expect(kept).toBeNull()
+})
