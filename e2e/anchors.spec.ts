@@ -589,3 +589,29 @@ test("a control with a longer label: another product in its card is another elem
   expect(await resolved(page)).toBe("hill-check")
   expect(await afterCode(page, otherProduct("hill-check"))).toEqual({ kept: false, found: null })
 })
+
+test("twins in one card with a shared link in each row: another product in the card is another element", async ({
+  page,
+}) => {
+  await open(page)
+  await pin(page, "bay-1")
+  expect(await resolved(page)).toBe("bay-1")
+  expect(await afterCode(page, otherProduct("bay-1"))).toEqual({ kept: false, found: null })
+})
+
+test("a stable id with changed text needs the same neighbors", async ({ page }) => {
+  await open(page)
+  await pin(page, "room-title")
+  // An edit of the title: the neighbors stay, so it is the same heading.
+  await page.evaluate(() => {
+    ;(document.querySelector("#room-title") as HTMLElement).textContent = "Deluxe double room with a sea view"
+  })
+  expect(await resolved(page)).toBe("room-title")
+  // Another room in the same element: other title and other neighbors.
+  await page.evaluate(() => {
+    ;(document.querySelector("#room-title") as HTMLElement).textContent = "Deluxe twin room with sea view"
+    ;(document.querySelector("#room-title + p") as HTMLElement).textContent =
+      "Three guests, garden terrace, no breakfast."
+  })
+  expect(await resolved(page)).toBeNull()
+})

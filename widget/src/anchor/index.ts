@@ -131,8 +131,9 @@ const cardHash = (node: Element | null) => (node ? hashOf(cardUrls(node).join(";
 
 // The largest small container of a label with links or images: they say which item it is (see Anchor.card).
 // The largest, not the closest: an action row ("Add to cart", "Size guide") has links that are on every card.
-// It holds no other item: a list of cards is not a card. Another item is a branch with a look-alike and its own
-// links or images. A second row with the same button in the same card is not. A link or image is its own identity.
+// It holds no other item: a list of cards is not a card. Another item is a branch with a look-alike and other links or
+// images than the element's own branch. A second row with the same button (and the same policy link) in the same card
+// is not. A link or image is its own identity.
 function cardOf(el: Element, lookAlikes: Element[]): Anchor["card"] {
   if (el.matches(URL_SELECTOR)) return undefined
   let card: Anchor["card"]
@@ -140,8 +141,13 @@ function cardOf(el: Element, lookAlikes: Element[]): Anchor["card"] {
     const node = ancestorAt(el, depth)
     if (!node || normalize(node.textContent).length > MAX_CARD_TEXT) break
     const own = depth === 1 ? el : ancestorAt(el, depth - 1)
+    const ownHash = own ? cardHash(own) : ""
     const otherItem = Array.from(node.children).some(
-      (child) => child !== own && lookAlikes.some((o) => child.contains(o)) && cardUrls(child).length > 0,
+      (child) =>
+        child !== own &&
+        lookAlikes.some((o) => child.contains(o)) &&
+        cardUrls(child).length > 0 &&
+        cardHash(child) !== ownHash,
     )
     if (otherItem) break
     if (cardUrls(node).length > 0) card = { depth, hash: cardHash(node) }
@@ -383,10 +389,14 @@ export function resolveAnchor(anchor: Anchor, previous?: Element | null): Elemen
   const sameIdentity = (el: Element) => !anchor.fingerprint || fingerprintOf(el) === anchor.fingerprint
 
   // A stable id is proof, when the element still has about the same text and the same identity.
-  // An id can name a slot that a list reuses for another item: repeated text needs its neighbors too.
+  // An id can name a slot that a list reuses for another item: repeated text needs its neighbors too, and so does
+  // changed text ("double room" → "twin room" in the same heading).
+  const sameNeighbors = (el: Element) =>
+    textOf(el) === anchor.text || (!!anchor.context && similarity(contextOf(el), anchor.context) >= MIN_CONTEXT)
   if (
     byId?.localName === anchor.tag &&
     similarity(textOf(byId), anchor.text) >= MIN_TEXT &&
+    sameNeighbors(byId) &&
     sameIdentity(byId) &&
     inScope(anchor, byId) &&
     sameAsRepeated(byId)
