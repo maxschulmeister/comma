@@ -543,3 +543,17 @@ test("a button next to a shared link: another product in its card is another ele
   })
   expect(after).toEqual({ kept: false, found: null })
 })
+
+test("repeated controls in distinct cards: a sort never moves the pin to another card", async ({ page }) => {
+  await open(page)
+  await pin(page, "sea-1")
+  expect(await resolved(page)).toBe("sea-1")
+  await page.evaluate(() => {
+    const list = document.querySelector('[data-fixture="room-cards"]') as HTMLElement
+    list.append(list.firstElementChild as Element)
+  })
+  // Only the position tells the two buttons in the card apart, and it changed: detached is fine, the other card is not.
+  expect([null, "sea-1"]).toContain(await resolved(page))
+  await page.evaluate(() => document.querySelector('[data-fixture="sea-1"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})

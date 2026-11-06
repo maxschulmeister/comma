@@ -93,18 +93,21 @@ function ancestorAt(el: Element, depth: number) {
 const scopeHash = (el: Element | null) =>
   el ? hashOf(`${normalize(el.textContent).slice(0, SCOPE_LENGTH)};${fingerprintOf(el)}`) : ""
 
-// The container of `el` that tells it apart from the most look-alikes: the closest one that tells it apart from all,
-// else the one that tells it apart from most ("Free shipping" in two of three cards: the card title, not the wrapper).
-// It holds none of the look-alikes.
+// The container of `el` that tells it apart from the most look-alikes: the closest one that tells it apart from all
+// outside it, else the one that tells it apart from most ("Free shipping" in two of three cards: the card title, not
+// the wrapper). Look-alikes inside it are twins in the same card ("Reserve" in two rate rows of one hotel room):
+// only their position tells them apart.
 function scopeOf(el: Element, others: Element[]): Anchor["scope"] {
   let best: { depth: number; hash: string; apart: number } | undefined
   for (let depth = 1; depth <= MAX_SCOPE_DEPTH; depth++) {
     const node = ancestorAt(el, depth)
-    if (!node || others.some((o) => node.contains(o))) break
+    if (!node) break
+    const outside = others.filter((o) => !node.contains(o))
+    if (outside.length === 0) break
     const hash = scopeHash(node)
-    const apart = others.filter((o) => scopeHash(ancestorAt(o, depth)) !== hash).length
+    const apart = outside.filter((o) => scopeHash(ancestorAt(o, depth)) !== hash).length
     if (apart > (best?.apart ?? 0)) best = { depth, hash, apart }
-    if (apart === others.length) break
+    if (apart === outside.length) break
   }
   return best && { depth: best.depth, hash: best.hash }
 }
