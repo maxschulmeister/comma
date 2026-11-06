@@ -29,6 +29,8 @@ export type AppOptions = {
   secret: string
   widgetDir: string
   now?: () => number
+  /** The address users reach comma at, behind a proxy (`COMMA_URL`). The popup sign-in callback uses it. */
+  publicUrl?: string
 }
 
 type Env = { Variables: { user: UserRow; project: Project } }
@@ -166,6 +168,7 @@ export function createApp(options: AppOptions) {
     popupRoutes({
       projects,
       secret,
+      publicUrl: options.publicUrl,
       session: async (project, appToken) => {
         const claims = await verifyAppToken(project, appToken)
         if (!claims) return null

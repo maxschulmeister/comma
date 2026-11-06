@@ -284,6 +284,15 @@ describe("popup sign-in", () => {
     expect(url.searchParams.get("state")).toBeString()
   })
 
+  test("behind a proxy, the callback is on the public URL, not on the address the proxy uses", async () => {
+    const s = setup({ publicUrl: "https://comma.acme.test" })
+    const res = await s.app.fetch(
+      new Request("http://localhost:4000/auth/start?project=acme&origin=https%3A%2F%2Facme.test"),
+    )
+    const url = new URL(res.headers.get("location") ?? "")
+    expect(url.searchParams.get("redirect_uri")).toBe("https://comma.acme.test/auth/callback")
+  })
+
   test("start refuses origins not registered for the project", async () => {
     const s = setup()
     const res = await s.app.fetch(

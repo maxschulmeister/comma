@@ -21,9 +21,16 @@ export const config: Config = {
 // biome-ignore lint/suspicious/noExplicitAny: tests read nested JSON from responses.
 export type Json = Record<string, any>
 
-export function setup(options: { now?: () => number } = {}) {
+export function setup(options: { now?: () => number; publicUrl?: string } = {}) {
   const db = openDb(":memory:")
-  const app = createApp({ db, config, secret: "server-secret", widgetDir: "/nonexistent", now: options.now })
+  const app = createApp({
+    db,
+    config,
+    secret: "server-secret",
+    widgetDir: "/nonexistent",
+    now: options.now,
+    publicUrl: options.publicUrl,
+  })
 
   async function request(
     method: string,

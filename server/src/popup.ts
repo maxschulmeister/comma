@@ -11,6 +11,8 @@ type Options = {
   projects: Map<string, Project>
   secret: string
   session: (project: Project, appToken: string) => Promise<{ token: string; user: User } | null>
+  /** The address users reach comma at (behind a proxy). Default: the address of the request. */
+  publicUrl?: string
 }
 
 const STATE_SECONDS = 10 * 60
@@ -33,7 +35,7 @@ function page(title: string, script: unknown = "") {
     </html>`
 }
 
-export function popupRoutes({ projects, secret, session }: Options) {
+export function popupRoutes({ projects, secret, session, publicUrl }: Options) {
   const app = new Hono()
 
   app.get("/start", async (c) => {
@@ -44,7 +46,7 @@ export function popupRoutes({ projects, secret, session }: Options) {
     const exp = Math.floor(Date.now() / 1000) + STATE_SECONDS
     const state = await sign({ prj: project.id, origin, exp, typ: "comma-state" }, secret, "HS256")
     const url = new URL(project.signInUrl)
-    url.searchParams.set("redirect_uri", new URL("/auth/callback", c.req.url).href)
+    url.searchParams.set("redirect_uri", new URL("/auth/callback", publicUrl ?? c.req.url).href)
     url.searchParams.set("state", state)
     return c.redirect(url.href, 302)
   })

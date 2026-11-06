@@ -12,7 +12,12 @@ if (secret.length < 32) {
 const port = Number(process.env.PORT ?? 4000)
 const config = await loadConfig(resolve(process.env.COMMA_CONFIG ?? "comma.config.ts"))
 const db = openDb(process.env.COMMA_DB ?? "comma.sqlite")
-const app = createApp({ db, config, secret, widgetDir: resolve(import.meta.dir, "../../widget/dist") })
+const publicUrl = process.env.COMMA_URL || undefined
+if (publicUrl && !/^https?:\/\/[^/]+\/?$/.test(publicUrl)) {
+  console.error("Set COMMA_URL to the address of comma, for example https://comma.example.com")
+  process.exit(1)
+}
+const app = createApp({ db, config, secret, publicUrl, widgetDir: resolve(import.meta.dir, "../../widget/dist") })
 
 setInterval(app.cleanupFiles, 60 * 60 * 1000)
 Bun.serve({ port, fetch: app.fetch, maxRequestBodySize: 6 * 1024 * 1024 })
