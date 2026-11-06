@@ -71,7 +71,7 @@ test("a link with ⌘K", async ({ page, browserName }) => {
 test("mention people known to the project", async ({ page }) => {
   await appSession("Grace Hopper")
   const popover = await startComment(page, "mention")
-  await typeComment(page, popover, "ask @gra")
+  await typeComment(page, popover, "ask @hopp")
   const option = popover.getByRole("option", { name: "Grace Hopper" })
   await expect(option).toBeVisible()
   await page.keyboard.press("Enter")

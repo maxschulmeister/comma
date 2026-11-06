@@ -120,14 +120,19 @@ export function signInWithPopup() {
 
 let etag: string | null = null
 let inFlight: Promise<void> | null = null
+// Counts local changes. A poll that started before a change has old data: it must not replace the change.
+let changes = 0
 
-export function refresh() {
+export function refresh(): Promise<void> {
   if (!getState().session) return Promise.resolve()
   inFlight ??= (async () => {
+    let stale = false
     try {
       const session = getState().session
+      const before = changes
       const data = await requestThreads()
-      if (data && getState().session === session) {
+      stale = before !== changes
+      if (data && !stale && getState().session === session) {
         setState({
           threads: data.threads,
           users: data.users,
@@ -140,6 +145,7 @@ export function refresh() {
     } finally {
       inFlight = null
     }
+    if (stale) await refresh()
   })()
   return inFlight
 }
@@ -179,6 +185,7 @@ export function startPolling() {
 
 function applyThread({ thread, users }: ThreadResult) {
   etag = null
+  changes++
   setState((s) => {
     const exists = s.threads.some((t) => t.id === thread.id)
     return {
@@ -191,6 +198,7 @@ function applyThread({ thread, users }: ThreadResult) {
 
 function removeThread(id: string) {
   etag = null
+  changes++
   setState((s) => ({
     threads: s.threads.filter((t) => t.id !== id),
     openThreadId: s.openThreadId === id ? null : s.openThreadId,
@@ -211,13 +219,14 @@ export async function editComment(comment: Comment, body: unknown) {
 
 export async function deleteComment(comment: Comment) {
   const res = await request<{ threadDeleted: boolean }>("DELETE", `/api/comments/${comment.id}`)
-  if (res.threadDeleted) removeThread(comment.threadId)
-  else
-    setState((s) => ({
-      threads: s.threads.map((t) =>
-        t.id === comment.threadId ? { ...t, comments: t.comments.filter((c) => c.id !== comment.id) } : t,
-      ),
-    }))
+  if (res.threadDeleted) return removeThread(comment.threadId)
+  etag = null
+  changes++
+  setState((s) => ({
+    threads: s.threads.map((t) =>
+      t.id === comment.threadId ? { ...t, comments: t.comments.filter((c) => c.id !== comment.id) } : t,
+    ),
+  }))
 }
 
 export async function deleteThread(thread: Thread) {

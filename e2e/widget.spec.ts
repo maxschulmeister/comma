@@ -16,6 +16,23 @@ import {
   typeComment,
 } from "./helpers"
 
+test("the page does not change the widget styles", async ({ page }) => {
+  await signIn(page, await guestSession("Styles"))
+  await openTestPage(page, "styles")
+  // The page changes the root font size. The widget uses px, so its sizes stay.
+  await page.addStyleTag({ content: "html { font-size: 10px !important } * { box-shadow: none }" })
+  const button = toolbar(page).getByRole("button", { name: "Comment mode" })
+  await expect(button).toHaveCSS("height", "28px")
+  await expect(button).toHaveCSS("font-family", /Instrument Sans Variable/)
+  await toolbar(page)
+    .getByRole("button", { name: /^Account/ })
+    .click()
+  // Rings and shadows work in the shadow root (Tailwind @property fallback).
+  const menu = page.locator("[data-slot=dropdown-menu-content]")
+  await expect(menu).toBeVisible()
+  expect(await menu.evaluate((el) => getComputedStyle(el).boxShadow)).toMatch(/0px 0px 0px 1px/)
+})
+
 test.describe("comment mode", () => {
   test("C starts comment mode, Esc ends it", async ({ page }) => {
     await openTestPage(page, "mode")

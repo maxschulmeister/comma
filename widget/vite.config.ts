@@ -22,9 +22,13 @@ function shadowCss(): PostcssPlugin {
       const initial: Rule = rule({ selector: ":host, *, ::before, ::after, ::backdrop" })
       root.walkAtRules("property", (at) => {
         let value: string | undefined
-        at.walkDecls("initial-value", (d) => {
-          value = d.value
+        let syntax = ""
+        at.walkDecls((d) => {
+          if (d.prop === "initial-value") value = d.value
+          if (d.prop === "syntax") syntax = d.value
         })
+        // A registered <length> can be `0`. Unregistered, `0` is a number and breaks `calc(1px + var(--x))`.
+        if (value === "0" && syntax.includes("<length")) value = "0px"
         initial.append(decl({ prop: at.params, value: value ?? "initial" }))
         at.remove()
       })
