@@ -145,4 +145,18 @@ describe("project info", () => {
     expect(other.json).toEqual({ id: "other", popupSignIn: false })
     expect((await request("GET", "/api/projects/acme", { origin: OTHER })).status).toBe(403)
   })
+
+  test("same-origin GET requests have no Origin header: the browser's Sec-Fetch-Site and the host decide", async () => {
+    const { request, guest } = setup()
+    const { token } = await guest()
+    const sameOrigin = { "sec-fetch-site": "same-origin", "x-forwarded-host": "acme.test" }
+    const get = (path: string, headers: Record<string, string>) =>
+      request("GET", path, { token, origin: null, headers })
+    expect((await get("/api/projects/acme", sameOrigin)).status).toBe(200)
+    expect((await get("/api/threads", sameOrigin)).status).toBe(200)
+    // Not same-origin, or another host: refused.
+    expect((await get("/api/threads", { "x-forwarded-host": "acme.test" })).status).toBe(403)
+    expect((await get("/api/threads", { ...sameOrigin, "sec-fetch-site": "cross-site" })).status).toBe(403)
+    expect((await get("/api/threads", { ...sameOrigin, "x-forwarded-host": "other.test" })).status).toBe(403)
+  })
 })

@@ -28,9 +28,13 @@ export function setup(options: { now?: () => number } = {}) {
   async function request(
     method: string,
     path: string,
-    init: { token?: string; body?: unknown; origin?: string; headers?: Record<string, string> } = {},
+    init: { token?: string; body?: unknown; origin?: string | null; headers?: Record<string, string> } = {},
   ) {
-    const headers: Record<string, string> = { origin: init.origin ?? ACME, ...init.headers }
+    // `origin: null`: no Origin header (a browser sends none on same-origin GET requests).
+    const headers: Record<string, string> = {
+      ...(init.origin === null ? {} : { origin: init.origin ?? ACME }),
+      ...init.headers,
+    }
     if (init.token) headers.authorization = `Bearer ${init.token}`
     let body: BodyInit | undefined
     if (init.body instanceof FormData) body = init.body

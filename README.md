@@ -48,6 +48,8 @@ bun example/app.ts     # the example site on http://localhost:4100
 
 People sign in as guests with a name. To use the accounts of your app, see below.
 
+comma can also run behind the site's own proxy, on the same origin as the site. If the proxy changes the `Host` header, it must send `X-Forwarded-Host`.
+
 Add `data-comment-anchor="pricing"` to an element to give it a very stable anchor. Comments on it find it again, also when its text changes or it moves.
 
 ## Sign in with your app

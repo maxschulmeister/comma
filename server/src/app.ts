@@ -1,4 +1,4 @@
-import { Hono } from "hono"
+import { type Context, Hono } from "hono"
 import { createMiddleware } from "hono/factory"
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
@@ -197,28 +197,40 @@ export function createApp(options: AppOptions) {
     }
   })
 
-  const projectFor = (id: unknown, origin: string | undefined) => {
+  // The request comes from a page on an origin of the project. Browsers send no Origin header on same-origin GET
+  // requests (comma behind the site's own proxy): then the browser's Sec-Fetch-Site says "same-origin" (pages cannot
+  // set it), and the host of this request (behind a proxy: the forwarded host) must be an origin of the project.
+  const checkOrigin = (c: Context, project: Project) => {
+    const origin = c.req.header("origin")
+    const allowed = origin
+      ? project.origins.includes(origin)
+      : c.req.header("sec-fetch-site") === "same-origin" &&
+        project.origins.some((o) => new URL(o).host === (c.req.header("x-forwarded-host") ?? new URL(c.req.url).host))
+    if (!allowed) throw new HTTPException(403, { message: "Origin not allowed" })
+  }
+
+  const projectFor = (id: unknown, c: Context) => {
     const project = typeof id === "string" ? projects.get(id) : undefined
     if (!project) throw new HTTPException(404, { message: "Unknown project" })
-    if (!origin || !project.origins.includes(origin)) throw new HTTPException(403, { message: "Origin not allowed" })
+    checkOrigin(c, project)
     return project
   }
 
   app.get("/api/projects/:id", (c) => {
-    const project = projectFor(c.req.param("id"), c.req.header("origin"))
+    const project = projectFor(c.req.param("id"), c)
     return c.json({ id: project.id, popupSignIn: !!(project.signInUrl && project.appSecret) })
   })
 
   app.post("/api/session/guest", async (c) => {
     const input = parse(z.object({ project: z.string(), name: z.string().trim().min(1).max(60) }), await json(c))
-    const project = projectFor(input.project, c.req.header("origin"))
+    const project = projectFor(input.project, c)
     const user = createGuest(db, project, input.name, now())
     return c.json({ token: await signSession(secret, user), user: publicUser(user) })
   })
 
   app.post("/api/session/app", async (c) => {
     const input = parse(z.object({ project: z.string(), appToken: z.string().max(10_000) }), await json(c))
-    const project = projectFor(input.project, c.req.header("origin"))
+    const project = projectFor(input.project, c)
     if (!project.appSecret) throw new HTTPException(404, { message: "This project has no app sign-in" })
     const claims = await verifyAppToken(project, input.appToken)
     if (!claims) throw new HTTPException(401, { message: "Invalid app token" })
@@ -234,8 +246,7 @@ export function createApp(options: AppOptions) {
     if (!session || !user || !project || user.project !== project.id) {
       throw new HTTPException(401, { message: "Sign in again" })
     }
-    const origin = c.req.header("origin")
-    if (!origin || !project.origins.includes(origin)) throw new HTTPException(403, { message: "Origin not allowed" })
+    checkOrigin(c, project)
     c.set("user", user)
     c.set("project", project)
     await next()
