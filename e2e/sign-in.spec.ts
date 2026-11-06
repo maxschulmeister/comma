@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { sign } from "hono/jwt"
 import { panel, testPath, toolbar } from "./helpers"
 
 test("on another site, people sign in with the app in a popup", async ({ page }) => {
@@ -63,6 +64,35 @@ test("identify works when the page calls a stub that it read before the widget l
   await expect(toolbar(page)).toBeVisible()
   await page.evaluate(() => (window as unknown as { callStub: () => void }).callStub())
   await expect(toolbar(page).getByRole("button", { name: "Account: Stubby" })).toBeVisible()
+})
+
+test("signOut cancels a sign-in that is still on its way", async ({ page }) => {
+  await page.goto(testPath("cancel-sign-in"))
+  await expect(toolbar(page)).toBeVisible()
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route("**/api/session/app", async (route) => {
+    const response = await route.fetch()
+    await held
+    await route.fulfill({ response })
+  })
+  const token = await sign(
+    { sub: "e2e:cancelled", name: "Cancelled", exp: Math.floor(Date.now() / 1000) + 120 },
+    "e2e-app-secret",
+    "HS256",
+  )
+  await page.evaluate((t) => {
+    const comma = (window as unknown as { comma: { identify: (t: string) => Promise<void>; signOut: () => void } })
+      .comma
+    void comma.identify(t)
+    comma.signOut()
+  }, token)
+  release()
+  await page.waitForResponse("**/api/session/app")
+  await page.waitForTimeout(200)
+  await expect(toolbar(page).getByRole("button", { name: "Account", exact: true })).toBeVisible()
 })
 
 test("a guest signs in with a name", async ({ page }) => {

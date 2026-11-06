@@ -168,22 +168,34 @@ function lookAlikesOf(anchor: Pick<Anchor, "tag" | "text" | "context" | "fingerp
   )
 }
 
-// Attributes that say what an element is or where it goes. Not `title`, `value` or query strings: they change often.
+// Attributes that say what an element is or where it goes. Not `title` or `value`: they change often.
 const OWN_IDENTITY = ["href", "src", "alt", "aria-label", "name", "data-testid"]
 const CHILD_IDENTITY = ["href", "src"]
-const path = (url: string) => url.split(/[?#]/)[0] ?? ""
+const TRACKING = /^(utm_\w+|fbclid|gclid|msclkid|mc_cid|mc_eid|_ga|ref)$/i
+
+// A link goes somewhere: keep its query and fragment, without tracking parameters.
+// An image is its file: keep the path only. Signed and resized image URLs change their query on every load.
+function identityUrl(name: string, value: string) {
+  if (name === "src") return value.split(/[?#]/)[0] ?? ""
+  const [base = "", hash] = value.split("#", 2)
+  const [path = "", query] = base.split("?", 2)
+  const params = new URLSearchParams(query ?? "")
+  for (const key of [...params.keys()]) if (TRACKING.test(key)) params.delete(key)
+  const rest = params.toString()
+  return `${path}${rest ? `?${rest}` : ""}${hash !== undefined ? `#${hash}` : ""}`
+}
 
 // Hash (FNV-1a) of the identity attributes of the element and of the links and images in it (first 50).
 function fingerprintOf(el: Element) {
   const parts: string[] = []
   for (const name of OWN_IDENTITY) {
     const value = el.getAttribute(name)
-    if (value !== null) parts.push(`${name}=${name === "href" || name === "src" ? path(value) : value}`)
+    if (value !== null) parts.push(`${name}=${name === "href" || name === "src" ? identityUrl(name, value) : value}`)
   }
   for (const child of Array.from(el.querySelectorAll("[href],[src]")).slice(0, 50)) {
     for (const name of CHILD_IDENTITY) {
       const value = child.getAttribute(name)
-      if (value !== null) parts.push(`>${name}=${path(value)}`)
+      if (value !== null) parts.push(`>${name}=${identityUrl(name, value)}`)
     }
   }
   let hash = 0x811c9dc5
@@ -228,7 +240,11 @@ export function resolveAnchor(anchor: Anchor): Element | null {
     const ownContext = contextOf(el)
     if (ownText === anchor.text && ownContext === anchor.context) exact.push(el)
     const context = anchor.context ? similarity(ownContext, anchor.context) : 1
-    if (short && context < MIN_CONTEXT) continue
+    // Changed text needs the same neighbors: "plan A" and "plan B" headings are similar, their neighbors are not.
+    // Short text repeats on pages ("Learn more"), so it always needs them.
+    if ((short || text < 1) && context < MIN_CONTEXT) continue
+    // No neighbors to compare: changed text is only accepted at the same position.
+    if (!anchor.context && text < 1 && el !== byCss) continue
     const score = text * 0.7 + context * 0.3
     if (!best || score > best.score) {
       second = best?.score ?? 0

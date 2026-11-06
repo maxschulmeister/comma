@@ -73,17 +73,22 @@ export async function loadProject() {
 
 // --- Sign-in ---
 
-export async function signInAsGuest(name: string) {
-  const session = await request<Session>("POST", "/api/session/guest", { project: getState().project, name })
-  saveSession(session)
+// Each sign-in attempt and each sign-out gets a number. Only the latest may change the session:
+// a sign-out cancels a sign-in that is still on its way, and a newer sign-in wins over an older one.
+let authAttempt = 0
+
+async function signIn(path: string, body: Record<string, string>) {
+  const attempt = ++authAttempt
+  const session = await request<Session>("POST", path, { project: getState().project, ...body })
+  if (attempt === authAttempt) saveSession(session)
 }
 
-export async function identify(appToken: string) {
-  const session = await request<Session>("POST", "/api/session/app", { project: getState().project, appToken })
-  saveSession(session)
-}
+export const signInAsGuest = (name: string) => signIn("/api/session/guest", { name })
+
+export const identify = (appToken: string) => signIn("/api/session/app", { appToken })
 
 export function signOut() {
+  authAttempt++
   saveSession(null)
 }
 
@@ -92,6 +97,7 @@ export function signInWithPopup() {
   const { server, project } = getState()
   const url = `${server}/auth/start?project=${encodeURIComponent(project)}&origin=${encodeURIComponent(location.origin)}`
   const popup = window.open(url, "comma-sign-in", "popup,width=480,height=640")
+  const attempt = ++authAttempt
   return new Promise<void>((resolve, reject) => {
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== server || event.source !== popup) return
@@ -100,7 +106,7 @@ export function signInWithPopup() {
       cleanup()
       // The popup also closes itself. Firefox blocks that after a few redirects, so close it here too.
       popup?.close()
-      saveSession({ token: data.token, user: data.user })
+      if (attempt === authAttempt) saveSession({ token: data.token, user: data.user })
       resolve()
     }
     const timer = setInterval(() => {
@@ -193,9 +199,13 @@ export function startPolling() {
   }
 }
 
+// Threads deleted here. A late answer about one of them must not bring it back.
+const deleted = new Set<string>()
+
 function applyThread({ thread, users }: ThreadResult) {
   etag = null
   changes++
+  if (deleted.has(thread.id)) return thread
   setState((s) => {
     const current = s.threads.find((t) => t.id === thread.id)
     // Answers can arrive out of order. An older thread keeps the newer one, with its read state.
@@ -211,6 +221,7 @@ function applyThread({ thread, users }: ThreadResult) {
 function removeThread(id: string) {
   etag = null
   changes++
+  deleted.add(id)
   setState((s) => ({
     threads: s.threads.filter((t) => t.id !== id),
     openThreadId: s.openThreadId === id ? null : s.openThreadId,
@@ -230,15 +241,12 @@ export async function editComment(comment: Comment, body: unknown) {
 }
 
 export async function deleteComment(comment: Comment) {
-  const res = await request<{ threadDeleted: boolean }>("DELETE", `/api/comments/${comment.id}`)
-  if (res.threadDeleted) return removeThread(comment.threadId)
-  etag = null
-  changes++
-  setState((s) => ({
-    threads: s.threads.map((t) =>
-      t.id === comment.threadId ? { ...t, comments: t.comments.filter((c) => c.id !== comment.id) } : t,
-    ),
-  }))
+  const res = await request<{ threadDeleted: true } | ({ threadDeleted: false } & ThreadResult)>(
+    "DELETE",
+    `/api/comments/${comment.id}`,
+  )
+  if (res.threadDeleted) removeThread(comment.threadId)
+  else applyThread(res)
 }
 
 export async function deleteThread(thread: Thread) {

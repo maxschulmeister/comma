@@ -237,3 +237,42 @@ test("a stable id wins over a look-alike that took the old context", async ({ pa
   })
   expect(await resolved(page)).toBe("note")
 })
+
+test("a similar heading does not take the place of a removed one", async ({ page }) => {
+  await open(page)
+  await pin(page, "plan-a")
+  await page.evaluate(() => {
+    const a = document.querySelector('[data-fixture="plan-a"]') as HTMLElement
+    a.nextElementSibling?.remove()
+    a.remove()
+  })
+  expect(await resolved(page)).toBeNull()
+})
+
+test("an edited heading is still found", async ({ page }) => {
+  await open(page)
+  await pin(page, "plan-a")
+  await page.evaluate(() => {
+    ;(document.querySelector('[data-fixture="plan-a"]') as HTMLElement).textContent =
+      "Frequently asked questions about plan A!"
+  })
+  expect(await resolved(page)).toBe("plan-a")
+})
+
+test("a link to another target is another element; tracking parameters do not matter", async ({ page }) => {
+  await open(page)
+  await pin(page, "profile")
+  await page.evaluate(() =>
+    document.querySelector('[data-fixture="profile"]')?.setAttribute("href", "/user?id=alice&utm_source=web"),
+  )
+  expect(await resolved(page)).toBe("profile")
+  await page.evaluate(() => document.querySelector('[data-fixture="profile"]')?.setAttribute("href", "/user?id=bob"))
+  expect(await resolved(page)).toBeNull()
+})
+
+test("an image with a new signed URL is still found", async ({ page }) => {
+  await open(page)
+  await pin(page, "photo")
+  await page.evaluate(() => document.querySelector('[data-fixture="photo"]')?.setAttribute("src", "/pixel.png?sig=two"))
+  expect(await resolved(page)).toBe("photo")
+})

@@ -443,7 +443,8 @@ export function createApp(options: AppOptions) {
       }
       bump(user.project)
     })()
-    return c.json({ ok: true, threadDeleted: deletesThread })
+    if (deletesThread) return c.json({ ok: true, threadDeleted: true })
+    return c.json({ ok: true, threadDeleted: false, ...thread(user, row.thread_id) })
   })
 
   const react = (add: boolean) =>

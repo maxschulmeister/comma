@@ -209,6 +209,23 @@ test("an old answer does not hide a newer reply", async ({ page, context }) => {
   await other.close()
 })
 
+test("a late answer does not bring back a deleted thread", async ({ page }) => {
+  const thread = await withComment(page, "late-delete", "Deleter")
+  const release = await hold(page, "**/api/comments/*/reactions/*", "answer")
+  const first = thread.getByRole("article").first()
+  await first.hover()
+  await first.getByRole("button", { name: "Add reaction" }).click()
+  await page.getByRole("button", { name: "React with 👍" }).click()
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await page.getByRole("menuitem", { name: "Delete thread" }).click()
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click()
+  await expect(pins(page)).toHaveCount(0)
+  release()
+  await page.waitForResponse("**/api/comments/*/reactions/*")
+  await page.waitForTimeout(200)
+  await expect(pins(page)).toHaveCount(0)
+})
+
 test("an unsaved edit goes away when another user signs in", async ({ page }) => {
   const thread = await withComment(page, "edit-identify", "Editor")
   const first = thread.getByRole("article").first()

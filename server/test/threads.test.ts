@@ -74,7 +74,12 @@ describe("threads and comments", () => {
     expect(author).toBeString()
     const stranger = await s.guest("Stranger")
     expect((await s.request("DELETE", `/api/comments/${replyId}`, { token: stranger.token })).status).toBe(403)
-    expect((await s.request("DELETE", `/api/comments/${replyId}`, { token: other.token })).status).toBe(200)
+    const deleted = await s.request("DELETE", `/api/comments/${replyId}`, { token: other.token })
+    expect(deleted.status).toBe(200)
+    // The answer has the thread without the comment, with a newer revision.
+    expect(deleted.json.threadDeleted).toBe(false)
+    expect(deleted.json.thread.comments).toHaveLength(1)
+    expect(deleted.json.thread.updatedAt).toBeGreaterThanOrEqual(reply.json.thread.updatedAt)
     const list = await s.request("GET", "/api/threads", { token: other.token })
     expect(list.json.threads[0].comments).toHaveLength(1)
   })
