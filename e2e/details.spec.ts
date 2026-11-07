@@ -265,7 +265,23 @@ test("copy as bug report", async ({ page, context, browserName }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"])
   const me = await guestSession("Reporter")
   const path = testPath("details-copy")
-  await apiThread(me, path, "Button is cut off")
+  const thread = await apiThread(me, path, "Button is cut off")
+  // A reply that changes the request: it is part of the report.
+  const api = await request.newContext()
+  const replier = await guestSession("Designer")
+  await api.post(`${COMMA}/api/threads/${thread.id}/comments`, {
+    headers: { origin: SITE, authorization: `Bearer ${replier.token}` },
+    data: {
+      body: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "Not the heading: the button." }] },
+          { type: "paragraph", content: [{ type: "text", text: "Make it wider." }] },
+        ],
+      },
+    },
+  })
+  await api.dispose()
   await signIn(page, me)
   await page.goto(path)
   await openPanel(page)
@@ -279,6 +295,7 @@ test("copy as bug report", async ({ page, context, browserName }) => {
   expect(text).toContain("`body > main > section > h1`")
   expect(text).toMatch(/!\[Screenshot\]\(http:\/\/localhost:4800\/files\/[\w-]+\)/)
   expect(text).toContain(`${SITE}${path}#comma=`)
+  expect(text).toMatch(/\*\*Replies\*\*\n- Designer \(guest\), .+: Not the heading: the button\.\n {2}Make it wider\./)
 })
 
 test("the info line of a new thread opens and closes the details", async ({ page }) => {

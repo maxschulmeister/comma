@@ -80,12 +80,25 @@ function facts(thread: Thread): { title: string; facts: Fact[] }[] {
   ]
 }
 
-/** Markdown for an issue tracker: the facts, the screenshot and a link back to the thread. */
+/**
+ * Markdown for an issue tracker: the facts, the replies (they can change the request), the screenshot and a link
+ * back to the thread.
+ */
 function bugReport(thread: Thread) {
   const lines: string[] = []
   for (const group of facts(thread)) {
     lines.push(`**${group.title}**`)
     for (const f of group.facts) lines.push(`- ${f.label}: ${f.code ? `\`${f.value}\`` : f.value}`)
+    lines.push("")
+  }
+  const replies = thread.comments.slice(1)
+  if (replies.length > 0) {
+    lines.push("**Replies**")
+    for (const c of replies) {
+      // More lines of a reply stay in its list item.
+      const text = (c.text || "Image").replace(/\n+/g, "\n  ")
+      lines.push(`- ${nameOf(getState().users[c.authorId])}, ${fullDate(c.createdAt)}: ${text}`)
+    }
     lines.push("")
   }
   if (thread.screenshot) lines.push(`![Screenshot](${fileUrl(thread.screenshot)})`, "")
