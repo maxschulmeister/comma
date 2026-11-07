@@ -235,6 +235,22 @@ test("the lightbox shows the screenshot at the size it had on the page", async (
   await expect
     .poll(() => img.evaluate((el) => [el.getBoundingClientRect().width, el.getBoundingClientRect().height]))
     .toEqual([300, 100])
+  // A dark backdrop that blurs the page. Nothing in comma blends with what is under it: a blend makes all of comma
+  // one closed group, and the backdrop then blurs only comma, not the page.
+  const backdrop = page.locator("[data-slot=dialog-overlay]")
+  expect(await backdrop.evaluate((el) => getComputedStyle(el).backgroundColor)).toMatch(
+    /\/ 0\.[5-9]|rgba\(0, 0, 0, 0\.[5-9]/,
+  )
+  const blends = await page
+    .locator("comma-widget")
+    .evaluate((host) =>
+      [...(host.shadowRoot?.querySelectorAll("*") ?? [])].flatMap((el) =>
+        [null, "::before", "::after"]
+          .map((pseudo) => getComputedStyle(el, pseudo).mixBlendMode)
+          .filter((mode) => mode !== "normal"),
+      ),
+    )
+  expect(blends).toEqual([])
   // Escape closes only the lightbox.
   await page.keyboard.press("Escape")
   await expect(box).toBeHidden()

@@ -310,6 +310,8 @@ function Lightbox({ thread, onClose }: { thread: Thread; onClose: () => void }) 
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         data-keeps-thread
+        // A dark backdrop: the image stands out, also over a dark site.
+        overlayClassName="bg-black/60"
         className="block max-h-[calc(100vh-2rem)] w-auto max-w-[calc(100vw-2rem)] overflow-auto bg-background p-0 sm:max-w-[calc(100vw-2rem)]"
       >
         <DialogTitle className="sr-only">Screenshot</DialogTitle>
