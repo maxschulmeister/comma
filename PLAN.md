@@ -43,7 +43,15 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
   - Before the upload, the widget makes images larger than 2560 px on the long side smaller, with a canvas. It encodes them as WebP. Where the browser cannot encode WebP (Safari), it uses JPEG for photos and PNG for images with transparency.
   - GIFs stay as they are, so animation stays.
   - 4 MB fits the request limits of Lambda and Vercel (see DEPLOY.md).
-- `Enter` sends. `Shift+Enter` adds a line.
+- Element screenshot: a new thread keeps a screenshot of its element or region, with 16 px around it, as SitePing does.
+  - The widget takes it when the comment is sent and uploads it. It is not one of the 5 images. A small thumbnail shows at the end of the thread's info line (see Details). It is a record for when the element or its look changes.
+  - Only the part on screen. If it fails or takes more than 5 s, the thread has no screenshot. The comment never waits for it.
+  - Server: `files.thread_id`. The file goes with the thread.
+- Screenshot button: adds the visible part of the page as an image, without comma and the panel.
+  - [modern-screenshot](https://github.com/qq15725/modern-screenshot) (~10 kB gzip, loads on the first screenshot). It copies the page into an SVG `<foreignObject>`, so the browser draws it. Chosen over html2canvas-pro (69 kB, draws CSS in JS), SnapDOM (103 kB) and html-to-image (few updates).
+  - The scroll position is a negative margin on `<html>`, so `position: fixed` elements stay in place.
+  - Limits: images and fonts from other sites without CORS stay blank. Scroll positions of inner scroll areas come from the library.
+- `⌘Enter` (`Ctrl+Enter`) sends. `Enter` starts a new paragraph or list item. `Shift+Enter` adds a line break.
 - Drafts:
   - A new comment's draft stays on its pin when the popover closes. A click on the pin opens it again.
   - A click on another place while the draft has text asks: "Move here" or "Discard and start new". The draft never moves without a question.
@@ -64,7 +72,7 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 
 - Replies.
 - Reactions on each comment: quick set and picker.
-- Header: the element ("Heading: Pricing"). Under it: the assignee, and where the comment was made (window size, browser, system; the full URL on hover).
+- Header: the element ("Heading: Pricing"). Under it: the assignee, and the info line: where the comment was made (window size, browser, system) and the screenshot thumbnail. A click on the line opens or closes the details.
 - Menu: copy link, move (author), mark as unread, edit (own), delete comment (own), delete thread (author or admin).
 - Deleting the first comment deletes the thread.
 - Resolve and reopen. A resolved thread says who resolved it and when.
@@ -72,18 +80,52 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 - Element not found (detached): the thread says what it was on ("Paragraph “A paragraph…”"). The author can move it.
 - Status messages: one `role="status"` region. "Thread resolved" has Undo and stays until it is closed. Other messages ("Link copied") go after 4 s.
 
-### Panel (push mode)
+### Panel
+
+Two modes. Each person chooses in the panel's view menu (sliders icon): "Panel Mode" (Overlay, Push) and "Show Details" (Panel, Dialog). The labels match the config values; the menu items have tooltips with what each one does. The choices are kept in localStorage; without one, the project settings `panel` (default `overlay`) and `details` (default `panel`) decide. View choices are personal (screen size, the task at hand), so a person makes them, not the config.
+
+- `overlay` (default): the panel floats over the page, 8 px from the top, the bottom and the right, with rounded corners. The page keeps its width, but its right part is covered.
+- `push`: the page gets a right margin and reflows next to the panel. Nothing is covered, but the page is 360 px narrower: its media queries still see the full window, so it shows a state no real device shows.
+- Always on the right. A left side would need mirrored keys and layouts; the mode switch covers the need. The toolbar and notices stay left of the panel.
+- Floating, the panel must not hide what people work on: comment mode does not open it (push mode does), and a thread opens beside it, never under it. A thread whose pin is under the panel opens beside its item in the panel.
 
 - Each item: author, page (title and path), first lines, reply count, assignee, unread state, time.
   - Unread: the newest comment by someone else ("Bob replied"), with the first comment as context.
 - Search in comment text.
 - Sort: date, or unread first.
-- Filters: this page or all pages, only my threads (I created, replied or was mentioned), assigned to me, show resolved. The filter button shows when a filter is on.
+- Filters: this page or all pages, only my threads (I created, replied or was mentioned), assigned to me, show resolved. The filter button is next to the search field and shows when a filter is on.
+- Item states look different: hover is light, the open thread is darker with a bar on the left, the keyboard focus is an inset ring (it does not cover the next item).
 - Empty list: says why, and offers the way out: "Clear search", "Clear filters", "Show all pages" (with the count on other pages), "Show resolved", "Add comment".
-- `↑`/`↓` move between threads. `Enter` opens one.
+- `↑`/`↓` select a thread: it opens at its pin and the page scrolls to it; the focus stays in the list (selection follows focus, as in a mail list). `Enter` or `←` go into the thread. `→` opens its details. Tab does not select.
+- Each item has a button, as high as the item, that opens the thread with its details: a chevron when they open in the panel, an expand icon when they open in a dialog. Only the mouse reaches it (no extra Tab stop per item); the keyboard has `→`.
+- Keys follow the screen: the page is on the left, the panel on the right, the details are "in" an item. In the list `←` goes into the thread on the page (as `Enter`), `→` opens the details. In the thread, `→` goes back to its item, if no text is typed. In the details, `←` goes back (in the dialog it closes it), `↑` `↓` go to the previous and next thread. The same keys work in both details layouts.
 - A thread on another page: click navigates to that page and opens the thread.
 - Detached threads show with an "Element not found" label.
 - Screens narrower than 640 px: the panel covers the full screen. The toolbar hides while it is open. A thread with a pin opens at its pin, and the panel closes.
+
+### Details
+
+Two layouts (view menu, or the project default `details`): `panel` (default), a layer of the side panel next to the page; or `dialog`, a large window over the page with the screenshot on the left and the facts on the right. Both work the same way, as below. In the dialog, `Esc` closes it and the screenshot fits its pane first.
+
+- For hard bugs and changed pages. Most reviews do not need them, so they open only on request, from the thread's info line. They do not open when a thread opens.
+- Content: the element screenshot, then facts in groups: Comment (author, exact date, text), Element (type, text, selector), Page (title, URL, scroll position), Device (browser, system, window size and pixel ratio, theme, language, time zone).
+- They follow the open thread: a click on another pin shows its details. Previous and next (and `↑` `↓`) go through the panel list, with "3 of 12". `←` goes back. The focus stays in the details. The reply box does not take it.
+- The thread popover stays open next to the details, so the screenshot and the live page show side by side.
+- Back (or `Esc`) shows the list again at the same scroll position, with the focus on the open thread's item. The list stays under the layer (inert), so it keeps its scroll position.
+- When the thread or the panel closes, the details close too.
+- Lightbox: the screenshot at the size it had on the page (pixels ÷ the pixel ratio of the author's screen, up to 2). Larger than the window: it fits first, a click shows the full size.
+- "Copy as bug report": Markdown with the facts, the screenshot and a link to the thread, for Jira or GitHub.
+- They do not open automatically when a thread opens: most reviews need only the list. A remembered choice was considered and left out: it would surprise people.
+- Not now: console and network capture. Categories (bug, change): a label could come later in the thread menu.
+
+### Motion
+
+Only where it shows where something comes from, fast and short; keyboard actions change at once.
+
+- The floating panel slides in from its edge: 8 px and opacity, 150 ms, strong ease-out (`--ease-out`). Not in push mode (the page jumps anyway) and not on narrow screens.
+- A status message comes up from the bottom: 400 ms `ease`.
+- No motion for the details (opened with `→`), previous / next, and ↑ ↓ selection: people do these many times in a row.
+- Reduced motion: no slides (see styles.css).
 
 ### Toolbar
 
@@ -110,7 +152,7 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 
 - **Deep link**: the URL hash opens a thread.
 - **Detached comments**: show in the panel, not on the page.
-- **Rate limit**: 100 comments per hour per user (same as Figma).
+- **Rate limit**: 100 comments and 100 images per hour per user (same as Figma). 30 new guests per hour per project. A project can change each limit (`limits`).
 - **Accessibility**: all actions work with the keyboard. Popovers and the panel manage focus. Controls have labels.
   - Focus rings: solid, 4.7:1 on white. Small text: 4.5:1 or more (avatar initials, unread count, muted text).
   - Touch: controls that show on hover (comment menu, add reaction) always show.
@@ -120,7 +162,7 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 
 Out (later, maybe):
 
-- Page screenshots, console and network capture.
+- Console and network capture.
 - Email and Slack notifications (decided: not in v1).
 - Issue-tracker sync.
 - Realtime push (SSE or WebSocket). v1 polls.
@@ -243,6 +285,7 @@ One rule: **your app signs a short token, comma trusts it.**
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Inside your app | The app backend signs a token. The frontend calls `comma.identify(token)`. No login screen.                                                                                                                           |
 | On another site | "Sign in" opens a popup → comma redirects to the app sign-in URL → the app (after its normal login) redirects back with a signed token → the popup sends a comma session to the widget with `postMessage` and closes. |
+| Slack           | "Sign in with Slack" opens a popup → Slack (OpenID Connect) → comma gets the user from Slack and checks the workspace → the popup sends a comma session to the widget. For sites without their own sign-in.           |
 | No account      | Guest: enter a name.                                                                                                                                                                                                  |
 
 Details:
@@ -250,6 +293,9 @@ Details:
 - App token: JWT, HS256, signed with the project secret. Claims: `sub`, `name`, optional `email` and `avatar`. Expiry ≤ 5 minutes.
 - The widget exchanges an app token or a guest name for a **comma session token** (JWT, signed by the server, bound to one project). App sessions last 7 days, guest sessions 90 days: someone who leaves the app loses access within a week.
 - The widget keeps the session token in `localStorage` and sends it as `Authorization: Bearer …`. No cookies, so Safari and Firefox work. Users sign in once per site.
+- Each session is a row in `sessions`. Sign-out deletes it, so a copied token stops working.
+- Apps that cannot sign tokens: `userUrl`. comma sends the app's own access token to the app's "current user" endpoint. A `200` names the user. No backend change.
+- Slack: one workspace per project (`slack.team`). comma exchanges the code with the client secret and reads `openid.connect.userInfo` from Slack. No library: the flow has no ID token check, because the user info comes straight from Slack.
 - `postMessage` and redirects go only to origins registered for the project.
 - In the app, the work is one endpoint that signs the token (~20–30 lines).
 
@@ -258,12 +304,13 @@ Details:
 - Hono. Runs on Bun (Docker), AWS Lambda, Cloudflare Workers and Vercel (see DEPLOY.md).
 - SQLite through libSQL: one local file, or a remote database (Turso) on serverless targets. Writes go in one `batch`.
 - Validate all input at the entry point (zod).
-- CORS and `Origin` check: only the project's registered origins.
+- CORS and `Origin` check: only the project's registered origins. `*` matches one subdomain label (preview deploys).
+- Project `scope: "origin"`: each origin has its own threads (`threads.site`). Default: the project shares them.
 - Comment body is stored as Tiptap JSON. The server checks it against the allowed nodes and marks (zod), with a size limit. It rejects anything else.
 - The server reads mentions from the mention nodes, and plain text (for search) from the text nodes. The client does not send them separately.
 - Links: only `http`, `https` and `mailto`. Rendered with `rel="noopener noreferrer"` and `target="_blank"`.
 - Images: stored in the database (one file to back up), or in S3 or R2 (serverless). Check type by file content, not by name. Uploads that no comment uses after 24 h are deleted.
-- Rate limit in memory. One process on Docker. On serverless, each instance counts alone.
+- Rate limit in the database (`limits`, one counter per key and hour), so all serverless instances share it.
 
 Projects live in `comma.config.ts`. Secrets come from env:
 
@@ -286,12 +333,13 @@ export default {
 users      id, project, kind (guest|app), external_id, name, email, avatar_url, is_admin, created_at
 threads    id, project, page (URL path), anchor (JSON), status (open|resolved),
            created_by, created_at, updated_at, resolved_at, resolved_by,
-           context (JSON: url, title, viewport, dpr, browser, os), assignee_id
+           context (JSON: url, title, viewport, dpr, browser, os, theme, language, timeZone, scroll), assignee_id, site (host)
 comments   id, thread_id, author_id, body (Tiptap JSON), text (plain, for search), created_at, edited_at
 mentions   comment_id, user_id   (from the body)
 reactions  comment_id, user_id, emoji
 reads      user_id, thread_id, read_at
 files      id, project, comment_id (null until used), uploaded_by, mime, size, width, height, data, created_at
+sessions   id, user_id, created_at, expires_at
 ```
 
 - Any change to a thread or its comments updates `threads.updated_at`.
@@ -303,6 +351,7 @@ files      id, project, comment_id (null until used), uploaded_by, mime, size, w
 GET    /c.js
 POST   /api/session/guest        { project, name }      → { token, user }
 POST   /api/session/app          { project, appToken }  → { token, user }
+DELETE /api/session                                     → ends this session
 GET    /auth/start               ?project&origin        → redirect to signInUrl
 GET    /auth/callback            ?token&state           → page: postMessage session to opener, close
 GET    /api/threads                         → all threads with comments, reactions, read state (ETag)

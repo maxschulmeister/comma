@@ -22,7 +22,7 @@ Tested on this repo, on a local machine: the Docker image, the Lambda bundle (wi
 Ask the user:
 
 1. The target, and the address for comma (for example `https://comma.example.com`). Who controls the DNS?
-2. The projects. For each: `id`, the `origins` (sites that use comma), and optional app sign-in (`appSecret`, `signInUrl`). See [README.md](README.md#sign-in-with-your-app).
+2. The projects. For each: `id`, the `origins` (sites that use comma), and optional sign-in: app (`appSecret`, `userUrl`, `signInUrl`) or Slack (`slack`). See [README.md](README.md#sign-in-with-your-app).
 3. Serverless only: the Turso database (or permission to create one), and the S3 bucket or R2 bucket (or permission to create one).
 
 Secrets:
@@ -45,6 +45,7 @@ turso db tokens create comma     # COMMA_DB_TOKEN (secret)
 All targets read the same env. See the table in [README.md](README.md#server-settings). Also:
 
 - `<PROJECT>_SECRET`: one per project with app sign-in. The name is what `comma.config.ts` reads.
+- `<PROJECT>_SLACK_SECRET`: one per project with Slack sign-in. The Slack app also needs the redirect URL `$COMMA_URL/auth/slack/callback`.
 - `CRON_SECRET`: Vercel only (cleanup).
 
 If a setting is missing or wrong, comma stops with a message that names the setting. Look at the logs.
@@ -118,7 +119,7 @@ For a VPS with Docker and a reverse proxy for HTTPS. The database is on a volume
 
 Rules:
 
-- Run **one** container. The rate limit is in memory, and SQLite has one writer.
+- Run **one** container. SQLite has one writer.
 - Images in S3 are possible (`COMMA_FILES=s3`), but not needed on a VPS.
 - Roll back: `git checkout <previous commit> && docker compose up -d --build`.
 
@@ -141,7 +142,7 @@ AWS SAM makes one CloudFormation stack from `template.yaml`: the function with a
 
 Before you start: `aws sts get-caller-identity` and `sam --version` work. Make the Turso database (see [Before you start](#before-you-start)).
 
-1. For each `appSecret` in `comma.config.ts`: add a `NoEcho` parameter and its env var in `template.yaml` (see the comments there).
+1. For each `appSecret` and Slack client secret in `comma.config.ts`: add a `NoEcho` parameter and its env var in `template.yaml` (see the comments there).
 2. `bun install && bun run build && bun scripts/build-lambda.ts`
 3. `sam deploy --guided`. Leave `PublicUrl` empty the first time.
    - `--guided` writes the parameters, also the secrets, to `samconfig.toml`. This file is in `.gitignore`. Do not commit it.
@@ -195,5 +196,4 @@ Notes:
 - Entry files: `server/src/index.ts` (Bun, Docker), `server/src/lambda.ts`, `server/src/worker.ts`, `server/src/vercel.ts` (with `server.ts`). The serverless entries share `server/src/serverless.ts`. It needs a remote database and bundles `comma.config.ts`.
 - The database client is `@libsql/client` on Bun (files and remote) and `@libsql/client/web` on serverless (remote only, no native code). Writes go in one `batch`: one round trip, atomic.
 - Cleanup of unused images: a timer on Bun, EventBridge on Lambda, a Cron Trigger on Workers, Vercel Cron.
-- The rate limit is in memory. On serverless, each instance counts alone, so the limit is weaker.
 - Each open tab polls every 15 s while a person uses the page, and stops after 5 minutes with no input. A team of 10 makes about 20,000 requests per workday. This is in the free tier of all three platforms.

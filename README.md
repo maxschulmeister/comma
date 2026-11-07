@@ -3,8 +3,10 @@
 Comments pinned to any website. One script tag. Your own service.
 
 - Press `C`, click an element, write a comment. Drag to comment on a region.
-- Threads with replies, reactions, mentions, images, assignees, resolve (with undo) and unread state.
-- Each thread keeps where it was made: the page title and URL, the window size, the browser and the system.
+- Threads with replies, reactions, mentions, images, screenshots of the page, assignees, resolve (with undo) and unread state.
+- Each new thread keeps a screenshot of its element (or region).
+- Each thread keeps where it was made: the page title and URL, the scroll position, the window size, the browser, the system, the theme, the language and the time zone.
+- Details in the side panel: the screenshot at full size and all of the above. Go through the threads with them open. Copy them as a bug report.
 - Unsent comments stay on their pin, also after a reload.
 - A panel with all comments of the site. Search, filters, keyboard navigation.
 - Pins stay on their element when the page changes. If comma cannot find the element, the thread says "Element not found" and what it was on. It never moves to a wrong element.
@@ -62,15 +64,22 @@ People sign in as guests with a name. To use the accounts of your app, see below
 
 ### Project settings
 
-| Setting     |                                                                                                                                                                                                             |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`        | Required. Lowercase letters, digits, `-` and `_`.                                                                                                                                                           |
-| `origins`   | Required. The sites that may use the project.                                                                                                                                                               |
-| `name`      | The name of your app, on the sign-in button: "Sign in with Acme".                                                                                                                                           |
-| `appSecret` | Sign in with your app (see below).                                                                                                                                                                          |
-| `signInUrl` | Popup sign-in on sites outside your app (see below).                                                                                                                                                        |
-| `guests`    | `true`: people can sign in as guests with only a name. Anyone can use any name. Default: `true` without `appSecret`, `false` with it. Guests show as "Guest" next to their name.                            |
-| `toolbar`   | `"always"` (default) or `"signed-in"`: visitors see no toolbar until they sign in. To sign in, open a page with `?comma` in the URL (`https://www.acme.com/?comma`). Links to a thread also ask to sign in. |
+| Setting     |                                                                                                                                                                                                                  |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`        | Required. Lowercase letters, digits, `-` and `_`.                                                                                                                                                                |
+| `origins`   | Required. The sites that may use the project. `*` matches one subdomain label: `https://*.preview.acme.com`.                                                                                                     |
+| `scope`     | `"project"` (default): all origins share the comments. `"origin"`: each origin has its own comments, for example one per preview deploy.                                                                         |
+| `name`      | The name of your app, on the sign-in button: "Sign in with Acme".                                                                                                                                                |
+| `appSecret` | Sign in with your app: your backend signs a token (see below).                                                                                                                                                   |
+| `userUrl`   | Sign in with your app: comma checks your app's own access token with your API (see below). Use `appSecret` or `userUrl`, not both.                                                                               |
+| `user`      | With `userUrl`: a function that reads the user from the answer. Default: the answer itself.                                                                                                                      |
+| `signInUrl` | Popup sign-in on sites outside your app (see below).                                                                                                                                                             |
+| `slack`     | Sign in with Slack, for the people of one workspace (see below).                                                                                                                                                 |
+| `guests`    | `true`: people can sign in as guests with only a name. Anyone can use any name. Default: `true` without app sign-in, `false` with it. Guests show as "Guest" next to their name.                                 |
+| `limits`    | Per hour. `commentsPerHour` (default `100`) and `imagesPerHour` (default `100`) per user, `guestsPerHour` (default `30`): new guest sign-ins for all people together. Example: `limits: { guestsPerHour: 100 }`. |
+| `toolbar`   | `"always"` (default) or `"signed-in"`: visitors see no toolbar until they sign in. To sign in, open a page with `?comma` in the URL (`https://www.acme.com/?comma`). Links to a thread also ask to sign in.      |
+| `details`   | Default place of a thread's details (screenshot, page, device): `"panel"` (default, a layer of the side panel) or `"dialog"` (a window over the page). Each person can change it in the panel's view menu.       |
+| `panel`     | Default of the side panel: `"overlay"` (default) floats over the page and keeps its width; `"push"` makes the page narrower and covers nothing. Each person can change it in the panel's view menu.              |
 
 `guests` is a change for projects with `appSecret` that used guests before: set `guests: true` to keep them.
 
@@ -86,6 +95,40 @@ comma can run behind a proxy, also on the same origin as the site. Set `COMMA_UR
 Add `data-comment-anchor="pricing"` to an element to give it a very stable anchor. Comments on it find it again, also when its text changes or it moves.
 
 ## Sign in with your app
+
+Two ways. Both use `comma.identify(token)` on the page:
+
+- **Your app's API** (`userUrl`): comma sends the access token your app already has to an endpoint of your API. No backend change.
+- **A signed token** (`appSecret`): your backend signs a short token for comma.
+
+### With your app's API: `userUrl`
+
+Most apps have an endpoint that returns the signed-in user, for example `GET /api/me`. comma calls it with `Authorization: Bearer <token>`:
+
+- `200`: comma reads the user with `user` and signs them in.
+- `4xx`: the sign-in fails.
+- Other answers, or no answer in 5 s: the sign-in fails with `502`. Try again.
+
+```ts
+{
+  id: "acme",
+  origins: ["https://*.preview.acme.com"],
+  scope: "origin",
+  userUrl: "https://api.acme.com/me",
+  // The fields of the signed token below: sub and name are required.
+  user: (body) => ({ sub: body.id, name: body.full_name, email: body.email }),
+}
+```
+
+On the page, give comma the access token when the user is signed in:
+
+```js
+window.comma.identify(accessToken)
+```
+
+comma does not keep the access token. Use HTTPS for `userUrl`.
+
+### With a signed token: `appSecret`
 
 One rule: **your app signs a short token, comma trusts it.**
 
@@ -107,7 +150,7 @@ Add one endpoint that signs a token for the signed-in user. JWT, HS256, signed w
 | `admin`           | Optional. `true` lets the user delete any thread. |
 | `exp`             | Required. 5 minutes or less from now.             |
 
-A session of an app user lasts 7 days, a guest session 90 days. In your app, `identify` signs in again on each page load. Someone who leaves your app keeps comma access for at most 7 days.
+A session of an app user lasts 7 days, a guest session 90 days. In your app, `identify` signs in again on each page load. Someone who leaves your app keeps comma access for at most 7 days. Sign-out ends the session on the server.
 
 ```ts
 import { sign } from "hono/jwt" // or any JWT library
@@ -133,7 +176,7 @@ On the page, after the comma script tag:
 </script>
 ```
 
-`window.comma.signOut()` signs the user out of comma.
+`window.comma.signOut()` signs the user out of comma. Call it when the user signs out of your app.
 
 ### On other sites: popup sign-in
 
@@ -169,18 +212,40 @@ app.get("/comma-sign-in", async (c) => {
 
 comma sends the session to the site that opened the popup, only if that site is in `origins`. See `example/app.ts` for a working app.
 
+## Sign in with Slack
+
+People of one Slack workspace sign in with Slack in a popup. Your app needs no change.
+
+Each comma server needs its own Slack app. Slack sends people back only to addresses that the app lists.
+
+1. Open [this link to make the app](https://api.slack.com/apps?new_app=1&manifest_json=%7B%22display_information%22%3A%7B%22name%22%3A%22comma%22%7D%2C%22oauth_config%22%3A%7B%22redirect_urls%22%3A%5B%22https%3A%2F%2FYOUR-COMMA-SERVER%2Fauth%2Fslack%2Fcallback%22%5D%7D%7D). Select your workspace. In the manifest, replace `YOUR-COMMA-SERVER` with the host of your comma server. Behind a proxy, set `COMMA_URL`. The app needs no scopes and no install: comma asks for `openid`, `profile` and `email` at sign-in.
+2. In **Basic Information**, copy the client ID and the client secret.
+3. Find the workspace id (`T…`): open Slack in a browser. It is the part after `/client/` in the URL.
+4. Add to the project:
+
+   ```ts
+   {
+     id: "acme",
+     origins: ["https://*.preview.acme.com"],
+     slack: { clientId: "1234.5678", clientSecret: process.env.ACME_SLACK_SECRET, team: "T0123ABCD" },
+   }
+   ```
+
+Only people of that workspace can sign in. Their name, email and picture come from Slack.
+
 ## Keyboard
 
-| Key                       |                                                                                                                       |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `C`                       | Comment mode on or off (the key in `data-shortcut`; the letter on the key, also on other keyboard layouts)            |
-| `↑` `↓`, then `Enter`     | In comment mode: pick an element and comment on it (`Tab` to a control works too). `Shift+Enter`: comment on its area |
-| `Esc`                     | Close the popover, then leave comment mode                                                                            |
-| `Shift+C`                 | Show or hide comments                                                                                                 |
-| `Enter` / `Shift+Enter`   | Send / new line                                                                                                       |
-| `⌘B` `⌘I` `⌘⇧X` `⌘E` `⌘K` | Bold, italic, strikethrough, code, link (`Ctrl` on Windows and Linux)                                                 |
-| `⌘⇧8` `⌘⇧7`               | Bulleted and numbered list                                                                                            |
-| `↑` `↓`                   | In the panel: move between threads                                                                                    |
+| Key                       |                                                                                                                                                                                     |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `C`                       | Comment mode on or off (the key in `data-shortcut`; the letter on the key, also on other keyboard layouts)                                                                          |
+| `↑` `↓`, then `Enter`     | In comment mode: pick an element and comment on it (`Tab` to a control works too). `Shift+Enter`: comment on its area                                                               |
+| `Esc`                     | Close the popover, then leave comment mode                                                                                                                                          |
+| `Shift+C`                 | Show or hide comments                                                                                                                                                               |
+| `⌘Enter` (`Ctrl+Enter`)   | Send. `Enter`: new paragraph. `Shift+Enter`: line break                                                                                                                             |
+| `⌘B` `⌘I` `⌘⇧X` `⌘E` `⌘K` | Bold, italic, strikethrough, code, link (`Ctrl` on Windows and Linux)                                                                                                               |
+| `⌘⇧8` `⌘⇧7`               | Bulleted and numbered list                                                                                                                                                          |
+| `↑` `↓`                   | In the panel: select a thread (it opens at its pin, the focus stays in the list). In the details: previous and next thread                                                          |
+| `←` `→`                   | In the panel: `←` (or `Enter`) goes into the thread on the page, `→` opens its details. In the details: `←` goes back. In the thread (not while typing): `→` goes back to the panel |
 
 ## Development
 
