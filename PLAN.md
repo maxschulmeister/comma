@@ -94,7 +94,7 @@ Two modes and two sides. Each person chooses in the panel's view menu (sliders i
 
 - Each item: author, page (title and path), first lines, reply count, assignee, unread state, time.
   - Unread: the newest comment by someone else ("Bob replied"), with the first comment as context.
-- Search in comment text. A search or filter that hides the open thread closes it.
+- Search in comment text, in the current scope (this page or all pages). No match on this page, but on other pages: "No comments on this page match", "2 matches on other pages" and "Search all pages". A search or filter that hides the open thread closes it.
 - Sort: date, or unread first. "Unread first" keeps its order while the panel is open: a thread read there keeps its place, so `↓` goes on to the next unread one. It sorts again when the panel opens or the sort changes.
 - The panel's open state, filters, sort and search are kept for the tab (sessionStorage): the review goes on after a page load, also on another page.
 - Filters: this page or all pages, only my threads (I created, replied or was mentioned), assigned to me, show resolved. The filter button is next to the search field and shows when a filter is on.

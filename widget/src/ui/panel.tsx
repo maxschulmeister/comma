@@ -532,7 +532,14 @@ function EmptyState() {
   const hints: string[] = []
   const actions: { label: string; run: () => void }[] = []
   if (query) {
-    title = `No comments match “${query}”`
+    // Search looks on this page only (the scope). Matches on other pages: say so, and offer them.
+    const elsewhere =
+      filters.scope === "page" ? visibleThreads(threads, { ...filters, scope: "all" }, page, me, null).length : 0
+    title = elsewhere ? `No comments on this page match “${query}”` : `No comments match “${query}”`
+    if (elsewhere) {
+      hints.push(`${plural(elsewhere, "match", "matches")} on other pages`)
+      actions.push({ label: "Search all pages", run: () => setFilters({ scope: "all" }) })
+    }
     actions.push({ label: "Clear search", run: () => setFilters({ query: "" }) })
   } else if (
     (filters.mine || filters.assigned) &&

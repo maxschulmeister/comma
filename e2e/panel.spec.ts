@@ -391,6 +391,23 @@ test("new comments from others appear without a reload", async ({ page, browserN
   await expect(items(page).filter({ hasText: "Later news" })).toBeVisible({ timeout: 17_000 })
 })
 
+test("a search with no match on this page points to matches on other pages", async ({ page }) => {
+  const me = await guestSession("Seeker")
+  const path = testPath("search-elsewhere")
+  await apiThread(me, path, "Here on this page")
+  await apiThread(me, `${path}-pricing`, "The pricing table is too wide")
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  await panel(page).getByRole("searchbox", { name: "Search comments" }).fill("pricing table")
+  await expect(panel(page)).toContainText("No comments on this page match “pricing table”")
+  // The other browsers of the run add theirs to the project.
+  await expect(panel(page)).toContainText(/\d+ match(es)? on other pages/)
+  await panel(page).getByRole("button", { name: "Search all pages" }).click()
+  await expect(items(page).filter({ hasText: "The pricing table is too wide" }).first()).toBeVisible()
+  await expect(items(page).filter({ hasText: "Here on this page" })).toHaveCount(0)
+})
+
 test("an empty page points to comments on other pages", async ({ page }) => {
   const me = await guestSession("Empty")
   const other = await guestSession("Elsewhere")
