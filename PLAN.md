@@ -81,7 +81,7 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 - Resolve and reopen. A resolved thread says who resolved it and when.
 - Assign: anyone in the project assigns the thread to a person (search). The thread becomes unread for them.
 - Element not found (detached): the thread says what it was on ("Paragraph “A paragraph…”"). The author can move it.
-- Status messages: small text beside the toolbar, in the same row, on the side away from the corner. Over the page: a pill as high as the toolbar, with ↶ as large as its buttons. With the panel open: plain text at the other end of the panel's bottom row. Narrow screens: a pill above the toolbar. The toolbar does not move. One `role="status"` region. Short texts, so they fit in the open panel (360 px): "Thread resolved" with ↶ (Undo), "Link copied", "Could not move". A message goes after 4 s, one with ↶ after 8 s, but not while the mouse is on it or the keyboard focus is in it. "Cannot reach comma" with ↻ (Try again) stays until an update works.
+- Status messages: small text beside the toolbar, in the same row, on the side away from the corner. Over the page: a pill as high as the toolbar, with ↶ as large as its buttons. With the panel open: plain text at the other end of the panel's bottom row. Narrow screens: a smaller pill above the toolbar. The toolbar does not move. One `role="status"` region. Short texts, so they fit in the open panel (360 px): "Thread resolved" with ↶ (Undo), "Link copied", "Could not move". A message goes after 4 s, one with ↶ after 8 s, but not while the mouse is on it or the keyboard focus is in it. "Cannot reach comma" with ↻ (Try again) stays until an update works.
 
 ### Panel
 
@@ -97,6 +97,7 @@ Two modes and two sides. Each person chooses in the panel's view menu (sliders i
 - Search in comment text, in the current scope (this page or all pages). No match on this page, but on other pages: "No comments on this page match", "2 matches on other pages" and "Search all pages". A search or filter that hides the open thread closes it.
 - Sort: date, or unread first. "Unread first" keeps its order while the panel is open: a thread read there keeps its place, so `↓` goes on to the next unread one. It sorts again when the panel opens or the sort changes.
 - The panel's open state, filters, sort and search are kept for the tab (sessionStorage): the review goes on after a page load, also on another page.
+- Opened from the toolbar (or by `Shift+C`), the panel takes the focus: the open thread's item, else the first item, else the panel. Not the search: there, `Shift+C` and the arrows would type. Only the focus: no thread opens.
 - Filters: this page or all pages, only my threads (I created, replied or was mentioned), assigned to me, show resolved. The filter button is next to the search field and shows when a filter is on.
 - Item states look different: hover is light, the open thread is darker with a bar on the left, the keyboard focus is an inset ring (it does not cover the next item).
 - Empty list: says why, and offers the way out: "Clear search", "Clear filters", "Show all pages" (with the count on other pages), "Show resolved", "Add comment".

@@ -87,8 +87,10 @@ export function Notices({ floating, from }: { floating: boolean; from: "left" | 
       <div
         ref={content}
         className={cn(
-          // As high as the toolbar, and ↶ as large as its buttons: the two pills are a pair.
-          "pointer-events-auto flex h-10 min-w-0 items-center gap-0.5 whitespace-nowrap text-xs transition-[opacity,translate,visibility] duration-200 ease-out",
+          // Beside the toolbar: as high as it, and ↶ as large as its buttons, so the two pills are a pair. Above it
+          // (narrow screens): smaller.
+          "pointer-events-auto flex min-w-0 items-center gap-0.5 whitespace-nowrap text-xs transition-[opacity,translate,visibility] duration-200 ease-out",
+          from === "below" ? "h-8" : "h-10",
           floating && "rounded-full bg-background shadow-lg ring-1 ring-foreground/10",
           floating ? (action ? "ps-3.5 pe-1" : "px-3.5") : "px-2",
           // Hidden: it fades toward the toolbar, and comes out of it.
@@ -103,7 +105,7 @@ export function Notices({ floating, from }: { floating: boolean; from: "left" | 
               render={
                 <Button
                   variant="ghost"
-                  size="icon"
+                  size={from === "below" ? "icon-sm" : "icon"}
                   className="rounded-full"
                   aria-label={action.label}
                   data-notice-action

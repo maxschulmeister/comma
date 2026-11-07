@@ -217,6 +217,17 @@ test("a message shows beside the toolbar; with the panel open, at the other end 
   expect(Math.abs(open.middle(open.message) - open.middle(open.bar))).toBeLessThan(2)
 })
 
+test("on a phone, the message is a smaller pill above the toolbar", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 700 })
+  const thread = await withComment(page, "notice-phone", "Phone")
+  await thread.getByRole("button", { name: "Resolve" }).click()
+  const status = page.locator("[data-slot=notices]")
+  await expect(status.getByRole("button", { name: "Undo" })).toBeVisible()
+  const [message, bar] = [await status.boundingBox(), await toolbar(page).boundingBox()]
+  expect((message?.y ?? 0) + (message?.height ?? 0)).toBeLessThanOrEqual(bar?.y ?? 0)
+  expect(message?.height ?? 0).toBeLessThan((bar?.height ?? 0) - 4)
+})
+
 test("Undo goes after 8 s, and stays while the mouse is on it", async ({ page }) => {
   await page.clock.install()
   const thread = await withComment(page, "notice-time", "Timer")
