@@ -34,6 +34,8 @@ import { panelSide } from "./view"
  * Small floating bar: comment mode, panel with unread count, user menu. It does not move: it stays in the bottom
  * corner on the panel's side, so the open panel takes it in, and the same click opens and closes the panel.
  * Narrow screens: centered, also over the panel, which then covers the screen.
+ * Over the page it floats (ring and shadow). In the open panel it is part of the panel: no ring, no shadow. They go
+ * with the panel's slide-in (150 ms).
  */
 export function Toolbar() {
   const commentMode = useStore((s) => s.commentMode)
@@ -53,8 +55,9 @@ export function Toolbar() {
       aria-label="Comments"
       data-slot="toolbar"
       className={cn(
-        "fixed bottom-4 flex items-center gap-0.5 rounded-full bg-background p-1 shadow-lg ring-1 ring-foreground/10 max-[639px]:left-1/2 max-[639px]:-translate-x-1/2",
+        "fixed bottom-4 flex items-center gap-0.5 rounded-full bg-background p-1 ring-foreground/10 transition-shadow duration-150 ease-out max-[639px]:left-1/2 max-[639px]:-translate-x-1/2",
         side === "left" ? "min-[640px]:left-4" : "min-[640px]:right-4",
+        panelOpen ? "shadow-none ring-0" : "shadow-lg ring-1",
       )}
     >
       <Tooltip>

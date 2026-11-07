@@ -130,7 +130,7 @@ Only where it shows where something comes from, fast and short; keyboard actions
 ### Toolbar
 
 - Small floating bar: comment mode, panel button with unread count, user menu (name, avatar, sign in or out, show or hide pins).
-- It does not move. It stays in the bottom corner on the panel's side (16 px from the edges; centered on narrow screens), also while the panel is closed. The open panel takes it in, so the same click opens and closes the panel. Its look is the same over the page and over the panel; the panel's list and details fade out before it and have room at the end, so their last line scrolls clear of it.
+- It does not move. It stays in the bottom corner on the panel's side (16 px from the edges; centered on narrow screens), also while the panel is closed. The open panel takes it in, so the same click opens and closes the panel. Over the page it floats (ring and shadow). In the open panel it is part of the panel: no ring, no shadow (they go with the panel's 150 ms slide-in). The panel's list and details show nothing in its band and fade in above it, and have room at the end, so their last line scrolls clear of it.
 - Project setting `toolbar: "signed-in"`: visitors see no toolbar and no shortcut until they sign in. `?comma` in the URL, or a link to a thread, shows the sign-in.
 
 ### Unread and updates (in the widget)
