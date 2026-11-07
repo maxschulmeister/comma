@@ -4,18 +4,18 @@ This file is for agents that deploy comma for a user. Read all of it before you 
 
 ## Targets
 
-| Target                                    | Database    | Images          | Files                                      |
-| ----------------------------------------- | ----------- | --------------- | ------------------------------------------ |
-| [Docker](#docker) (VPS)                   | SQLite file | in the database | `Dockerfile`, `compose.yaml`               |
-| [AWS Lambda](#aws-lambda)                 | Turso       | S3              | `template.yaml`, `scripts/build-lambda.ts` |
-| [Cloudflare Workers](#cloudflare-workers) | Turso       | R2 (S3 API)     | `wrangler.jsonc`, `server/src/worker.ts`   |
-| [Vercel](#vercel)                         | Turso       | S3 or R2        | `vercel.json`, `server.ts`                 |
+| Target                                    | Database    | Images          | Files                                       |
+| ----------------------------------------- | ----------- | --------------- | ------------------------------------------- |
+| [Docker](#docker) (VPS)                   | SQLite file | in the database | `Dockerfile`, `compose.yaml`                |
+| [AWS Lambda](#aws-lambda)                 | Turso       | S3 or Turso     | `template.yaml`, `scripts/deploy-lambda.sh` |
+| [Cloudflare Workers](#cloudflare-workers) | Turso       | R2 (S3 API)     | `wrangler.jsonc`, `server/src/worker.ts`    |
+| [Vercel](#vercel)                         | Turso       | S3 or R2        | `vercel.json`, `server.ts`                  |
 
 If the user has no preference, use Docker. It is the simplest and has no request limits.
 
-On serverless targets, keep images in S3 or R2. Images in a Turso database work in local tests, but 4 MB images in Turso are not tested.
+On serverless targets, images can be in S3, R2 or the Turso database. A 4 MB image in Turso works (tested on AWS Lambda).
 
-Tested on this repo, on a local machine: the Docker image, the Lambda bundle (with a local stand-in for a Function URL), the Worker (`wrangler dev`) and the Vercel function (on Node). Not tested yet: a real deploy on AWS, Cloudflare or Vercel. At the first real deploy, run all [checks](#checks) and tell the user the result.
+Tested on this repo, on a local machine: the Docker image, the Worker (`wrangler dev`) and the Vercel function (on Node). Tested on AWS: `scripts/deploy-lambda.sh` with images in Turso (all checks, the cleanup, a second deploy). Not tested yet: images in S3 on AWS, and a real deploy on Cloudflare or Vercel. At the first real deploy, run all [checks](#checks) and tell the user the result.
 
 ## Before you start
 
@@ -105,7 +105,7 @@ comma does not update itself. To update an install, get the new code, then:
 | Target  | Update                                                                                      |
 | ------- | ------------------------------------------------------------------------------------------- |
 | Docker  | Make a [backup](#backup), then `git pull && docker compose up -d --build`                   |
-| Lambda  | `bun install && bun run build && bun scripts/build-lambda.ts && sam deploy`                 |
+| Lambda  | `STACK=… AWS_REGION=… [COMMA_CONFIG=…] scripts/deploy-lambda.sh`                            |
 | Workers | `bun install && bun run build && bun scripts/public.ts --cloudflare && npx wrangler deploy` |
 | Vercel  | `vercel deploy --prod` (or a push, if the project is linked to Git)                         |
 
@@ -152,39 +152,37 @@ Run it every day (cron) and copy the file off the server. Or ask the user if the
 
 ## AWS Lambda
 
-AWS SAM makes one CloudFormation stack from `template.yaml`: the function with a Function URL, a private S3 bucket for images, and an hourly cleanup schedule. Updates roll back on failure, and `sam delete` removes everything.
+`scripts/deploy-lambda.sh` deploys with the AWS CLI only (no SAM CLI, no bucket for the code). It builds comma, makes or updates one CloudFormation stack from `template.yaml`, then uploads the code to the function. The stack has the function with a Function URL, an hourly cleanup schedule, and (with `UseS3=true`, the default) a private S3 bucket for images. Updates roll back on failure.
 
-Before you start: `aws sts get-caller-identity` and `sam --version` work. Make the Turso database (see [Before you start](#before-you-start)).
+Before you start: `aws sts get-caller-identity` works, and `zip` is installed. Make the Turso database (see [Before you start](#before-you-start)).
 
 1. For each `appSecret` and Slack client secret in `comma.config.ts`: add a `NoEcho` parameter and its env var in `template.yaml` (see the comments there).
-2. `bun install && bun run build && bun scripts/build-lambda.ts`
-3. `sam deploy --guided`. Leave `PublicUrl` empty the first time.
-   - `--guided` writes the parameters, also the secrets, to `samconfig.toml`. This file is in `.gitignore`. Do not commit it.
-4. The output `Url` is the Function URL. Deploy again with `PublicUrl` set to it, or to the custom domain.
+2. Write the parameters to a file outside the repo, readable only by the user (`chmod 600`). Leave out `PublicUrl` the first time.
+
+   ```json
+   ["CommaDb=libsql://…", "CommaDbToken=…", "CommaSecret=…", "UseS3=true"]
+   ```
+
+3. Deploy. `COMMA_CONFIG` is optional: a projects file outside the repo.
+
+   ```sh
+   STACK=comma AWS_REGION=eu-central-1 COMMA_CONFIG=… scripts/deploy-lambda.sh \
+     --parameter-overrides file:///path/to/parameters.json
+   ```
+
+   It prints the Function URL. Later deploys keep the parameters that are not given: `STACK=… AWS_REGION=… scripts/deploy-lambda.sh`.
+
+4. Set `PublicUrl` to the Function URL or the custom domain: `… scripts/deploy-lambda.sh --parameter-overrides PublicUrl=https://…`. Only Slack sign-in needs it.
 5. Custom domain: Function URLs do not take one. Put CloudFront in front, with an ACM certificate in `us-east-1`. Forward all headers except `Host`, and do not cache `/api/*`. Or use the Function URL as the address.
-6. Run the [checks](#checks). Logs: `sam logs --stack-name <stack> --tail`.
-
-Without the SAM CLI, the AWS CLI deploys the same template. It needs a bucket for the code upload (once):
-
-```sh
-aws s3 mb s3://<deploy bucket> --region <region>
-bun install && bun run build && COMMA_CONFIG=<projects file> bun scripts/build-lambda.ts
-aws cloudformation package --template-file template.yaml --s3-bucket <deploy bucket> \
-  --output-template-file dist/packaged.yaml
-aws cloudformation deploy --template-file dist/packaged.yaml --stack-name <stack> --region <region> \
-  --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
-  --parameter-overrides CommaDb=… CommaDbToken=… CommaSecret=…   # first deploy; later ones keep the values
-aws cloudformation describe-stacks --stack-name <stack> --region <region> --query "Stacks[0].Outputs"
-```
-
-Logs: `aws logs tail /aws/lambda/<function name> --follow`.
+6. Run the [checks](#checks). Logs: `aws logs tail /aws/lambda/<function name> --follow` (the stack output `FunctionName`).
 
 Notes:
 
 - The secrets are Lambda env vars. AWS encrypts them at rest. People with `lambda:GetFunctionConfiguration` can read them.
 - Requests and responses are up to 6 MB after base64. Images are up to 4 MB, so they fit.
-- Since October 2025, a public Function URL also needs `lambda:InvokeFunction`. The template adds it. If `/c.js` gives 403, check the function's resource policy first.
-- Remove: empty the S3 bucket, then `sam delete`.
+- `UseS3=false` keeps images in Turso. A 4 MB image works (tested: about 4.5 s to write from Europe to `eu-north-1`, 0.2 s to read).
+- A public Function URL needs `lambda:InvokeFunctionUrl` and, since October 2025, `lambda:InvokeFunction`. The template adds both. If `/c.js` gives 403, check the function's resource policy first.
+- Remove: empty the S3 bucket (if any), then `aws cloudformation delete-stack --stack-name <stack>`, and the log group `/aws/lambda/<function name>`.
 
 ## Cloudflare Workers
 
