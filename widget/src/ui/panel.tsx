@@ -212,6 +212,13 @@ function PanelContent() {
   // ↑ ↓ select a thread: it opens at its pin and the focus stays here (a thread on another page only gets the
   // focus). ← (or Enter) goes into the thread. → opens it with its details.
   const onKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
+    // The details dialog has just opened and does not have the focus yet: ← and Esc close it, as in the dialog.
+    // (With the details in the panel, the list is inert and gets no keys.)
+    if (getState().detailsOpen && (event.key === "ArrowLeft" || event.key === "Escape")) {
+      setState({ detailsOpen: false })
+      event.preventDefault()
+      return
+    }
     const root = listRef.current?.getRootNode() as ShadowRoot | undefined
     const threadOf = (el: Element | null | undefined) =>
       el instanceof HTMLElement ? list.find((t) => t.id === el.dataset.thread) : undefined
