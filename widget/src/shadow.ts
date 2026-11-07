@@ -27,6 +27,15 @@ export function createShadowHost(assetBase: string) {
   host.style.cssText = "all:initial;position:absolute;top:0;left:0;width:0;height:0;z-index:2147483647"
   document.documentElement.append(host)
   const shadow = host.attachShadow({ mode: "open" })
+  // Keys in comma stay in comma. Outside the shadow root, the site sees them on <comma-widget>, not on a text field,
+  // so its own shortcuts ran while people typed a comment. Comma's own shortcuts listen in the capture phase, before
+  // this. Esc and Tab go on: popups close with Esc on the document, and Tab moves the focus.
+  for (const type of ["keydown", "keyup", "keypress"]) {
+    shadow.addEventListener(type, (event) => {
+      const { key } = event as KeyboardEvent
+      if (key !== "Escape" && key !== "Tab") event.stopPropagation()
+    })
+  }
   const sheet = new CSSStyleSheet()
   sheet.replaceSync(css)
   shadow.adoptedStyleSheets = [sheet]

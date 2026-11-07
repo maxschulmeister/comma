@@ -32,6 +32,28 @@ async function startComment(page: import("@playwright/test").Page, name: string)
   return newCommentPopover(page)
 }
 
+test("keys typed in comma do not reach the site's own shortcuts", async ({ page }) => {
+  // A common site shortcut: it ignores keys typed in the site's text fields, but sees <comma-widget> as no field.
+  await page.addInitScript(() => {
+    const keys: string[] = []
+    Object.assign(window, { siteKeys: keys })
+    document.addEventListener("keydown", (e) => {
+      const el = e.target as HTMLElement
+      if (!el.isContentEditable && !["INPUT", "TEXTAREA"].includes(el.tagName)) keys.push(e.key)
+    })
+  })
+  const popover = await startComment(page, "site-keys")
+  // The site sees C (comment mode): the focus was on the page.
+  await page.evaluate(() => (window as unknown as { siteKeys: string[] }).siteKeys.splice(0))
+  await typeComment(page, popover, "jk/?")
+  await page.keyboard.press("ArrowLeft")
+  await page.keyboard.press("Backspace")
+  expect(await page.evaluate(() => (window as unknown as { siteKeys: string[] }).siteKeys)).toEqual([])
+  // Esc still closes the composer (it keeps the draft).
+  await page.keyboard.press("Escape")
+  await expect(popover).toBeHidden()
+})
+
 test("formatting with Markdown and shortcuts", async ({ page, browserName }) => {
   const popover = await startComment(page, "format")
   await typeComment(page, popover, "**bold** *it* ~gone~ `code` ")
