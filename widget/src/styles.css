@@ -151,6 +151,11 @@
       transform: translateX(8px);
     }
   }
+  .comma-panel-float[data-side="left"] {
+    @starting-style {
+      transform: translateX(-8px);
+    }
+  }
 }
 /* A status message comes up from the bottom. */
 .comma-notice {

@@ -426,3 +426,70 @@ test("the filter button is next to the search field", async ({ page }) => {
   }
   expect(Math.abs(filter.y + filter.height / 2 - (search.y + search.height / 2))).toBeLessThan(4)
 })
+
+test("the panel goes to the side it is dragged to, in both modes; the view menu does the same", async ({ page }) => {
+  await signIn(page, await guestSession("Dragger"))
+  await openTestPage(page, "sides")
+  await openPanel(page)
+  const viewport = page.viewportSize() ?? { width: 0, height: 0 }
+  const box = async () => (await panel(page).boundingBox()) ?? { x: 0, y: 0, width: 0, height: 0 }
+  const margins = () =>
+    page.evaluate(() => {
+      const style = getComputedStyle(document.documentElement)
+      return [style.marginLeft, style.marginRight]
+    })
+  await expect.poll(async () => viewport.width - (await box()).x - (await box()).width).toBe(8)
+
+  // Drag the header to the left half of the window. Overlay: 8 px from the left edge.
+  const drag = async (toX: number) => {
+    const header = (await panel(page).getByRole("heading", { name: "Comments" }).boundingBox()) ?? { x: 0, y: 0 }
+    await page.mouse.move(header.x + 10, header.y + 5)
+    await page.mouse.down()
+    await page.mouse.move(toX, header.y + 5, { steps: 8 })
+    await page.mouse.up()
+  }
+  await drag(200)
+  await expect.poll(async () => (await box()).x).toBe(8)
+  expect(await margins()).toEqual(["0px", "0px"])
+
+  // The side stays after a reload, and in push mode: the page gets its margin on the left.
+  await page.reload()
+  await openPanel(page)
+  await expect.poll(async () => (await box()).x).toBe(8)
+  await panel(page).getByRole("button", { name: "View options" }).click()
+  await expect(page.getByRole("menuitemradio", { name: "Left" })).toBeChecked()
+  await page.getByRole("menuitemradio", { name: "Push" }).click()
+  await page.keyboard.press("Escape")
+  await expect.poll(margins).toEqual(["360px", "0px"])
+  await expect.poll(async () => (await box()).x).toBe(0)
+
+  // Drag back to the right in push mode.
+  await drag(1100)
+  await expect.poll(margins).toEqual(["0px", "360px"])
+  await expect.poll(async () => (await box()).x + (await box()).width).toBe(viewport.width)
+
+  // The view menu moves it without a drag.
+  await panel(page).getByRole("button", { name: "View options" }).click()
+  await page.getByRole("menuitemradio", { name: "Left" }).click()
+  await expect.poll(margins).toEqual(["360px", "0px"])
+})
+
+test("overlay on the left: a thread opens beside the panel, and the toolbar stays on the right", async ({ page }) => {
+  await signIn(page, await guestSession("LeftBeside"))
+  await page.addInitScript(() => localStorage.setItem("comma:panel-side", "left"))
+  await openTestPage(page, "overlay-left")
+  // A comment on the left part of the picture, which the panel covers when it is open.
+  await addComment(page, page.getByTestId("picture"), "Left side", 0.02, 0.2)
+  await toolbar(page)
+    .getByRole("button", { name: /^Comments/ })
+    .click()
+  await expect(threadPopover(page)).toBeVisible()
+  const gap = async () => {
+    const thread = (await threadPopover(page).boundingBox()) ?? { x: 0 }
+    const side = (await panel(page).boundingBox()) ?? { x: 0, width: 0 }
+    return thread.x - (side.x + side.width)
+  }
+  await expect.poll(gap).toBeGreaterThanOrEqual(0)
+  const bar = (await toolbar(page).boundingBox()) ?? { x: 0, width: 0 }
+  expect(bar.x + bar.width).toBe((page.viewportSize()?.width ?? 0) - 16)
+})

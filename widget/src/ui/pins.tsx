@@ -24,11 +24,12 @@ import type { Thread } from "@/types"
 import { Composer } from "./composer"
 import { focusOpenItem } from "./details-state"
 import { movedAnchor } from "./overlay"
-import { panelRightEdge } from "./panel"
+import { panelLeftEdge, panelRightEdge } from "./panel"
 import { SignInForm } from "./sign-in"
 import { type Placement, ThreadView } from "./thread"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
+import { arrowKeys, panelSide } from "./view"
 
 /** Elements a thread popover can attach to: pins and clusters on the page, items in the panel. */
 export const pinElements = new Map<string, HTMLElement>()
@@ -83,10 +84,13 @@ function cluster(items: Item[], keep: string | null) {
 }
 
 /** Opens a thread. A draft with text stays as a pin. */
-/** Opens a thread. `focus: false`: the focus stays where it is (↑ ↓ in the panel list select a thread). */
-export const openThread = (id: string, focus = true) => {
+/**
+ * Opens a thread. `focus: false`: the focus stays where it is (↑ ↓ in the panel list select a thread).
+ * `fromList`: opened from the panel list, so Escape in the thread goes back there.
+ */
+export const openThread = (id: string, { focus = true, fromList = false } = {}) => {
   closeDraft()
-  setState({ openThreadId: id, draftMove: null, threadFocus: focus })
+  setState({ openThreadId: id, draftMove: null, threadFocus: focus, threadFromList: fromList })
 }
 
 // The open thread's comment list, for focusOpenThread.
@@ -370,7 +374,9 @@ function ThreadPopover() {
   // With the details open, or selected in the panel list, the focus stays there.
   const quiet = useStore((s) => s.detailsOpen || !s.threadFocus)
   // The thread opens beside the panel, not under it.
-  const panelEdge = useStore(panelRightEdge)
+  const leftEdge = useStore(panelLeftEdge)
+  const rightEdge = useStore(panelRightEdge)
+  const keys = arrowKeys(useStore(panelSide))
   const page = useStore((s) => s.page)
   const resolved = useResolved()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
@@ -383,7 +389,8 @@ function ThreadPopover() {
   // thread beside it: the thread opens beside its item in the panel.
   useLayoutEffect(() => {
     const pin = id ? pinElements.get(id) : undefined
-    const covered = !!pin && panelEdge > 0 && pin.getBoundingClientRect().right > window.innerWidth - panelEdge
+    const rect = pin?.getBoundingClientRect()
+    const covered = !!rect && (rect.left < leftEdge || rect.right > window.innerWidth - rightEdge)
     const item = id ? panelElements.get(id) : undefined
     const el = (covered && item) || pin || item || null
     if (el !== anchor) setAnchor(el)
@@ -400,6 +407,11 @@ function ThreadPopover() {
     <Popover
       open={!!thread && !!anchor}
       onOpenChange={(open, details) => {
+        // Opened from the panel list: Escape goes back to its item, and the thread stays open (selected).
+        if (details.reason === "escape-key" && getState().threadFromList && getState().panelOpen) {
+          focusOpenItem()
+          return
+        }
         // The details and their lightbox show this thread: focus or Escape there keeps it open.
         const keep =
           focusMovesTo(details, "[data-keeps-thread]") ||
@@ -414,14 +426,14 @@ function ThreadPopover() {
         sideOffset={8}
         className="w-80 gap-0 p-0"
         aria-label="Comment thread"
-        collisionPadding={{ top: 8, bottom: 8, left: 8, right: 8 + panelEdge }}
+        collisionPadding={{ top: 8, bottom: 8, left: 8 + leftEdge, right: 8 + rightEdge }}
         initialFocus={quiet ? false : listRef}
         finalFocus={anchor?.isConnected ? { current: anchor } : true}
-        // → goes to the panel on the right (← in the panel came here). In text, only when it is empty: there → has
-        // nothing to move.
+        // The arrow away from the page goes back to the panel (the arrow toward the page came here). In text, only
+        // when it is empty: there the arrow has nothing to move.
         onKeyDown={(event) => {
           const target = event.target as HTMLElement
-          if (event.key !== "ArrowRight" || target.closest("input, textarea")) return
+          if (event.key !== keys.fromPage || target.closest("input, textarea")) return
           if (target.isContentEditable && target.textContent?.trim()) return
           event.preventDefault()
           focusOpenItem()

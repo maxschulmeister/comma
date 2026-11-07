@@ -1,13 +1,16 @@
-import {
-  ArrowsOutSimpleIcon,
-  CaretRightIcon,
-  FunnelSimpleIcon,
-  MagnifyingGlassIcon,
-  SlidersHorizontalIcon,
-  XIcon,
-} from "@phosphor-icons/react"
+import { FunnelSimpleIcon, InfoIcon, MagnifyingGlassIcon, SlidersHorizontalIcon, XIcon } from "@phosphor-icons/react"
 import { cn } from "cn"
-import { type KeyboardEvent, lazy, type RefObject, Suspense, useEffect, useMemo, useRef } from "react"
+import {
+  type KeyboardEvent,
+  lazy,
+  type PointerEvent,
+  type RefObject,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { refresh } from "@/client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -26,27 +29,29 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Kbd } from "@/components/ui/kbd"
 import { shortText } from "@/lib/describe"
 import { plural, timeAgo } from "@/lib/format"
-import { NARROW, reducedMotion } from "@/lib/media"
+import { NARROW, reducedMotion, useMedia } from "@/lib/media"
 import { pageBox, resolvedElement, useResolved } from "@/live"
 import { type Filters, getState, type State, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
-import { openDetails } from "./details-state"
+import { closeDetails, openDetails } from "./details-state"
 import { focusOpenThread, openThread, setPanelElement } from "./pins"
 import { setCommentMode } from "./shortcuts"
 import { SignInForm } from "./sign-in"
 import { threadLink } from "./thread"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
-import { detailsMode, panelMode, setDetailsMode, setPanelMode } from "./view"
+import { arrowKeys, detailsMode, panelMode, panelSide, setDetailsMode, setPanelMode, setPanelSide } from "./view"
 
 export const PANEL_WIDTH = 360
 /** The overlay panel's space to the window edges: it floats over the page, and this shows it. */
 const PANEL_MARGIN = 8
-/** The space the open panel takes at the right edge of the window. The toolbar and the notices stay left of it. */
-export function panelRightEdge(s: State) {
-  if (!s.panelOpen) return 0
-  return panelMode(s) === "overlay" ? PANEL_WIDTH + PANEL_MARGIN : PANEL_WIDTH
+/** The space the open panel takes at each edge of the window. Toolbar, notices and threads stay out of it. */
+export function panelInsets(s: State) {
+  const width = !s.panelOpen ? 0 : panelMode(s) === "overlay" ? PANEL_WIDTH + PANEL_MARGIN : PANEL_WIDTH
+  return panelSide(s) === "left" ? { left: width, right: 0 } : { left: 0, right: width }
 }
+export const panelRightEdge = (s: State) => panelInsets(s).right
+export const panelLeftEdge = (s: State) => panelInsets(s).left
 
 const DetailsLayer = lazy(() => import("./details").then((m) => ({ default: m.DetailsLayer })))
 
@@ -77,14 +82,14 @@ export function visibleThreads(
 }
 
 // Push mode: the page gets a right margin, so its content reflows next to the panel.
-function usePushPage(active: boolean) {
+function usePushPage(active: boolean, side: "left" | "right") {
   useEffect(() => {
     if (!active) return
     const media = matchMedia(NARROW)
     const style = document.createElement("style")
     style.dataset.comma = "push"
     const apply = () => {
-      style.textContent = media.matches ? "" : `html { margin-right: ${PANEL_WIDTH}px !important; }`
+      style.textContent = media.matches ? "" : `html { margin-${side}: ${PANEL_WIDTH}px !important; }`
     }
     apply()
     media.addEventListener("change", apply)
@@ -93,7 +98,7 @@ function usePushPage(active: boolean) {
       media.removeEventListener("change", apply)
       style.remove()
     }
-  }, [active])
+  }, [active, side])
 }
 
 /**
@@ -135,7 +140,8 @@ function closePanel(aside: HTMLElement | null) {
 export function Panel() {
   const open = useStore((s) => s.panelOpen)
   const push = useStore((s) => panelMode(s) === "push")
-  usePushPage(open && push)
+  const side = useStore(panelSide)
+  usePushPage(open && push, side)
   // The details are a layer of the panel: they close with it. In dialog mode they do not need it.
   useEffect(() => {
     if (!open && getState().detailsOpen && detailsMode(getState()) === "panel") setState({ detailsOpen: false })
@@ -172,7 +178,7 @@ export function showThread(thread: Thread, { keepPanel = false, focus = true } =
   if (!keepPanel && el && pageBox(thread.anchor, el) && matchMedia(NARROW).matches) setState({ panelOpen: false })
   el?.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" })
   const open = getState().openThreadId === thread.id
-  openThread(thread.id, focus)
+  openThread(thread.id, { focus, fromList: true })
   // Already open (selected with ↑ ↓): the popover does not open again, so the focus moves here.
   if (focus && open) setTimeout(focusOpenThread)
 }
@@ -196,7 +202,13 @@ function PanelContent() {
   const detailsOpen = useStore((s) => s.detailsOpen && detailsMode(s) === "panel")
   const mode = useStore(panelMode)
   const details = useStore(detailsMode)
+  const side = useStore(panelSide)
+  const keys = arrowKeys(side)
   const overlay = mode === "overlay"
+  const narrow = useMedia(NARROW)
+  const [dragX, setDragX] = useState<number | null>(null)
+  // While dragging, and in the frame it lands on its side: no slide-in transition on `transform`.
+  const [landing, setLanding] = useState(false)
   const resolved = useResolved()
   const listRef = useRef<HTMLUListElement>(null)
   const asideRef = useRef<HTMLElement>(null)
@@ -206,15 +218,13 @@ function PanelContent() {
     Boolean,
   ).length
 
-  // ↑ and ↓ move between threads. ← goes to the thread on the page (as Enter). → opens it with its details;
-  // ← in the details comes back.
-  // The keys follow the screen: the page is on the left, the details are "in" an item.
-  // ↑ ↓ select a thread: it opens at its pin and the focus stays here (a thread on another page only gets the
-  // focus). ← (or Enter) goes into the thread. → opens it with its details.
+  // The keys follow the screen (see arrowKeys). ↑ ↓ select a thread: it opens at its pin and the focus stays here
+  // (a thread on another page only gets the focus). Toward the page (or Enter): into the thread. Away from the
+  // page: its details.
   const onKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
-    // The details dialog has just opened and does not have the focus yet: ← and Esc close it, as in the dialog.
-    // (With the details in the panel, the list is inert and gets no keys.)
-    if (getState().detailsOpen && (event.key === "ArrowLeft" || event.key === "Escape")) {
+    // The details dialog has just opened and does not have the focus yet: the key toward the page and Esc close
+    // it, as in the dialog. (With the details in the panel, the list is inert and gets no keys.)
+    if (getState().detailsOpen && (event.key === keys.toPage || event.key === "Escape")) {
       setState({ detailsOpen: false })
       event.preventDefault()
       return
@@ -222,11 +232,14 @@ function PanelContent() {
     const root = listRef.current?.getRootNode() as ShadowRoot | undefined
     const threadOf = (el: Element | null | undefined) =>
       el instanceof HTMLElement ? list.find((t) => t.id === el.dataset.thread) : undefined
-    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+    if (event.key === keys.toPage || event.key === keys.fromPage) {
       const thread = threadOf(root?.activeElement)
       if (thread) {
-        if (event.key === "ArrowRight") showWithDetails(thread)
-        else showThread(thread)
+        if (event.key === keys.fromPage) {
+          // The list becomes inert under the details, so the focus waits on the panel until they have loaded.
+          if (!getState().detailsOpen && detailsMode(getState()) === "panel") asideRef.current?.focus()
+          showWithDetails(thread)
+        } else showThread(thread)
         event.preventDefault()
       }
       return
@@ -242,25 +255,71 @@ function PanelContent() {
     if (thread && thread.page === page) showThread(thread, { keepPanel: true, focus: false })
   }
 
+  // The header drags the panel (not on narrow screens, where it covers the screen). On release it goes to the side
+  // its middle is on. The view menu does the same without a drag.
+  const onHeaderPointerDown = (event: PointerEvent<HTMLElement>) => {
+    if (narrow || event.button !== 0 || (event.target as Element).closest("button")) return
+    const header = event.currentTarget
+    const startX = event.clientX
+    header.setPointerCapture(event.pointerId)
+    const move = (e: globalThis.PointerEvent) => setDragX(e.clientX - startX)
+    const up = () => {
+      header.removeEventListener("pointermove", move)
+      header.removeEventListener("pointerup", up)
+      header.removeEventListener("pointercancel", up)
+      const rect = asideRef.current?.getBoundingClientRect()
+      setDragX(null)
+      setLanding(true)
+      requestAnimationFrame(() => requestAnimationFrame(() => setLanding(false)))
+      if (rect) setPanelSide(rect.left + rect.width / 2 < window.innerWidth / 2 ? "left" : "right")
+    }
+    header.addEventListener("pointermove", move)
+    header.addEventListener("pointerup", up)
+    header.addEventListener("pointercancel", up)
+  }
+
   return (
     <aside
       ref={asideRef}
       aria-label="Comments"
       data-slot="panel"
+      tabIndex={-1}
       onKeyDown={(e) => {
+        // The details are opening and do not have the focus yet: the key toward the page and Esc close them.
+        if (e.target === e.currentTarget && getState().detailsOpen && (e.key === keys.toPage || e.key === "Escape")) {
+          e.preventDefault()
+          closeDetails()
+          return
+        }
         // Escape closes the top layer first: the details (in the panel or the dialog) handle it.
         if (e.key === "Escape" && !e.defaultPrevented && !getState().detailsOpen) closePanel(asideRef.current)
       }}
+      data-side={side}
       className={cn(
-        "fixed flex w-[360px] flex-col bg-background max-[639px]:inset-0 max-[639px]:w-full",
+        "fixed flex w-[360px] flex-col bg-background outline-none max-[639px]:inset-0 max-[639px]:w-full",
         overlay
-          ? "comma-panel-float inset-y-2 right-2 overflow-hidden rounded-xl border shadow-xl max-[639px]:rounded-none max-[639px]:border-0"
-          : "inset-y-0 right-0 border-l shadow-lg max-[639px]:border-l-0",
+          ? "comma-panel-float inset-y-2 overflow-hidden rounded-xl border shadow-xl max-[639px]:rounded-none max-[639px]:border-0"
+          : "inset-y-0 shadow-lg max-[639px]:border-0",
+        overlay ? (side === "left" ? "left-2" : "right-2") : side === "left" ? "left-0 border-r" : "right-0 border-l",
+        dragX !== null && "select-none",
       )}
+      style={
+        dragX !== null
+          ? { transform: `translateX(${dragX}px)`, transition: "none" }
+          : landing
+            ? { transition: "none" }
+            : undefined
+      }
     >
       {/* Under the details the list stays, so it keeps its scroll position. */}
       <div className="flex min-h-0 flex-1 flex-col" inert={detailsOpen}>
-        <header className="flex h-11 shrink-0 items-center gap-1 border-b pr-1.5 pl-3">
+        <header
+          className={cn(
+            "flex h-11 shrink-0 items-center gap-1 border-b pr-1.5 pl-3",
+            !narrow && "cursor-grab touch-none active:cursor-grabbing",
+          )}
+          onPointerDown={onHeaderPointerDown}
+        >
           <h2 className="flex-1 font-medium text-sm">Comments</h2>
           {/* View: how the panel shows and where the details open. Each person chooses; it stays in this browser. */}
           <DropdownMenu>
@@ -279,6 +338,14 @@ function PanelContent() {
                   <DropdownMenuRadioItem value="push" title="Next to the page. Nothing is covered.">
                     Push
                   </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Panel Side</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={side} onValueChange={setPanelSide}>
+                  <DropdownMenuRadioItem value="left">Left</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="right">Right</DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
@@ -514,8 +581,7 @@ function PanelItem({
 }) {
   const users = useStore((s) => s.users)
   const me = useStore((s) => s.session?.user.id)
-  // The details open in the panel (a chevron: they slide in) or in a dialog (expand).
-  const inDialog = useStore((s) => detailsMode(s) === "dialog")
+  const detailsKey = useStore((s) => arrowKeys(panelSide(s)).fromPageGlyph)
   const first = thread.comments[0]
   // Unread: the newest comment by someone else is the news. The first comment stays as context.
   const newest = thread.unread ? [...thread.comments].reverse().find((c) => c.authorId !== me) : undefined
@@ -576,17 +642,18 @@ function PanelItem({
           )}
         </span>
       </button>
-      {/* The mouse way to the details, as high as the item. The keyboard way: → on the item. */}
+      {/* The mouse way to the details, as high as the item. An icon without a direction: it says "details" on
+          both sides and in both layouts. The tooltip names the key, which depends on the side. */}
       <button
         type="button"
         tabIndex={-1}
         aria-label={`Details: ${shortText(first?.text ?? "")}`}
-        title="Details (→)"
-        data-icon={inDialog ? "expand" : "chevron"}
+        title={`Details (${detailsKey})`}
+        data-icon="info"
         className="absolute inset-y-0 right-0 flex w-8 items-center justify-center rounded-r-md text-muted-foreground hover:bg-foreground/10 hover:text-foreground [&_svg]:size-3.5"
         onClick={onDetails}
       >
-        {inDialog ? <ArrowsOutSimpleIcon /> : <CaretRightIcon />}
+        <InfoIcon />
       </button>
     </li>
   )

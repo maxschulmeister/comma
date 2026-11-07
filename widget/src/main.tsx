@@ -45,6 +45,7 @@ function start({ __queue: queue, __script: script }: Loader) {
     panelOpen: false,
     ...loadView(),
     threadFocus: true,
+    threadFromList: false,
     openThreadId: null,
     draft: null,
     draftMove: null,

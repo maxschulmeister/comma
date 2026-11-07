@@ -155,7 +155,7 @@ test("the details show where the comment was made, and Back keeps the place in t
   // The thread stays open next to the details.
   await expect(threadPopover(page)).toContainText("Comment 4")
 
-  await layer.getByRole("button", { name: "Back to comments" }).click()
+  await layer.getByRole("button", { name: "Close details" }).click()
   await expect(details(page)).toBeHidden()
   await expect(list).toBeVisible()
   expect(await list.evaluate((el) => el.scrollTop)).toBe(scrollTop)
@@ -164,7 +164,7 @@ test("the details show where the comment was made, and Back keeps the place in t
   // Escape also goes back. The panel and the thread stay open.
   await openDetails(page)
   await expect(details(page)).toBeVisible()
-  await details(page).getByRole("button", { name: "Back to comments" }).focus()
+  await details(page).getByRole("button", { name: "Close details" }).focus()
   await page.keyboard.press("Escape")
   await expect(details(page)).toBeHidden()
   await expect(panel(page)).toBeVisible()
@@ -393,9 +393,9 @@ test("with details: dialog, the item has an expand icon, and the keys work the s
   await signIn(page, me, SITE, "dialog")
   await page.goto(`${path}?project=dialog`)
   await openPanel(page)
-  // Not a chevron: the details do not open in the panel.
+  // The same icon in both layouts: it says "details", the key says where.
   const open = panel(page).getByRole("button", { name: "Details: Second" })
-  await expect(open).toHaveAttribute("data-icon", "expand")
+  await expect(open).toHaveAttribute("data-icon", "info")
 
   // → opens the dialog, ↓ goes on, ← closes it. The focus goes to the item of the open thread.
   await items(page).first().focus()
@@ -431,10 +431,61 @@ test("the view menu switches where the details open, and the choice stays", asyn
   await panel(page).getByRole("button", { name: "View options" }).click()
   await page.getByRole("menuitemradio", { name: "Dialog" }).click()
   await page.keyboard.press("Escape")
-  await expect(panel(page).getByRole("button", { name: "Details: Only" })).toHaveAttribute("data-icon", "expand")
+  await expect(panel(page).getByRole("button", { name: "Details: Only" })).toHaveAttribute("title", "Details (→)")
   await page.reload()
   await openPanel(page)
   await panel(page).getByRole("button", { name: "Details: Only" }).click()
   await expect(page.getByRole("dialog", { name: "Details" })).toBeVisible()
   await expect(details(page)).toBeHidden()
+})
+
+test("with the panel on the left, the arrows turn: → goes to the page, ← to the details", async ({ page }) => {
+  const me = await guestSession("Lefty")
+  const path = testPath("details-left")
+  await apiThread(me, path, "First", undefined, "title")
+  await apiThread(me, path, "Second", undefined, "lead")
+  await signIn(page, me)
+  await page.addInitScript(() => localStorage.setItem("comma:panel-side", "left"))
+  await page.goto(path)
+  await openPanel(page)
+  await expect.poll(async () => (await panel(page).boundingBox())?.x).toBe(8)
+  await expect(panel(page).getByRole("button", { name: "Details: Second" })).toHaveAttribute("title", "Details (←)")
+  // Newest first: Second, First.
+  await items(page).first().focus()
+  await page.keyboard.press("ArrowDown")
+  await expect(threadPopover(page)).toContainText("First")
+  // ← (away from the page) opens the details, → (toward the page) closes them.
+  await page.keyboard.press("ArrowLeft")
+  await expect(details(page)).toContainText("2 of 2")
+  await page.keyboard.press("ArrowRight")
+  await expect(details(page)).toBeHidden()
+  await expect(items(page).filter({ hasText: "First" })).toBeFocused()
+  // → goes into the thread on the page, ← back to the list.
+  await page.keyboard.press("ArrowRight")
+  await expect(threadPopover(page).locator(".ProseMirror")).toBeFocused()
+  await page.keyboard.press("ArrowLeft")
+  await expect(items(page).filter({ hasText: "First" })).toBeFocused()
+  await expect(threadPopover(page)).toContainText("First")
+})
+
+test("Enter goes into a thread from the list, Esc comes back and the thread stays open", async ({ page }) => {
+  const me = await guestSession("Escaper")
+  const path = testPath("details-esc")
+  await apiThread(me, path, "Only", undefined, "title")
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  await items(page).first().focus()
+  await page.keyboard.press("Enter")
+  await expect(threadPopover(page).locator(".ProseMirror")).toBeFocused()
+  await page.keyboard.press("Escape")
+  await expect(items(page).first()).toBeFocused()
+  await expect(threadPopover(page)).toContainText("Only")
+  // A thread opened from its pin closes with Escape, as before.
+  await threadPopover(page).getByRole("button", { name: "Close" }).click()
+  await expect(threadPopover(page)).toBeHidden()
+  await page.getByRole("button", { name: /^Comment by Escaper/ }).click()
+  await expect(threadPopover(page)).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(threadPopover(page)).toBeHidden()
 })

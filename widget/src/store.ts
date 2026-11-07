@@ -50,10 +50,13 @@ export type State = {
   panelOpen: boolean
   /** The person's view choices in this browser. null: the project default (see view.ts). */
   panelMode: "push" | "overlay" | null
+  panelSide: "left" | "right" | null
   detailsMode: "panel" | "dialog" | null
   openThreadId: string | null
   /** The open thread takes the focus. Not when ↑ ↓ in the panel list select it: the focus stays in the list. */
   threadFocus: boolean
+  /** The focus went into the open thread from the panel list: Escape goes back there, not closing the thread. */
+  threadFromList: boolean
   draft: Draft | null
   /** A click on another place while a draft has text: asks if the draft moves there. */
   draftMove: { anchor: Anchor; element: Element; page: string } | null

@@ -13,9 +13,12 @@ export async function screenshotPage(box?: Box): Promise<File> {
   // The page color shows through a transparent page in the browser, not in a PNG.
   const background =
     [root, document.body].map((e) => getComputedStyle(e).backgroundColor).find((c) => !TRANSPARENT.has(c)) ?? "#fff"
-  // The open panel pushes the page with a margin on <html> (see the panel). The screenshot shows only the page.
-  const panel = Number.parseFloat(getComputedStyle(root).marginRight) || 0
-  const view = { width: root.clientWidth - panel, height: root.clientHeight }
+  // The open panel pushes the page with a margin on <html>, on its side (see the panel). The screenshot shows only
+  // the page: without the margin, so the page starts at x 0 of the image.
+  const style = getComputedStyle(root)
+  const left = Number.parseFloat(style.marginLeft) || 0
+  const right = Number.parseFloat(style.marginRight) || 0
+  const view = { width: root.clientWidth - left - right, height: root.clientHeight }
   const scale = Math.min(window.devicePixelRatio || 1, 2)
   const page = await domToCanvas(root, {
     // The viewport without scrollbars. The page scroll position stays.
@@ -26,7 +29,7 @@ export async function screenshotPage(box?: Box): Promise<File> {
     style: { marginTop: `${-window.scrollY}px`, marginLeft: `${-window.scrollX}px` },
     filter: (node) => !(node instanceof Element && node.localName === HOST_TAG),
   })
-  const canvas = box ? crop(page, box, view, scale) : page
+  const canvas = box ? crop(page, { ...box, x: box.x - left }, view, scale) : page
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"))
   if (!blob) throw new Error("Cannot make the image")
   return new File([blob], "screenshot.png", { type: "image/png" })

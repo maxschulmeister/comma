@@ -2,7 +2,7 @@
 // setting `details`): a layer of the side panel (default), or a dialog over the page.
 // They follow the open thread. Previous and next go through the panel list, so a reviewer can keep them open.
 // A chunk of its own: it loads when the details open first.
-import { ArrowLeftIcon, CaretDownIcon, CaretUpIcon, CopyIcon, XIcon } from "@phosphor-icons/react"
+import { CaretDownIcon, CaretUpIcon, CopyIcon, XIcon } from "@phosphor-icons/react"
 import { cn } from "cn"
 import { type CSSProperties, type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { fileUrl } from "@/client"
@@ -17,6 +17,7 @@ import { notify } from "./notices"
 import { showThread, usePanelList } from "./panel"
 import { threadLink } from "./thread"
 import { nameOf } from "./user-name"
+import { arrowKeys, panelSide } from "./view"
 
 type Fact = { label: string; value: string; code?: boolean }
 
@@ -162,7 +163,7 @@ function goKeepingFocus(target: Thread | undefined, details: HTMLElement | null 
 }
 
 /** ↑ and ↓ go to the previous and next thread. */
-function arrowKeys(event: KeyboardEvent<HTMLElement>, nav: Nav, go: (thread: Thread | undefined) => void) {
+function stepKeys(event: KeyboardEvent<HTMLElement>, nav: Nav, go: (thread: Thread | undefined) => void) {
   if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return
   go(event.key === "ArrowUp" ? nav.previous : nav.next)
   event.preventDefault()
@@ -218,6 +219,7 @@ function pageSize(thread: Thread) {
 
 export function DetailsLayer() {
   const nav = useOpenThread()
+  const { toPage } = arrowKeys(useStore(panelSide))
   const [zoom, setZoom] = useState(false)
   const layerRef = useRef<HTMLElement>(null)
   // Opened from the list (→), the focus was on an item that is now under the layer: it moves here.
@@ -241,24 +243,25 @@ export function DetailsLayer() {
       data-keeps-thread
       className="absolute inset-0 z-10 flex flex-col bg-background outline-none"
       onKeyDown={(event) => {
-        if ((event.key === "Escape" && !event.defaultPrevented) || event.key === "ArrowLeft") {
+        if ((event.key === "Escape" && !event.defaultPrevented) || event.key === toPage) {
           event.preventDefault()
           closeDetails()
-        } else arrowKeys(event, nav, go)
+        } else stepKeys(event, nav, go)
       }}
     >
-      <header className="flex h-11 shrink-0 items-center gap-1 border-b px-1.5">
+      {/* Close (×), not a back arrow: "back" has no direction when the panel can be on either side. */}
+      <header className="flex h-11 shrink-0 items-center gap-1 border-b pr-1.5 pl-3">
+        <h2 className="flex-1 font-medium text-sm">Details</h2>
+        <Stepper nav={nav} go={go} />
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="Back to comments"
-          title="Back to comments"
+          aria-label="Close details"
+          title="Close details (Esc)"
           onClick={closeDetails}
         >
-          <ArrowLeftIcon />
+          <XIcon />
         </Button>
-        <h2 className="flex-1 font-medium text-sm">Details</h2>
-        <Stepper nav={nav} go={go} />
       </header>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
         {thread.screenshot && (
@@ -340,6 +343,7 @@ function Zoomable({ thread, fits, fit }: { thread: Thread; fits: boolean; fit: C
 
 export function DetailsDialog() {
   const nav = useOpenThread()
+  const { toPage } = arrowKeys(useStore(panelSide))
   const paneRef = useRef<HTMLDivElement>(null)
   const [paneWidth, setPaneWidth] = useState(Number.POSITIVE_INFINITY)
   // biome-ignore lint/correctness/useExhaustiveDependencies: measure again when the pane appears.
@@ -362,8 +366,8 @@ export function DetailsDialog() {
         showCloseButton={false}
         finalFocus={dialogFinalFocus}
         onKeyDown={(event) => {
-          if (event.key === "ArrowLeft") setState({ detailsOpen: false })
-          else arrowKeys(event, nav, go)
+          if (event.key === toPage) setState({ detailsOpen: false })
+          else stepKeys(event, nav, go)
         }}
         className="flex max-h-[calc(100vh-4rem)] w-[min(1000px,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
       >
