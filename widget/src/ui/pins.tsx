@@ -19,7 +19,7 @@ import { plural, timeAgo } from "@/lib/format"
 import { shrinkImage } from "@/lib/image"
 import { NARROW, useMedia } from "@/lib/media"
 import { pageBox, useLayoutTick, useResolved } from "@/live"
-import { type Draft, getState, type State, setState, useStore } from "@/store"
+import { type Draft, getState, type State, setState, threadTakesFocus, useStore } from "@/store"
 import type { Thread } from "@/types"
 import { Composer } from "./composer"
 import { focusOpenItem } from "./details-state"
@@ -83,9 +83,8 @@ function cluster(items: Item[], keep: string | null) {
   return groups
 }
 
-/** Opens a thread. A draft with text stays as a pin. */
 /**
- * Opens a thread. `focus: false`: the focus stays where it is (↑ ↓ in the panel list select a thread).
+ * Opens a thread. A draft with text stays as a pin. `focus: false`: the focus stays where it is (↑ ↓ in the panel list select a thread).
  * `fromList`: opened from the panel list, so Escape in the thread goes back there.
  */
 export const openThread = (id: string, { focus = true, fromList = false } = {}) => {
@@ -96,7 +95,8 @@ export const openThread = (id: string, { focus = true, fromList = false } = {}) 
 // The open thread's comment list, for focusOpenThread.
 let threadList: RefObject<HTMLDivElement | null> | null = null
 
-/** Moves the focus into the open thread: its reply box, or its comment list (← or Enter in the panel list). */
+/** Moves the focus into the open thread: its reply box, or its comment list (Enter, or the arrow toward the page, in
+ * the panel list). */
 export function focusOpenThread() {
   const list = threadList?.current
   const reply = list
@@ -372,7 +372,7 @@ function Cluster({ x, y, items }: { x: number; y: number; items: Item[] }) {
 function ThreadPopover() {
   const thread = useStore((s) => s.threads.find((t) => t.id === s.openThreadId))
   // With the details open, or selected in the panel list, the focus stays there.
-  const quiet = useStore((s) => s.detailsOpen || !s.threadFocus)
+  const takesFocus = useStore(threadTakesFocus)
   // The thread opens beside the panel, not under it.
   const leftEdge = useStore(panelLeftEdge)
   const rightEdge = useStore(panelRightEdge)
@@ -427,7 +427,7 @@ function ThreadPopover() {
         className="w-80 gap-0 p-0"
         aria-label="Comment thread"
         collisionPadding={{ top: 8, bottom: 8, left: 8 + leftEdge, right: 8 + rightEdge }}
-        initialFocus={quiet ? false : listRef}
+        initialFocus={takesFocus ? listRef : false}
         finalFocus={anchor?.isConnected ? { current: anchor } : true}
         // The arrow away from the page goes back to the panel (the arrow toward the page came here). In text, only
         // when it is empty: there the arrow has nothing to move.

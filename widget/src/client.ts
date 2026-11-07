@@ -47,9 +47,9 @@ function saveSession(session: Session | null) {
  */
 const isCurrent = (session: Session | null) => getState().session?.token === session?.token
 
-/** `signedIn: false`: no session (sign-in, project info). The answer does not depend on the current session. */
 const OFFLINE = "Cannot reach comma. Try again."
 
+/** `signedIn: false`: no session (sign-in, project info). The answer does not depend on the current session. */
 async function request<T>(method: string, path: string, body?: unknown, signedIn = true): Promise<T> {
   const { server } = getState()
   const session = signedIn ? getState().session : null
@@ -85,7 +85,7 @@ export async function loadProject() {
       guests: info.guests,
       toolbar: info.toolbar === "signed-in" ? "signed-in" : "always",
       details: info.details === "dialog" ? "dialog" : "panel",
-      panel: info.panel === "overlay" ? "overlay" : "push",
+      panel: info.panel === "push" ? "push" : "overlay",
     },
   })
 }

@@ -1,11 +1,7 @@
 // View settings: how the side panel shows (over the page, or next to it), on which side, and where the details
 // open (in the panel, or in a window). Each person chooses in the panel's view menu (the side also by dragging the
 // panel); the choice stays in this browser. Without a choice, the project config decides (`panel`, `details`).
-import { type State, setState } from "@/store"
-
-type PanelMode = "overlay" | "push"
-type PanelSide = "left" | "right"
-type DetailsMode = "panel" | "dialog"
+import { type DetailsMode, type PanelMode, type PanelSide, type State, setState } from "@/store"
 
 const PANEL_KEY = "comma:panel-mode"
 const SIDE_KEY = "comma:panel-side"

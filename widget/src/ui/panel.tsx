@@ -31,7 +31,7 @@ import { shortText } from "@/lib/describe"
 import { plural, timeAgo } from "@/lib/format"
 import { NARROW, reducedMotion, useMedia } from "@/lib/media"
 import { pageBox, resolvedElement, useResolved } from "@/live"
-import { type Filters, getState, type State, setState, useStore } from "@/store"
+import { type Filters, getState, type PanelSide, type State, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
 import { closeDetails, openDetails } from "./details-state"
 import { focusOpenThread, openThread, setPanelElement } from "./pins"
@@ -42,11 +42,11 @@ import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
 import { arrowKeys, detailsMode, panelMode, panelSide, setDetailsMode, setPanelMode, setPanelSide } from "./view"
 
-export const PANEL_WIDTH = 360
+const PANEL_WIDTH = 360
 /** The overlay panel's space to the window edges: it floats over the page, and this shows it. */
 const PANEL_MARGIN = 8
 /** The space the open panel takes at each edge of the window. Toolbar, notices and threads stay out of it. */
-export function panelInsets(s: State) {
+function panelInsets(s: State) {
   const width = !s.panelOpen ? 0 : panelMode(s) === "overlay" ? PANEL_WIDTH + PANEL_MARGIN : PANEL_WIDTH
   return panelSide(s) === "left" ? { left: width, right: 0 } : { left: 0, right: width }
 }
@@ -81,8 +81,8 @@ export function visibleThreads(
   })
 }
 
-// Push mode: the page gets a right margin, so its content reflows next to the panel.
-function usePushPage(active: boolean, side: "left" | "right") {
+// Push mode: the page gets a margin on the panel's side, so its content reflows next to the panel.
+function usePushPage(active: boolean, side: PanelSide) {
   useEffect(() => {
     if (!active) return
     const media = matchMedia(NARROW)
@@ -183,7 +183,7 @@ export function showThread(thread: Thread, { keepPanel = false, focus = true } =
   if (focus && open) setTimeout(focusOpenThread)
 }
 
-/** Opens a thread together with its details (the chevron of an item, or → in the list). */
+/** Opens a thread together with its details (the info button of an item, or the arrow away from the page). */
 function showWithDetails(thread: Thread) {
   // The focus goes to the details, not into the thread.
   showThread(thread, { keepPanel: true, focus: false })
@@ -225,7 +225,7 @@ function PanelContent() {
     // The details dialog has just opened and does not have the focus yet: the key toward the page and Esc close
     // it, as in the dialog. (With the details in the panel, the list is inert and gets no keys.)
     if (getState().detailsOpen && (event.key === keys.toPage || event.key === "Escape")) {
-      setState({ detailsOpen: false })
+      closeDetails()
       event.preventDefault()
       return
     }
@@ -598,7 +598,7 @@ function PanelItem({
         data-thread={thread.id}
         ref={(el) => setPanelElement(thread.id, el)}
         aria-current={active || undefined}
-        // The open thread's own item: the focus goes there with → from the thread, and the thread stays open.
+        // The open thread's own item: the focus comes back here from the thread, and the thread stays open.
         data-keeps-thread={active || undefined}
         // Three states that must not look alike: hover (light), the open thread (darker, with a bar), focus (an
         // inset ring, so it does not cover the next item).

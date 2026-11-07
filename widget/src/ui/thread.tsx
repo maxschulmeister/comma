@@ -52,7 +52,7 @@ import { describe, kindOf, shortText } from "@/lib/describe"
 import { pressInsideWidget } from "@/lib/dom"
 import { describeContext } from "@/lib/env"
 import { fullDate, timeAgo } from "@/lib/format"
-import { setState, useStore } from "@/store"
+import { setState, threadTakesFocus, useStore } from "@/store"
 import type { Comment, Thread, User } from "@/types"
 import { CommentBody } from "./body"
 import { Composer } from "./composer"
@@ -89,7 +89,7 @@ export function ThreadView({
   const close = () => setState({ openThreadId: null })
   const label = describe(kindOf(thread.anchor.tag), thread.anchor.text)
   const detailsOpen = useStore((s) => s.detailsOpen)
-  const threadFocus = useStore((s) => s.threadFocus)
+  const takesFocus = useStore(threadTakesFocus)
 
   // Opening a thread marks it as read.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only when the thread opens.
@@ -241,7 +241,7 @@ export function ThreadView({
         <div className="flex flex-col border-b text-muted-foreground text-xs">
           {assignee && <span className="truncate px-3 pt-1.5 last:pb-1.5">Assigned to {nameOf(assignee)}</span>}
           {(thread.context || thread.screenshot) && (
-            // The line opens the details in the panel: the screenshot at full size and more about the page.
+            // The line opens the details (in the panel or a dialog): the screenshot at full size and more about the page.
             <button
               type="button"
               onClick={toggleDetails}
@@ -263,12 +263,7 @@ export function ThreadView({
         </div>
       )}
 
-      <div
-        ref={listRef}
-        tabIndex={-1}
-        data-slot="thread-comments"
-        className="min-h-0 flex-1 overflow-y-auto py-1 outline-none"
-      >
+      <div ref={listRef} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto py-1 outline-none">
         {resolved && (
           <p className="flex items-center gap-1.5 px-3 py-1 text-muted-foreground text-xs">
             <CheckIcon className="shrink-0" />
@@ -323,7 +318,7 @@ export function ThreadView({
             label="Reply"
             submitLabel="Send reply"
             // With the details open, the reviewer goes from thread to thread there: the focus stays.
-            autoFocus={!detailsOpen && threadFocus}
+            autoFocus={takesFocus}
             onSubmit={(body, files) => reply(thread.id, body, files)}
           />
         ) : (

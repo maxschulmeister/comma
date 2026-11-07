@@ -9,14 +9,19 @@ export type Draft = { id: number; anchor: Anchor; element: Element; page: string
 export type Notice = { id: number; text: string; action?: { label: string; run: () => void } }
 
 /** From the server: how people sign in, and who sees the toolbar. */
+/** View settings (see ui/view.ts). */
+export type PanelMode = "overlay" | "push"
+export type PanelSide = "left" | "right"
+export type DetailsMode = "panel" | "dialog"
+
 export type ProjectInfo = {
   name?: string
   popupSignIn: boolean
   slack: boolean
   guests: boolean
   toolbar: "always" | "signed-in"
-  details: "panel" | "dialog"
-  panel: "push" | "overlay"
+  details: DetailsMode
+  panel: PanelMode
 }
 
 export type Filters = {
@@ -49,9 +54,9 @@ export type State = {
   pinsVisible: boolean
   panelOpen: boolean
   /** The person's view choices in this browser. null: the project default (see view.ts). */
-  panelMode: "push" | "overlay" | null
-  panelSide: "left" | "right" | null
-  detailsMode: "panel" | "dialog" | null
+  panelMode: PanelMode | null
+  panelSide: PanelSide | null
+  detailsMode: DetailsMode | null
   openThreadId: string | null
   /** The open thread takes the focus. Not when ↑ ↓ in the panel list select it: the focus stays in the list. */
   threadFocus: boolean
@@ -66,7 +71,7 @@ export type State = {
   /** Set when an action needs a signed-in user. */
   signInOpen: boolean
   notice: Notice | null
-  /** The details of the open thread show in the panel (see details.tsx). */
+  /** The details of the open thread show (in the panel or a dialog, see details.tsx). */
   detailsOpen: boolean
   /** The key for comment mode (with Shift: show or hide comments). null: no shortcut. */
   shortcut: string | null
@@ -78,6 +83,9 @@ let state: State
 const listeners = new Set<Listener>()
 
 /** The toolbar and the shortcuts are there for signed-in people, and for everyone unless the project hides them. */
+/** The open thread takes the focus: not when it was selected in the panel list, and not with the details open. */
+export const threadTakesFocus = (s: State) => s.threadFocus && !s.detailsOpen
+
 export const widgetVisible = (s: State) => !!s.session || s.projectInfo?.toolbar === "always" || s.revealed
 
 export function initStore(initial: State) {

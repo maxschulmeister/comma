@@ -6,7 +6,7 @@ import { detailsMode } from "./view"
 
 const inDialog = () => detailsMode(getState()) === "dialog"
 
-// Opened from the panel list (→ or the item's button): closing goes back to the list.
+// Opened from the panel list (the arrow away from the page, or the item's info button): closing goes back there.
 let fromList = false
 
 /** Opens the details of the open thread: in the panel, or in a dialog. */
@@ -30,7 +30,7 @@ export function closeDetails() {
 export const dialogFinalFocus = () => (fromList && panelElements.get(getState().openThreadId ?? "")) || true
 
 /**
- * The open thread's item in the panel gets the focus (→ from the thread, Back from the details). The panel opens
+ * The open thread's item in the panel gets the focus (from the thread, or when the details close). The panel opens
  * first if it is closed. With the details open in the panel, they get the focus.
  */
 export function focusOpenItem() {

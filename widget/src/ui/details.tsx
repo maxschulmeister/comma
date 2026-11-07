@@ -1,5 +1,5 @@
-// The details of a thread: the screenshot of the element, and where the comment was made. Two layouts (project
-// setting `details`): a layer of the side panel (default), or a dialog over the page.
+// The details of a thread: the screenshot of the element, and where the comment was made. Two layouts (view menu,
+// or the project default `details`): a layer of the side panel (default), or a dialog over the page.
 // They follow the open thread. Previous and next go through the panel list, so a reviewer can keep them open.
 // A chunk of its own: it loads when the details open first.
 import { CaretDownIcon, CaretUpIcon, CopyIcon, XIcon } from "@phosphor-icons/react"
@@ -222,7 +222,8 @@ export function DetailsLayer() {
   const { toPage } = arrowKeys(useStore(panelSide))
   const [zoom, setZoom] = useState(false)
   const layerRef = useRef<HTMLElement>(null)
-  // Opened from the list (→), the focus was on an item that is now under the layer: it moves here.
+  // Opened from the list (the arrow away from the page), the focus was on the panel or an item under the layer: it
+  // moves here.
   // Opened from the thread's info line, it stays there.
   useEffect(() => {
     const layer = layerRef.current
@@ -360,13 +361,13 @@ export function DetailsDialog() {
     goKeepingFocus(target, paneRef.current?.closest<HTMLElement>("[data-slot=dialog-content]"))
 
   return (
-    <Dialog open onOpenChange={(open) => !open && setState({ detailsOpen: false })}>
+    <Dialog open onOpenChange={(open) => !open && closeDetails()}>
       <DialogContent
         data-keeps-thread
         showCloseButton={false}
         finalFocus={dialogFinalFocus}
         onKeyDown={(event) => {
-          if (event.key === toPage) setState({ detailsOpen: false })
+          if (event.key === toPage) closeDetails()
           else stepKeys(event, nav, go)
         }}
         className="flex max-h-[calc(100vh-4rem)] w-[min(1000px,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
