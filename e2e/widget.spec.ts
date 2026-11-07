@@ -239,6 +239,37 @@ test.describe("comment mode", () => {
     await expect(pins(page)).toHaveCount(1)
   })
 
+  test("the eye in the toolbar hides and shows comments", async ({ page }) => {
+    await signIn(page, await guestSession("Eye"))
+    await openTestPage(page, "eye")
+    await addComment(page, page.getByTestId("title"), "Hello")
+    await endCommentMode(page)
+    await toolbar(page).getByRole("button", { name: "Hide comments" }).click()
+    await expect(pins(page)).toHaveCount(0)
+    await toolbar(page).getByRole("button", { name: "Show comments" }).click()
+    await expect(pins(page)).toHaveCount(1)
+    // One place for it: the account menu does not have it.
+    await toolbar(page)
+      .getByRole("button", { name: /^Account/ })
+      .click()
+    await expect(page.getByRole("menuitem", { name: /comments/ })).toHaveCount(0)
+  })
+
+  test("the toolbar order is mirrored with the panel on the left", async ({ page }) => {
+    await signIn(page, await guestSession("Mirror"))
+    // Without the unread count: other tests add threads to the project.
+    const labels = () =>
+      toolbar(page)
+        .getByRole("button")
+        .evaluateAll((list) => list.map((b) => b.ariaLabel?.split(",")[0]))
+    await openTestPage(page, "mirror")
+    await expect.poll(labels).toEqual(["Comment mode", "Hide comments", "Comments", "Account: Mirror"])
+    await page.evaluate(() => localStorage.setItem("comma:panel-side", "left"))
+    await page.reload()
+    await expect(toolbar(page)).toBeVisible()
+    await expect.poll(labels).toEqual(["Account: Mirror", "Comments", "Hide comments", "Comment mode"])
+  })
+
   test("pins close together merge into a cluster", async ({ page }) => {
     await signIn(page, await guestSession("Cluster"))
     await openTestPage(page, "cluster")

@@ -229,7 +229,7 @@ test.describe("narrow screens", () => {
     await signIn(page, await guestSession("Narrow bar"))
     await openTestPage(page, "narrow-bar")
     const box = await toolbar(page).boundingBox()
-    expect(box?.width).toBeLessThan(140)
+    expect(box?.width).toBeLessThan(160)
     expect(Math.abs((box?.x ?? 0) + (box?.width ?? 0) / 2 - 200)).toBeLessThan(2)
     await openPanel(page)
     expect(await toolbar(page).boundingBox()).toEqual(box)

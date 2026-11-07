@@ -65,7 +65,7 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 - Click: thread popover.
 - Pins close together merge into a cluster with a count and avatars. Click a cluster to see its threads.
 - Drag a pin to move it (thread author only). This saves a new anchor.
-- Pins show by default. `Shift+C` shows or hides them. The widget remembers the choice.
+- Pins show by default. The eye in the toolbar or `Shift+C` shows or hides them. The widget remembers the choice.
 - Resolved threads do not show on the page.
 
 ### Thread popover
@@ -129,7 +129,7 @@ Only where it shows where something comes from, fast and short; keyboard actions
 
 ### Toolbar
 
-- Small floating bar: comment mode, panel button with unread count, user menu (name, avatar, sign in or out, show or hide pins).
+- Small floating bar: comment mode, show or hide pins (eye), panel button with unread count, user menu (name, avatar, sign in or out). With the panel on the left, the order is mirrored: the account is at the outer corner on both sides.
 - It does not move. It stays in the bottom corner on the panel's side (16 px from the edges; centered on narrow screens), also while the panel is closed. The open panel takes it in, so the same click opens and closes the panel. Over the page it floats (ring and shadow). In the open panel it is part of the panel: no ring, no shadow (they go with the panel's 150 ms slide-in). The panel's list and details show nothing in its band and fade in above it, and have room at the end, so their last line scrolls clear of it.
 - Project setting `toolbar: "signed-in"`: visitors see no toolbar and no shortcut until they sign in. `?comma` in the URL, or a link to a thread, shows the sign-in.
 

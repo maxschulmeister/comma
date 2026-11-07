@@ -18,7 +18,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Kbd } from "@/components/ui/kbd"
@@ -31,7 +30,7 @@ import { UserAvatar } from "./user-avatar"
 import { panelSide } from "./view"
 
 /**
- * Small floating bar: comment mode, panel with unread count, user menu. It does not move: it stays in the bottom
+ * Small floating bar: comment mode, show or hide the pins, panel with unread count, user menu. It does not move: it stays in the bottom
  * corner on the panel's side, so the open panel takes it in, and the same click opens and closes the panel.
  * Narrow screens: centered, also over the panel, which then covers the screen.
  * Over the page it floats (ring and shadow). In the open panel it is part of the panel: no ring, no shadow. They go
@@ -49,6 +48,113 @@ export function Toolbar() {
   const [signInAnchor, setSignInAnchor] = useState<HTMLElement | null>(null)
   const [signInOpen, setSignInOpen] = useState(false)
 
+  // Mirrored with the panel on the left: the account is at the outer corner on both sides.
+  const items = [
+    <Tooltip key="comment">
+      <TooltipTrigger
+        render={
+          <Button
+            variant={commentMode ? "default" : "ghost"}
+            size="icon"
+            className="rounded-full"
+            aria-label="Comment mode"
+            aria-pressed={commentMode}
+            onClick={() => setCommentMode(!commentMode)}
+          />
+        }
+      >
+        <ChatCircleIcon weight={commentMode ? "fill" : "regular"} />
+      </TooltipTrigger>
+      <TooltipContent>Comment {key && <Kbd>{key}</Kbd>}</TooltipContent>
+    </Tooltip>,
+    <Tooltip key="eye">
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            aria-label={pinsVisible ? "Hide comments" : "Show comments"}
+            onClick={togglePins}
+          />
+        }
+      >
+        {pinsVisible ? <EyeIcon /> : <EyeSlashIcon />}
+      </TooltipTrigger>
+      <TooltipContent>
+        {pinsVisible ? "Hide comments" : "Show comments"} {key && <Kbd>⇧{key}</Kbd>}
+      </TooltipContent>
+    </Tooltip>,
+    <Tooltip key="panel">
+      <TooltipTrigger
+        render={
+          <Button
+            variant={panelOpen ? "secondary" : "ghost"}
+            size="icon"
+            className="relative rounded-full"
+            data-panel-button
+            // Opening the panel keeps the open thread: its item shows there.
+            data-keeps-thread
+            aria-label={unread ? `Comments, ${unread} unread` : "Comments"}
+            aria-pressed={panelOpen}
+            onClick={() => setState({ panelOpen: !panelOpen })}
+          />
+        }
+      >
+        <TrayIcon />
+        {unread > 0 && (
+          <span
+            aria-hidden
+            data-slot="unread-count"
+            className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 font-medium text-[10px] text-white tabular-nums"
+          >
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )}
+      </TooltipTrigger>
+      <TooltipContent>All comments</TooltipContent>
+    </Tooltip>,
+    <DropdownMenu key="account">
+      <DropdownMenuTrigger
+        render={
+          <Button
+            ref={setSignInAnchor}
+            variant="ghost"
+            size="icon"
+            className={cn("rounded-full", me && "p-0.5")}
+            aria-label={me ? `Account: ${me.name}` : "Account"}
+          />
+        }
+      >
+        {me ? <UserAvatar user={me} className="size-6" /> : <UserIcon />}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={align} side="top" className="w-52">
+        {me && (
+          <>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="truncate">
+                {me.name}
+                {me.kind === "guest" && " (guest)"}
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {me ? (
+          <DropdownMenuItem onClick={signOut}>
+            <SignOutIcon />
+            Sign out
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={() => setSignInOpen(true)}>
+            <SignInIcon />
+            Sign in
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>,
+  ]
+
   return (
     <div
       role="toolbar"
@@ -60,96 +166,7 @@ export function Toolbar() {
         panelOpen ? "shadow-none ring-0" : "shadow-lg ring-1",
       )}
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant={commentMode ? "default" : "ghost"}
-              size="icon"
-              className="rounded-full"
-              aria-label="Comment mode"
-              aria-pressed={commentMode}
-              onClick={() => setCommentMode(!commentMode)}
-            />
-          }
-        >
-          <ChatCircleIcon weight={commentMode ? "fill" : "regular"} />
-        </TooltipTrigger>
-        <TooltipContent>Comment {key && <Kbd>{key}</Kbd>}</TooltipContent>
-      </Tooltip>
-
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant={panelOpen ? "secondary" : "ghost"}
-              size="icon"
-              className="relative rounded-full"
-              data-panel-button
-              // Opening the panel keeps the open thread: its item shows there.
-              data-keeps-thread
-              aria-label={unread ? `Comments, ${unread} unread` : "Comments"}
-              aria-pressed={panelOpen}
-              onClick={() => setState({ panelOpen: !panelOpen })}
-            />
-          }
-        >
-          <TrayIcon />
-          {unread > 0 && (
-            <span
-              aria-hidden
-              data-slot="unread-count"
-              className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 font-medium text-[10px] text-white tabular-nums"
-            >
-              {unread > 99 ? "99+" : unread}
-            </span>
-          )}
-        </TooltipTrigger>
-        <TooltipContent>All comments</TooltipContent>
-      </Tooltip>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              ref={setSignInAnchor}
-              variant="ghost"
-              size="icon"
-              className={cn("rounded-full", me && "p-0.5")}
-              aria-label={me ? `Account: ${me.name}` : "Account"}
-            />
-          }
-        >
-          {me ? <UserAvatar user={me} className="size-6" /> : <UserIcon />}
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align={align} side="top" className="w-52">
-          {me && (
-            <DropdownMenuGroup>
-              <DropdownMenuLabel className="truncate">
-                {me.name}
-                {me.kind === "guest" && " (guest)"}
-              </DropdownMenuLabel>
-            </DropdownMenuGroup>
-          )}
-          <DropdownMenuItem onClick={togglePins}>
-            {pinsVisible ? <EyeSlashIcon /> : <EyeIcon />}
-            {pinsVisible ? "Hide comments" : "Show comments"}
-            {key && <DropdownMenuShortcut>⇧{key}</DropdownMenuShortcut>}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {me ? (
-            <DropdownMenuItem onClick={signOut}>
-              <SignOutIcon />
-              Sign out
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem onClick={() => setSignInOpen(true)}>
-              <SignInIcon />
-              Sign in
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {side === "left" ? items.toReversed() : items}
 
       <Popover open={signInOpen && !me} onOpenChange={setSignInOpen}>
         <PopoverContent anchor={signInAnchor} side="top" align={align} className="w-64">
