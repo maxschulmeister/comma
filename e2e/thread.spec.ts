@@ -5,6 +5,7 @@ import {
   appSession,
   COMMA,
   guestSession,
+  newCommentPopover,
   openTestPage,
   panel,
   pins,
@@ -13,6 +14,7 @@ import {
   signIn,
   testPath,
   threadPopover,
+  toolbar,
   typeComment,
 } from "./helpers"
 
@@ -139,6 +141,39 @@ test("the preview of a pin does not come back when its thread closes", async ({ 
   await expect(threadPopover(page)).toBeHidden()
   await page.waitForTimeout(500)
   await expect(preview).toBeHidden()
+})
+
+test("the focus is not lost when a thread closes or goes away", async ({ page }) => {
+  // A comment made with the keyboard. Esc closes its thread: the focus goes to its pin.
+  await signIn(page, await guestSession("Focus keeper"))
+  await openTestPage(page, "focus-after")
+  await page.keyboard.press("c")
+  await expect(toolbar(page).getByRole("button", { name: "Comment mode" })).toHaveAttribute("aria-pressed", "true")
+  await page.getByRole("link", { name: "Home" }).focus()
+  await page.keyboard.press("Enter")
+  await typeComment(page, newCommentPopover(page), "Kept in focus")
+  await page.keyboard.press("ControlOrMeta+Enter")
+  await expect(threadPopover(page)).toContainText("Kept in focus")
+  await page.keyboard.press("Escape")
+  await expect(threadPopover(page)).toBeHidden()
+  await expect(pins(page).first()).toBeFocused()
+
+  // Resolve: the focus goes to Undo.
+  await page.keyboard.press("Enter")
+  await threadPopover(page).getByRole("button", { name: "Resolve" }).click()
+  const undo = page.getByRole("status").getByRole("button", { name: "Undo" })
+  await expect(undo).toBeFocused()
+  await page.keyboard.press("Enter")
+  await expect(threadPopover(page)).toContainText("Kept in focus")
+
+  // Delete the thread: the focus goes to the Comments button.
+  const first = threadPopover(page).getByRole("article").first()
+  await first.hover()
+  await first.getByRole("button", { name: "Comment actions" }).click()
+  await page.getByRole("menuitem", { name: "Delete" }).click()
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click()
+  await expect(pins(page)).toHaveCount(0)
+  await expect(toolbar(page).getByRole("button", { name: /^Comments/ })).toBeFocused()
 })
 
 test("resolve tells what happened and can be undone", async ({ page }) => {

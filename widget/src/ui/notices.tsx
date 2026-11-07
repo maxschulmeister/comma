@@ -74,6 +74,7 @@ export function Notices() {
             <Button
               size="xs"
               variant="ghost"
+              data-notice-action
               className="text-background underline underline-offset-2 hover:bg-background/15 hover:text-background"
               onClick={() => {
                 const run = notice.action?.run

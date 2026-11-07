@@ -27,7 +27,7 @@ import { tellMoveFailed } from "./notices"
 import { movedAnchor } from "./overlay"
 import { panelLeftEdge, panelRightEdge } from "./panel"
 import { SignInForm } from "./sign-in"
-import { type Placement, ThreadView } from "./thread"
+import { type Placement, ThreadView, takeFocusOnClose } from "./thread"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
 import { arrowKeys, detailsMode, panelSide } from "./view"
@@ -393,6 +393,9 @@ function ThreadPopover() {
   const page = useStore((s) => s.page)
   const resolved = useResolved()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  // The anchor when the thread closes is gone already (no thread, no anchor): the focus goes back to the last one.
+  const lastAnchor = useRef<HTMLElement | null>(null)
+  if (anchor) lastAnchor.current = anchor
   const listRef = useRef<HTMLDivElement>(null)
   threadList = listRef
   const id = thread?.id
@@ -441,7 +444,7 @@ function ThreadPopover() {
         aria-label="Comment thread"
         collisionPadding={{ top: 8, bottom: 8, left: 8 + leftEdge, right: 8 + rightEdge }}
         initialFocus={takesFocus ? listRef : false}
-        finalFocus={anchor?.isConnected ? { current: anchor } : true}
+        finalFocus={() => takeFocusOnClose() ?? (lastAnchor.current?.isConnected ? lastAnchor.current : true)}
         // The arrow away from the page goes back to the panel (the arrow toward the page came here). In text, only
         // when it is empty: there the arrow has nothing to move.
         onKeyDown={(event) => {

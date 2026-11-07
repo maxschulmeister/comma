@@ -69,7 +69,24 @@ export const threadLink = (thread: Thread) => `${location.origin}${thread.page}#
 /** Where the thread's element is: on this page, not found on this page, or on another page. */
 export type Placement = "here" | "missing" | "elsewhere"
 
-type Confirm = { title: string; description: string; action: string; run: () => Promise<unknown>; done: string }
+type Confirm = {
+  title: string
+  description: string
+  action: string
+  run: () => Promise<unknown>
+  done: string
+  /** Deletes the thread: the focus goes to the Comments button. */
+  removesThread?: boolean
+}
+
+// Where the focus goes when the open thread closes, if not back to its pin: an action that removes the thread
+// chooses it (Undo after resolve, the Comments button after delete). Found when the thread has closed.
+let focusOnClose: (() => HTMLElement | null | undefined) | null = null
+export function takeFocusOnClose() {
+  const find = focusOnClose
+  focusOnClose = null
+  return find?.() ?? null
+}
 
 /** The content of the thread popover: comments, reactions, actions and the reply box. */
 export function ThreadView({
@@ -165,6 +182,8 @@ export function ThreadView({
                     act(async () => {
                       await setStatus(thread, resolved ? "open" : "resolved")
                       if (resolved) return notify("Thread reopened")
+                      const root = listRef.current?.getRootNode() as ShadowRoot | undefined
+                      focusOnClose = () => root?.querySelector<HTMLElement>("[data-slot=notices] [data-notice-action]")
                       close()
                       notify("Thread resolved", {
                         label: "Undo",
@@ -230,6 +249,7 @@ export function ThreadView({
                       description: "This deletes the thread and all its replies.",
                       action: "Delete thread",
                       done: "Thread deleted",
+                      removesThread: true,
                       run: () => deleteThread(thread),
                     })
                   }
@@ -325,6 +345,7 @@ export function ThreadView({
                         description: "This is the first comment. Deleting it deletes the thread and all its replies.",
                         action: "Delete thread",
                         done: "Thread deleted",
+                        removesThread: true,
                         run: () => deleteComment(comment),
                       }
                     : {
@@ -395,7 +416,13 @@ export function ThreadView({
                 setConfirm(null)
                 if (current)
                   void act(async () => {
-                    await current.run()
+                    const root = listRef.current?.getRootNode() as ShadowRoot | undefined
+                    if (current.removesThread)
+                      focusOnClose = () => root?.querySelector<HTMLElement>("[data-panel-button]")
+                    await current.run().catch((error) => {
+                      focusOnClose = null
+                      throw error
+                    })
                     notify(current.done)
                   })
               }}
