@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { anchor, appToken_, setup, text } from "./helpers"
+import { anchor, appToken_, OPEN, setup, text } from "./helpers"
 
 const mention = (id: string, label: string, before = "Hi ") => ({
   type: "doc",
@@ -255,7 +255,7 @@ describe("files", () => {
       body: { page: "/", anchor, body: text("x"), files: [used.json.id] },
     })
     now += 24 * 60 * 60 * 1000 + 1
-    expect(await s.app.cleanupFiles()).toBe(1)
+    expect((await s.app.cleanup()).files).toBe(1)
     expect((await s.app.fetch(new Request(`http://comma.test/files/${unused.json.id}`))).status).toBe(404)
     expect((await s.app.fetch(new Request(`http://comma.test/files/${used.json.id}`))).status).toBe(200)
   })
@@ -343,6 +343,73 @@ describe("upload limit", () => {
     const a = await s.guest("Uploader")
     for (let i = 0; i < 100; i++) expect((await upload(s, a.token)).status).toBe(200)
     expect((await upload(s, a.token)).status).toBe(429)
+  })
+})
+
+test("a project can set its own limits per hour", async () => {
+  const s = await setup({
+    config: {
+      projects: [{ id: "small", origins: [OPEN], limits: { commentsPerHour: 2, imagesPerHour: 1, guestsPerHour: 2 } }],
+    },
+  })
+  const join = () => s.request("POST", "/api/session/guest", { origin: OPEN, body: { project: "small", name: "Ada" } })
+  const a = (await join()).json
+  expect((await join()).status).toBe(200)
+  expect((await join()).status).toBe(429)
+  const post = () =>
+    s.request("POST", "/api/threads", { token: a.token, origin: OPEN, body: { page: "/", anchor, body: text("x") } })
+  expect((await post()).status).toBe(200)
+  expect((await post()).status).toBe(200)
+  expect((await post()).status).toBe(429)
+  const form = () => {
+    const f = new FormData()
+    f.set("file", new File([PNG], "a.png", { type: "image/png" }))
+    return s.request("POST", "/api/files", { token: a.token, origin: OPEN, body: f })
+  }
+  expect((await form()).status).toBe(200)
+  expect((await form()).status).toBe(429)
+})
+
+describe("element screenshot", () => {
+  test("a new thread keeps a screenshot of its element, apart from the 5 images", async () => {
+    const s = await setup()
+    const a = await s.guest("Ada")
+    const shot = (await upload(s, a.token)).json.id
+    const images = []
+    for (let i = 0; i < 5; i++) images.push((await upload(s, a.token)).json.id)
+    const res = await s.request("POST", "/api/threads", {
+      token: a.token,
+      body: { page: "/", anchor, body: text("x"), files: images, screenshot: shot },
+    })
+    expect(res.status).toBe(200)
+    expect(res.json.thread.screenshot).toMatchObject({ id: shot, url: `/files/${shot}`, width: 2, height: 3 })
+    expect(res.json.thread.comments[0].files.map((f: { id: string }) => f.id)).toEqual(images)
+    // It stays after the cleanup, and goes with the thread.
+    expect((await s.app.cleanup()).files).toBe(0)
+    await s.request("DELETE", `/api/threads/${res.json.thread.id}`, { token: a.token })
+    expect((await s.app.fetch(new Request(`http://comma.test/files/${shot}`))).status).toBe(404)
+  })
+
+  test("the screenshot must be an unused upload of the same user", async () => {
+    const s = await setup()
+    const a = await s.guest("Ada")
+    const b = await s.guest("Bob")
+    const theirs = (await upload(s, b.token)).json.id
+    const res = await s.request("POST", "/api/threads", {
+      token: a.token,
+      body: { page: "/", anchor, body: text("x"), screenshot: theirs },
+    })
+    expect(res.status).toBe(400)
+  })
+
+  test("a thread without a screenshot has null", async () => {
+    const s = await setup()
+    const a = await s.guest("Ada")
+    const res = await s.request("POST", "/api/threads", {
+      token: a.token,
+      body: { page: "/", anchor, body: text("x") },
+    })
+    expect(res.json.thread.screenshot).toBeNull()
   })
 })
 

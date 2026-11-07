@@ -2,8 +2,10 @@
 import { z } from "zod"
 import { type FileStore, s3Files } from "./files"
 
+const SECRET_MESSAGE = "Set COMMA_SECRET to a random string of 32 or more characters (openssl rand -hex 32)"
+
 const Env = z.object({
-  COMMA_SECRET: z.string().min(32, "Set COMMA_SECRET to a random string of 32 or more characters"),
+  COMMA_SECRET: z.string(SECRET_MESSAGE).min(32, SECRET_MESSAGE),
   COMMA_URL: z
     .string()
     .regex(/^https?:\/\/[^/]+\/?$/, "Set COMMA_URL to the address of comma, for example https://comma.example.com")

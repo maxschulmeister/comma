@@ -2,13 +2,16 @@ import { createClient } from "@libsql/client"
 import { sign } from "hono/jwt"
 import { createApp } from "../src/app"
 import type { Config } from "../src/config"
-import { migrate } from "../src/db"
+import { type Db, migrate } from "../src/db"
 import type { FileStore } from "../src/files"
 
 export const ACME = "https://acme.test"
 export const OTHER = "https://other.test"
 export const CLOSED = "https://closed.test"
 export const OPEN = "https://open.test"
+// Preview deploys: one origin per branch, each with its own comments.
+export const PREVIEW_A = "https://feat-a.preview.test"
+export const PREVIEW_B = "https://feat-b.preview.test"
 
 export const config: Config = {
   projects: [
@@ -22,25 +25,44 @@ export const config: Config = {
     },
     { id: "other", origins: [OTHER], appSecret: "other-secret", guests: true },
     // App sign-in without a guest option: guests are off.
-    { id: "closed", origins: [CLOSED], appSecret: "closed-secret", toolbar: "signed-in" },
+    {
+      id: "closed",
+      origins: [CLOSED],
+      appSecret: "closed-secret",
+      toolbar: "signed-in",
+      details: "dialog",
+      panel: "push",
+    },
     // No app sign-in: guests are on.
     { id: "open", origins: [OPEN] },
+    { id: "previews", origins: ["https://*.preview.test"], scope: "origin" },
   ],
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: tests read nested JSON from responses.
 export type Json = Record<string, any>
 
-export async function setup(options: { now?: () => number; publicUrl?: string; files?: FileStore } = {}) {
-  const db = await migrate(createClient({ url: ":memory:" }), true)
+export async function setup(
+  options: {
+    now?: () => number
+    publicUrl?: string
+    files?: FileStore
+    config?: Config
+    db?: Db
+    slackUrl?: string
+  } = {},
+) {
+  // `db`: a second server on the same database, like a second serverless instance.
+  const db = options.db ?? (await migrate(createClient({ url: ":memory:" }), true))
   const app = createApp({
     db,
-    config,
+    config: options.config ?? config,
     secret: "server-secret",
     widgetDir: "/nonexistent",
     now: options.now,
     publicUrl: options.publicUrl,
     files: options.files,
+    slackUrl: options.slackUrl,
   })
 
   async function request(

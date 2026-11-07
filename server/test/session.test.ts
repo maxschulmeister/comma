@@ -110,6 +110,25 @@ describe("session token", () => {
     }
   })
 
+  test("sign-out ends the session on the server, not the other sessions of the user", async () => {
+    const { appUser, request } = await setup()
+    const laptop = await appUser({ sub: "u-1", name: "Grace" })
+    const phone = await appUser({ sub: "u-1", name: "Grace" })
+    const out = await request("DELETE", "/api/session", { token: laptop.token })
+    expect(out.status).toBe(200)
+    expect((await request("GET", "/api/threads", { token: laptop.token })).status).toBe(401)
+    expect((await request("GET", "/api/threads", { token: phone.token })).status).toBe(200)
+  })
+
+  test("cleanup deletes expired sessions", async () => {
+    let now = Date.now()
+    const s = await setup({ now: () => now })
+    await s.guest("Gus")
+    await s.appUser({ sub: "u-1", name: "Grace" })
+    now += 8 * 86_400_000
+    expect((await s.app.cleanup()).sessions).toBe(1)
+  })
+
   test("the API needs a session token", async () => {
     const { request } = await setup()
     expect((await request("GET", "/api/threads")).status).toBe(401)
@@ -171,11 +190,36 @@ describe("project info", () => {
     const { request } = await setup()
     const acme = await request("GET", "/api/projects/acme")
     expect(acme.status).toBe(200)
-    expect(acme.json).toEqual({ id: "acme", name: "Acme", popupSignIn: true, guests: true, toolbar: "always" })
+    expect(acme.json).toEqual({
+      id: "acme",
+      name: "Acme",
+      popupSignIn: true,
+      slack: false,
+      guests: true,
+      toolbar: "always",
+      details: "panel",
+      panel: "overlay",
+    })
     const other = await request("GET", "/api/projects/other", { origin: OTHER })
-    expect(other.json).toEqual({ id: "other", popupSignIn: false, guests: true, toolbar: "always" })
+    expect(other.json).toEqual({
+      id: "other",
+      popupSignIn: false,
+      slack: false,
+      guests: true,
+      toolbar: "always",
+      details: "panel",
+      panel: "overlay",
+    })
     const closed = await request("GET", "/api/projects/closed", { origin: CLOSED })
-    expect(closed.json).toEqual({ id: "closed", popupSignIn: false, guests: false, toolbar: "signed-in" })
+    expect(closed.json).toEqual({
+      id: "closed",
+      popupSignIn: false,
+      slack: false,
+      guests: false,
+      toolbar: "signed-in",
+      details: "dialog",
+      panel: "push",
+    })
     expect((await request("GET", "/api/projects/acme", { origin: OTHER })).status).toBe(403)
   })
 

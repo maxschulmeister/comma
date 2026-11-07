@@ -3,24 +3,24 @@ import { createMiddleware } from "hono/factory"
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import {
+  appUserClaims,
   createGuest,
-  getUser,
+  getSessionUser,
   newId,
   publicUser,
-  signSession,
+  startSession,
   type UserRow,
   upsertAppUser,
-  verifyAppToken,
   verifySession,
 } from "./auth"
 import { parseBody } from "./body"
-import { type Config, ConfigSchema, type Project } from "./config"
+import { allowsHost, allowsOrigin, type Config, ConfigSchema, type Project } from "./config"
 import { all, type Db, get, run, sql } from "./db"
 import type { FileStore } from "./files"
 import { MAX_IMAGE_BYTES, readImage } from "./images"
 import { popupRoutes } from "./popup"
-import { RateLimit } from "./rate-limit"
-import { getCommentRow, getThreadRow, isFirstComment, loadThreads } from "./threads"
+import { takeLimit } from "./rate-limit"
+import { getCommentRow, getThreadRow, isFirstComment, loadThreads, type Scope } from "./threads"
 import { widgetRoutes } from "./widget"
 
 export type AppOptions = {
@@ -35,12 +35,16 @@ export type AppOptions = {
   now?: () => number
   /** The address users reach comma at, behind a proxy (`COMMA_URL`). The popup sign-in callback uses it. */
   publicUrl?: string
+  /** Slack's address. Tests use a fake. Default: https://slack.com. */
+  slackUrl?: string
 }
 
-type Env = { Variables: { user: UserRow; project: Project } }
+type Env = { Variables: { user: UserRow; project: Project; site: string; scope: Scope; sessionId: string } }
+type Ctx = Context<Env>
 
+const HOUR_MS = 60 * 60 * 1000
 const MAX_FILES = 5
-const UNUSED_FILE_MS = 24 * 60 * 60 * 1000
+const UNUSED_FILE_MS = 24 * HOUR_MS
 // Images that no comment uses yet, per project. New guests cannot get around it.
 const MAX_UNUSED_BYTES = 200 * 1024 * 1024
 
@@ -88,6 +92,13 @@ const PageContext = z.object({
   dpr: z.number().positive().max(16),
   browser: z.string().max(60),
   os: z.string().max(60),
+  // Added later: older widgets do not send them.
+  theme: z.enum(["light", "dark"]).optional(),
+  language: z.string().max(35).optional(),
+  timeZone: z.string().max(64).optional(),
+  scroll: z
+    .object({ x: z.number().int().min(0).max(10_000_000), y: z.number().int().min(0).max(10_000_000) })
+    .optional(),
 })
 
 const CreateThread = z.object({
@@ -96,6 +107,8 @@ const CreateThread = z.object({
   body: z.unknown(),
   files: FileIds,
   context: PageContext.optional(),
+  /** An upload: the screenshot of the element. It does not count as one of the images of the comment. */
+  screenshot: z.string().max(64).optional(),
 })
 const UpdateThread = z.union([
   z.object({ status: z.enum(["open", "resolved"]) }),
@@ -129,9 +142,7 @@ export function createApp(options: AppOptions) {
   const now = options.now ?? Date.now
   const config = ConfigSchema.parse(options.config)
   const projects = new Map(config.projects.map((p) => [p.id, p]))
-  const allOrigins = new Set(config.projects.flatMap((p) => p.origins))
-  const rateLimit = new RateLimit(100, 60 * 60 * 1000)
-  const uploadLimit = new RateLimit(100, 60 * 60 * 1000)
+  const limitOk = (key: string, max: number) => takeLimit(db, key, max, HOUR_MS, now())
 
   const bump = (project: string) =>
     sql(
@@ -161,6 +172,7 @@ export function createApp(options: AppOptions) {
   ]
   const deleteThread = (id: string) => [
     ...deleteComments("thread_id = ?", id),
+    sql("delete from files where thread_id = ?", id),
     sql("delete from reads where thread_id = ?", id),
     sql("delete from threads where id = ?", id),
   ]
@@ -175,12 +187,16 @@ export function createApp(options: AppOptions) {
           )
         ).map((f) => f.id)
       : []
+  const threadFiles = async (id: string) => [
+    ...(await filesOf("thread_id = ?", id)),
+    ...(store ? (await all<{ id: string }>(db, "select id from files where thread_id = ?", id)).map((f) => f.id) : []),
+  ]
   const deleteStored = async (ids: string[]) => {
     if (store && ids.length > 0) await store.delete(ids)
   }
 
   // Other clients must see a new name or avatar: a change invalidates their ETag.
-  const appUser = async (project: Project, claims: NonNullable<Awaited<ReturnType<typeof verifyAppToken>>>) => {
+  const appUser = async (project: Project, claims: NonNullable<Awaited<ReturnType<typeof appUserClaims>>>) => {
     const { user, changed } = await upsertAppUser(db, project, claims, now())
     if (changed) await db.execute(bump(project.id))
     return user
@@ -218,11 +234,18 @@ export function createApp(options: AppOptions) {
       projects,
       secret,
       publicUrl: options.publicUrl,
+      slackUrl: options.slackUrl,
       session: async (project, appToken) => {
-        const claims = await verifyAppToken(project, appToken)
+        const claims = await appUserClaims(project, appToken)
         if (!claims) return null
         const user = await appUser(project, claims)
-        return { token: await signSession(secret, user), user: publicUser(user) }
+        return { token: await startSession(db, secret, user, now()), user: publicUser(user) }
+      },
+      // A Slack user is an app user with the id `slack:<Slack user id>`.
+      slackSession: async (project, profile) => {
+        const { id, ...rest } = profile
+        const user = await appUser(project, { sub: `slack:${id}`, ...rest })
+        return { token: await startSession(db, secret, user, now()), user: publicUser(user) }
       },
     }),
   )
@@ -230,7 +253,7 @@ export function createApp(options: AppOptions) {
   // CORS: only origins of a registered project. Each route also checks the origin against its project.
   app.use("/api/*", async (c, next) => {
     const origin = c.req.header("origin")
-    const allowed = origin && allOrigins.has(origin) ? origin : null
+    const allowed = origin && config.projects.some((p) => allowsOrigin(p, origin)) ? origin : null
     if (c.req.method === "OPTIONS") {
       const headers: Record<string, string> = { vary: "Origin" }
       if (allowed) {
@@ -252,13 +275,15 @@ export function createApp(options: AppOptions) {
   // The request comes from a page on an origin of the project. Browsers send no Origin header on same-origin GET
   // requests (comma behind the site's own proxy): then the browser's Sec-Fetch-Site says "same-origin" (pages cannot
   // set it), and the host of this request (behind a proxy: the forwarded host) must be an origin of the project.
+  // Returns the host of the site.
   const checkOrigin = (c: Context, project: Project) => {
     const origin = c.req.header("origin")
+    const host = origin ? null : (c.req.header("x-forwarded-host") ?? new URL(c.req.url).host)
     const allowed = origin
-      ? project.origins.includes(origin)
-      : c.req.header("sec-fetch-site") === "same-origin" &&
-        project.origins.some((o) => new URL(o).host === (c.req.header("x-forwarded-host") ?? new URL(c.req.url).host))
+      ? allowsOrigin(project, origin)
+      : c.req.header("sec-fetch-site") === "same-origin" && host !== null && allowsHost(project, host)
     if (!allowed) throw new HTTPException(403, { message: "Origin not allowed" })
+    return origin ? new URL(origin).host : (host as string)
   }
 
   const projectFor = (id: unknown, c: Context) => {
@@ -273,9 +298,12 @@ export function createApp(options: AppOptions) {
     return c.json({
       id: project.id,
       name: project.name,
-      popupSignIn: !!(project.signInUrl && project.appSecret),
+      popupSignIn: !!(project.signInUrl && project.appSignIn),
+      slack: !!project.slack,
       guests: project.guests,
       toolbar: project.toolbar,
+      details: project.details,
+      panel: project.panel,
     })
   })
 
@@ -283,37 +311,47 @@ export function createApp(options: AppOptions) {
     const input = parse(z.object({ project: z.string(), name: z.string().trim().min(1).max(60) }), await json(c))
     const project = projectFor(input.project, c)
     if (!project.guests) throw new HTTPException(403, { message: "Sign in with your account to comment on this site" })
+    if (!(await limitOk(`guests:${project.id}`, project.limits.guestsPerHour)))
+      throw new HTTPException(429, { message: "Too many new guests. Try again later." })
     const user = await createGuest(db, project, input.name, now())
-    return c.json({ token: await signSession(secret, user), user: publicUser(user) })
+    return c.json({ token: await startSession(db, secret, user, now()), user: publicUser(user) })
   })
 
   app.post("/api/session/app", async (c) => {
     const input = parse(z.object({ project: z.string(), appToken: z.string().max(10_000) }), await json(c))
     const project = projectFor(input.project, c)
-    if (!project.appSecret) throw new HTTPException(404, { message: "This project has no app sign-in" })
-    const claims = await verifyAppToken(project, input.appToken)
+    if (!project.appSignIn) throw new HTTPException(404, { message: "This project has no app sign-in" })
+    const claims = await appUserClaims(project, input.appToken)
     if (!claims) throw new HTTPException(401, { message: "Invalid app token" })
     const user = await appUser(project, claims)
-    return c.json({ token: await signSession(secret, user), user: publicUser(user) })
+    return c.json({ token: await startSession(db, secret, user, now()), user: publicUser(user) })
   })
 
   const auth = createMiddleware<Env>(async (c, next) => {
     const header = c.req.header("authorization") ?? ""
     const session = header.startsWith("Bearer ") ? await verifySession(secret, header.slice(7)) : null
-    const user = session && (await getUser(db, session.userId))
+    const user = session && (await getSessionUser(db, session, now()))
     const project = session && projects.get(session.project)
     if (!session || !user || !project || user.project !== project.id) {
       throw new HTTPException(401, { message: "Sign in again" })
     }
-    checkOrigin(c, project)
+    const site = checkOrigin(c, project)
+    c.set("sessionId", session.sessionId)
     c.set("user", user)
     c.set("project", project)
+    c.set("site", site)
+    c.set("scope", { project: project.id, site: project.scope === "origin" ? site : null })
     await next()
   })
   app.use("/api/*", auth)
 
-  const limit = (user: UserRow) => {
-    if (!rateLimit.take(user.id, now()))
+  app.delete("/api/session", async (c) => {
+    await run(db, "delete from sessions where id = ?", c.get("sessionId"))
+    return c.json({ ok: true })
+  })
+
+  const limit = async (c: Ctx) => {
+    if (!(await limitOk(`comments:${c.get("user").id}`, c.get("project").limits.commentsPerHour)))
       throw new HTTPException(429, { message: "Too many comments. Try again later." })
   }
 
@@ -323,7 +361,7 @@ export function createApp(options: AppOptions) {
     if (unique.length === 0) return unique
     const found = await all<{ id: string }>(
       db,
-      `select id from files where project = ? and uploaded_by = ? and comment_id is null
+      `select id from files where project = ? and uploaded_by = ? and comment_id is null and thread_id is null
        and id in (${unique.map(() => "?").join(",")})`,
       user.project,
       user.id,
@@ -377,19 +415,19 @@ export function createApp(options: AppOptions) {
     ...files.map((fileId) => sql("update files set comment_id = ? where id = ? and comment_id is null", id, fileId)),
   ]
 
-  const thread = async (user: UserRow, id: string) => {
-    const result = await loadThreads(db, user.project, user, id)
+  const thread = async (c: Ctx, id: string) => {
+    const result = await loadThreads(db, c.get("scope"), c.get("user"), id)
     return { thread: result.threads[0], users: result.users }
   }
 
-  const findThread = async (user: UserRow, id: string) => {
-    const row = await getThreadRow(db, user.project, id)
+  const findThread = async (c: Ctx, id: string) => {
+    const row = await getThreadRow(db, c.get("scope"), id)
     if (!row) throw new HTTPException(404, { message: "Thread not found" })
     return row
   }
 
-  const findComment = async (user: UserRow, id: string) => {
-    const row = await getCommentRow(db, user.project, id)
+  const findComment = async (c: Ctx, id: string) => {
+    const row = await getCommentRow(db, c.get("scope"), id)
     if (!row) throw new HTTPException(404, { message: "Comment not found" })
     return row
   }
@@ -401,22 +439,25 @@ export function createApp(options: AppOptions) {
     c.header("etag", etag)
     c.header("cache-control", "no-cache")
     if (c.req.header("if-none-match") === etag) return c.body(null, 304)
-    return c.json({ me: publicUser(user), ...(await loadThreads(db, user.project, user)) })
+    return c.json({ me: publicUser(user), ...(await loadThreads(db, c.get("scope"), user)) })
   })
 
   app.post("/api/threads", async (c) => {
     const user = c.get("user")
     const input = parse(CreateThread, await json(c))
     const files = await claimFiles(user, input.files)
+    const [screenshot] = input.screenshot ? await claimFiles(user, [input.screenshot]) : []
+    if (screenshot && files.includes(screenshot)) throw new HTTPException(400, { message: "Unknown image" })
     const parsed = bodyOf(input.body, files.length > 0)
-    limit(user)
+    await limit(c)
     const id = newId()
     await db.batch(
       [
         sql(
-          "insert into threads (id, project, page, anchor, context, created_by, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
+          "insert into threads (id, project, site, page, anchor, context, created_by, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
           id,
           user.project,
+          c.get("site"),
           input.page,
           JSON.stringify(input.anchor),
           input.context ? JSON.stringify(input.context) : null,
@@ -425,17 +466,26 @@ export function createApp(options: AppOptions) {
           now(),
         ),
         ...(await insertComment(user, newId(), id, parsed, files)),
+        ...(screenshot
+          ? [
+              sql(
+                "update files set thread_id = ? where id = ? and comment_id is null and thread_id is null",
+                id,
+                screenshot,
+              ),
+            ]
+          : []),
         ...markRead(user.id, id),
         bump(user.project),
       ],
       "write",
     )
-    return c.json(await thread(user, id))
+    return c.json(await thread(c, id))
   })
 
   app.patch("/api/threads/:id", async (c) => {
     const user = c.get("user")
-    const row = await findThread(user, c.req.param("id"))
+    const row = await findThread(c, c.req.param("id"))
     const input = parse(UpdateThread, await json(c))
     const changes = []
     if ("status" in input) {
@@ -490,16 +540,16 @@ export function createApp(options: AppOptions) {
       )
     }
     await db.batch([...changes, bump(user.project)], "write")
-    return c.json(await thread(user, row.id))
+    return c.json(await thread(c, row.id))
   })
 
   app.delete("/api/threads/:id", async (c) => {
     const user = c.get("user")
-    const row = await findThread(user, c.req.param("id"))
+    const row = await findThread(c, c.req.param("id"))
     if (row.created_by !== user.id && user.is_admin !== 1) {
       throw new HTTPException(403, { message: "Only the author or an admin can delete this thread" })
     }
-    const stored = await filesOf("thread_id = ?", row.id)
+    const stored = await threadFiles(row.id)
     await db.batch([...deleteThread(row.id), bump(user.project)], "write")
     await deleteStored(stored)
     return c.json({ ok: true })
@@ -507,7 +557,7 @@ export function createApp(options: AppOptions) {
 
   app.post("/api/threads/:id/read", async (c) => {
     const user = c.get("user")
-    const row = await findThread(user, c.req.param("id"))
+    const row = await findThread(c, c.req.param("id"))
     const input = parse(Read, await json(c))
     await db.batch(
       input.read
@@ -523,16 +573,16 @@ export function createApp(options: AppOptions) {
           ],
       "write",
     )
-    return c.json(await thread(user, row.id))
+    return c.json(await thread(c, row.id))
   })
 
   app.post("/api/threads/:id/comments", async (c) => {
     const user = c.get("user")
-    const row = await findThread(user, c.req.param("id"))
+    const row = await findThread(c, c.req.param("id"))
     const input = parse(CreateComment, await json(c))
     const files = await claimFiles(user, input.files)
     const parsed = bodyOf(input.body, files.length > 0)
-    limit(user)
+    await limit(c)
     const id = newId()
     await db.batch(
       [
@@ -543,13 +593,13 @@ export function createApp(options: AppOptions) {
       ],
       "write",
     )
-    const result = await thread(user, row.id)
+    const result = await thread(c, row.id)
     return c.json({ ...result, comment: result.thread?.comments.find((x) => x.id === id) })
   })
 
   app.patch("/api/comments/:id", async (c) => {
     const user = c.get("user")
-    const row = await findComment(user, c.req.param("id"))
+    const row = await findComment(c, c.req.param("id"))
     if (row.author_id !== user.id) throw new HTTPException(403, { message: "Only the author can edit this comment" })
     const input = parse(UpdateComment, await json(c))
     const hasFiles = !!(await get(db, "select 1 from files where comment_id = ?", row.id))
@@ -569,17 +619,17 @@ export function createApp(options: AppOptions) {
       ],
       "write",
     )
-    const result = await thread(user, row.thread_id)
+    const result = await thread(c, row.thread_id)
     return c.json({ ...result, comment: result.thread?.comments.find((x) => x.id === row.id) })
   })
 
   app.delete("/api/comments/:id", async (c) => {
     const user = c.get("user")
-    const row = await findComment(user, c.req.param("id"))
+    const row = await findComment(c, c.req.param("id"))
     if (row.author_id !== user.id) throw new HTTPException(403, { message: "Only the author can delete this comment" })
     // The first comment is the thread. Its author is the thread author.
     const deletesThread = await isFirstComment(db, row)
-    const stored = deletesThread ? await filesOf("thread_id = ?", row.thread_id) : await filesOf("id = ?", row.id)
+    const stored = deletesThread ? await threadFiles(row.thread_id) : await filesOf("id = ?", row.id)
     await db.batch(
       [
         ...(deletesThread ? deleteThread(row.thread_id) : [...deleteComments("id = ?", row.id), touch(row.thread_id)]),
@@ -589,13 +639,13 @@ export function createApp(options: AppOptions) {
     )
     await deleteStored(stored)
     if (deletesThread) return c.json({ ok: true, threadDeleted: true })
-    return c.json({ ok: true, threadDeleted: false, ...(await thread(user, row.thread_id)) })
+    return c.json({ ok: true, threadDeleted: false, ...(await thread(c, row.thread_id)) })
   })
 
   const react = (add: boolean) =>
     createMiddleware<Env>(async (c) => {
       const user = c.get("user")
-      const row = await findComment(user, c.req.param("id") ?? "")
+      const row = await findComment(c, c.req.param("id") ?? "")
       const emoji = parse(Emoji, decodeURIComponent(c.req.param("emoji") ?? ""))
       await db.batch(
         [
@@ -613,7 +663,7 @@ export function createApp(options: AppOptions) {
         ],
         "write",
       )
-      return c.json(await thread(user, row.thread_id))
+      return c.json(await thread(c, row.thread_id))
     })
   app.put("/api/comments/:id/reactions/:emoji", react(true))
   app.delete("/api/comments/:id/reactions/:emoji", react(false))
@@ -645,12 +695,12 @@ export function createApp(options: AppOptions) {
     }
     const file = form.get("file")
     if (!(file instanceof File)) throw new HTTPException(400, { message: "Send the image in the field 'file'" })
-    if (!uploadLimit.take(user.id, now()))
+    if (!(await limitOk(`uploads:${user.id}`, c.get("project").limits.imagesPerHour)))
       throw new HTTPException(429, { message: "Too many images. Try again later." })
     if (file.size > MAX_IMAGE_BYTES) throw new HTTPException(413, { message: "Images can be up to 4 MB" })
     const unused = await get<{ total: number | null }>(
       db,
-      "select sum(size) as total from files where project = ? and comment_id is null",
+      "select sum(size) as total from files where project = ? and comment_id is null and thread_id is null",
       user.project,
     )
     if ((unused?.total ?? 0) + file.size > MAX_UNUSED_BYTES) {
@@ -679,18 +729,21 @@ export function createApp(options: AppOptions) {
   })
 
   return Object.assign(app, {
-    /** Deletes uploads that no comment uses after 24 h. Returns how many. */
-    cleanupFiles: async () => {
+    /** Deletes uploads that no comment uses after 24 h, and expired sessions. Returns how many of each. */
+    cleanup: async () => {
+      const sessions = await run(db, "delete from sessions where expires_at <= ?", now())
+      await run(db, "delete from limits where window_start < ?", now() - 24 * HOUR_MS)
       const old = await all<{ id: string }>(
         db,
-        "select id from files where comment_id is null and created_at < ?",
+        "select id from files where comment_id is null and thread_id is null and created_at < ?",
         now() - UNUSED_FILE_MS,
       )
       const ids = old.map((f) => f.id)
-      if (ids.length === 0) return 0
-      await run(db, `delete from files where id in (${ids.map(() => "?").join(",")})`, ...ids)
-      await deleteStored(ids)
-      return ids.length
+      if (ids.length > 0) {
+        await run(db, `delete from files where id in (${ids.map(() => "?").join(",")})`, ...ids)
+        await deleteStored(ids)
+      }
+      return { files: ids.length, sessions }
     },
   })
 }

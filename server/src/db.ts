@@ -32,7 +32,8 @@ create table if not exists threads (
   resolved_at integer,
   resolved_by text references users (id),
   context text,
-  assignee_id text references users (id)
+  assignee_id text references users (id),
+  site text
 );
 create index if not exists threads_project on threads (project, updated_at);
 
@@ -73,6 +74,8 @@ create table if not exists files (
   id text primary key,
   project text not null,
   comment_id text references comments (id) on delete cascade,
+  -- Set on the screenshot of a thread's element. comment_id stays null.
+  thread_id text references threads (id) on delete cascade,
   uploaded_by text not null references users (id),
   mime text not null,
   size integer not null,
@@ -82,6 +85,20 @@ create table if not exists files (
   created_at integer not null
 );
 create index if not exists files_comment on files (comment_id);
+
+create table if not exists sessions (
+  id text primary key,
+  user_id text not null references users (id),
+  created_at integer not null,
+  expires_at integer not null
+);
+create index if not exists sessions_expires on sessions (expires_at);
+
+create table if not exists limits (
+  key text primary key,
+  window_start integer not null,
+  count integer not null
+);
 
 create table if not exists versions (
   project text primary key,
@@ -96,18 +113,19 @@ export async function migrate(db: Db, local: boolean) {
     await db.executeMultiple("pragma journal_mode = wal; pragma foreign_keys = on; pragma busy_timeout = 5000;")
   await db.executeMultiple(SCHEMA)
   // Columns added after the first release. `create table if not exists` does not add them to an old table.
-  const columns = new Set(
-    (await db.execute("select name from pragma_table_info('threads')")).rows.map((r) => String(r.name)),
-  )
-  for (const [name, type] of ADDED_THREAD_COLUMNS) {
-    if (!columns.has(name)) await db.execute(`alter table threads add column ${name} ${type}`)
+  for (const [table, name, type] of ADDED_COLUMNS) {
+    const columns = await db.execute(`select name from pragma_table_info('${table}')`)
+    if (!columns.rows.some((r) => r.name === name)) await db.execute(`alter table ${table} add column ${name} ${type}`)
   }
   return db
 }
 
-const ADDED_THREAD_COLUMNS = [
-  ["context", "text"],
-  ["assignee_id", "text references users (id)"],
+const ADDED_COLUMNS = [
+  ["threads", "context", "text"],
+  ["threads", "assignee_id", "text references users (id)"],
+  // The host the thread was made on. Projects with scope `origin` show each host its own threads.
+  ["threads", "site", "text"],
+  ["files", "thread_id", "text references threads (id)"],
 ] as const
 
 export const sql = (text: string, ...args: InValue[]): InStatement => ({ sql: text, args })

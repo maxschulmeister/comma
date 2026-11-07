@@ -13,6 +13,6 @@ export default {
   },
   // The Cron Trigger: deletes images that no comment uses.
   async scheduled(_controller: unknown, _env: unknown, ctx: Context) {
-    ctx.waitUntil(getApp().then((app) => app.cleanupFiles()))
+    ctx.waitUntil(getApp().then((app) => app.cleanup()))
   },
 }

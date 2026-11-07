@@ -9,6 +9,6 @@ const getApp = lazyApp(createClient, { widgetDir: join(import.meta.dirname, "wid
 // The EventBridge schedule (template.yaml) sends `{ "cleanup": true }`. Everything else is a Function URL request.
 export async function handler(event: LambdaEvent | { cleanup: true }, context: LambdaContext) {
   const app = await getApp()
-  if ("cleanup" in event) return { deleted: await app.cleanupFiles() }
+  if ("cleanup" in event) return await app.cleanup()
   return handle(app)(event, context)
 }

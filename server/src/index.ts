@@ -19,6 +19,6 @@ const config = await loadConfig(resolve(process.env.COMMA_CONFIG ?? "comma.confi
 const db = await migrate(createClient(settings.db), settings.db.local)
 const app = createApp({ ...settings, db, config, widgetDir: resolve(import.meta.dir, "../../widget/dist") })
 
-setInterval(() => app.cleanupFiles().catch(console.error), 60 * 60 * 1000)
+setInterval(() => app.cleanup().catch(console.error), 60 * 60 * 1000)
 Bun.serve({ port, fetch: app.fetch, maxRequestBodySize: 6 * 1024 * 1024 })
 console.log(`comma: http://localhost:${port}`)

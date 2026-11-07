@@ -11,6 +11,6 @@ export const vercelApp = new Hono()
 vercelApp.get("/cron/cleanup", async (c) => {
   const secret = process.env.CRON_SECRET
   if (!secret || c.req.header("authorization") !== `Bearer ${secret}`) return c.json({ error: "Not allowed" }, 401)
-  return c.json({ deleted: await (await getApp()).cleanupFiles() })
+  return c.json(await (await getApp()).cleanup())
 })
 vercelApp.all("*", async (c) => (await getApp()).fetch(c.req.raw))

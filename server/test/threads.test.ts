@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createClient } from "@libsql/client"
 import { migrate } from "../src/db"
-import { anchor, OTHER, setup, text } from "./helpers"
+import { anchor, OPEN, OTHER, setup, text } from "./helpers"
 
 async function withThread(s: Awaited<ReturnType<typeof setup>>, body = text("First")) {
   const author = await s.guest("Author")
@@ -222,6 +222,32 @@ describe("comment body", () => {
 })
 
 describe("rate limit", () => {
+  test("the limit holds across server instances on the same database", async () => {
+    const one = await setup()
+    const two = await setup({ db: one.db })
+    const { author, thread } = await withThread(one)
+    const post = (s: typeof one, i: number) =>
+      s.request("POST", `/api/threads/${thread.id}/comments`, { token: author.token, body: { body: text(`c${i}`) } })
+    for (let i = 0; i < 99; i++) expect((await post(i % 2 ? one : two, i)).status).toBe(200)
+    expect((await post(one, 100)).status).toBe(429)
+    expect((await post(two, 101)).status).toBe(429)
+  })
+
+  test("a project allows 30 new guests per hour", async () => {
+    let now = Date.UTC(2025, 0, 1)
+    const s = await setup({ now: () => now })
+    const join = () =>
+      s.request("POST", "/api/session/guest", { origin: OPEN, body: { project: "open", name: "Spam" } })
+    for (let i = 0; i < 30; i++) expect((await join()).status).toBe(200)
+    const over = await join()
+    expect(over.status).toBe(429)
+    expect(over.json.error).toBe("Too many new guests. Try again later.")
+    // Other projects are not affected.
+    expect((await s.request("POST", "/api/session/guest", { body: { project: "acme", name: "Ada" } })).status).toBe(200)
+    now += 60 * 60 * 1000 + 1
+    expect((await join()).status).toBe(200)
+  })
+
   test("a user can add 100 comments per hour", async () => {
     let now = Date.UTC(2025, 0, 1)
     const s = await setup({ now: () => now })
@@ -308,6 +334,22 @@ describe("page context", () => {
     expect(list.json.threads[0].context).toEqual(context)
   })
 
+  test("a thread keeps the theme, language, time zone and scroll position; old widgets send none", async () => {
+    const s = await setup()
+    const { token } = await s.guest()
+    const more = { ...context, theme: "dark", language: "de-AT", timeZone: "Europe/Vienna", scroll: { x: 0, y: 1240 } }
+    const res = await s.request("POST", "/api/threads", {
+      token,
+      body: { page: "/", anchor, body: text("x"), context: more },
+    })
+    expect(res.json.thread.context).toEqual(more)
+    const bad = await s.request("POST", "/api/threads", {
+      token,
+      body: { page: "/", anchor, body: text("x"), context: { ...more, theme: "blue" } },
+    })
+    expect(bad.status).toBe(400)
+  })
+
   test("the context is optional, and only http links are kept", async () => {
     const s = await setup()
     const { token } = await s.guest()
@@ -330,6 +372,17 @@ describe("page context", () => {
     const columns = (await db.execute("select name from pragma_table_info('threads')")).rows.map((r) => r.name)
     expect(columns).toContain("context")
     expect(columns).toContain("assignee_id")
+  })
+
+  test("an old files table gets the screenshot column", async () => {
+    const db = createClient({ url: ":memory:" })
+    await db.execute(`create table files (
+      id text primary key, project text not null, comment_id text, uploaded_by text not null, mime text not null,
+      size integer not null, width integer not null, height integer not null, data blob not null,
+      created_at integer not null)`)
+    await migrate(db, true)
+    const columns = (await db.execute("select name from pragma_table_info('files')")).rows.map((r) => r.name)
+    expect(columns).toContain("thread_id")
   })
 })
 

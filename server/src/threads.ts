@@ -36,8 +36,10 @@ export type Comment = {
   editedAt: number | null
   mentions: string[]
   reactions: { emoji: string; userIds: string[] }[]
-  files: { id: string; url: string; mime: string; width: number; height: number }[]
+  files: FileRef[]
 }
+
+type FileRef = { id: string; url: string; mime: string; width: number; height: number }
 
 export type Thread = {
   id: string
@@ -51,21 +53,33 @@ export type Thread = {
   resolvedBy: string | null
   context: unknown
   assigneeId: string | null
+  /** The element when the thread was made. */
+  screenshot: FileRef | null
   unread: boolean
   comments: Comment[]
 }
 
-export function getThreadRow(db: Db, project: string, id: string) {
-  return get<ThreadRow>(db, "select * from threads where id = ? and project = ?", id, project)
+/** The threads a request sees: the project's, and with project scope `origin` only the site's (host). */
+export type Scope = { project: string; site: string | null }
+
+const inScope = (scope: Scope) => ({
+  where: "t.project = ? and (? is null or t.site = ?)",
+  args: [scope.project, scope.site, scope.site],
+})
+
+export function getThreadRow(db: Db, scope: Scope, id: string) {
+  const s = inScope(scope)
+  return get<ThreadRow>(db, `select * from threads t where t.id = ? and ${s.where}`, id, ...s.args)
 }
 
-export function getCommentRow(db: Db, project: string, id: string) {
+export function getCommentRow(db: Db, scope: Scope, id: string) {
+  const s = inScope(scope)
   return get<CommentRow & { project: string; thread_created_by: string }>(
     db,
     `select c.*, t.project, t.created_by as thread_created_by from comments c join threads t on t.id = c.thread_id
-     where c.id = ? and t.project = ?`,
+     where c.id = ? and ${s.where}`,
     id,
-    project,
+    ...s.args,
   )
 }
 
@@ -78,10 +92,19 @@ export async function isFirstComment(db: Db, comment: { id: string; thread_id: s
   return first?.id === comment.id
 }
 
-// All threads of a project (or one thread), for one user. One round trip for the threads, one for the users.
-export async function loadThreads(db: Db, project: string, me: UserRow, onlyThread?: string) {
-  const where = onlyThread ? "t.project = ? and t.id = ?" : "t.project = ?"
-  const args = onlyThread ? [project, onlyThread] : [project]
+const fileRef = (f: { id: string; mime: string; width: number; height: number }): FileRef => ({
+  id: f.id,
+  url: `/files/${f.id}`,
+  mime: f.mime,
+  width: f.width,
+  height: f.height,
+})
+
+// All threads in the scope (or one thread), for one user. One round trip for the threads, one for the users.
+export async function loadThreads(db: Db, scope: Scope, me: UserRow, onlyThread?: string) {
+  const s = inScope(scope)
+  const where = onlyThread ? `${s.where} and t.id = ?` : s.where
+  const args = onlyThread ? [...s.args, onlyThread] : s.args
   const results = await db.batch(
     [
       sql(`select t.* from threads t where ${where} order by t.created_at, t.rowid`, ...args),
@@ -104,6 +127,10 @@ export async function loadThreads(db: Db, project: string, me: UserRow, onlyThre
         ...args,
       ),
       sql("select thread_id, read_at, unread from reads where user_id = ?", me.id),
+      sql(
+        `select f.id, f.thread_id, f.mime, f.width, f.height from files f join threads t on t.id = f.thread_id where ${where}`,
+        ...args,
+      ),
     ],
     "read",
   )
@@ -114,6 +141,12 @@ export async function loadThreads(db: Db, project: string, me: UserRow, onlyThre
   const reactions = rows<{ comment_id: string; user_id: string; emoji: string }>(3)
   const files = rows<{ id: string; comment_id: string; mime: string; width: number; height: number }>(4)
   const reads = new Map(rows<{ thread_id: string; read_at: number; unread: number }>(5).map((r) => [r.thread_id, r]))
+  const screenshots = new Map(
+    rows<{ id: string; thread_id: string; mime: string; width: number; height: number }>(6).map((f) => [
+      f.thread_id,
+      f,
+    ]),
+  )
 
   const userIds = new Set<string>([me.id])
   const byComment = <T extends { comment_id: string }>(rows: T[]) => {
@@ -145,13 +178,7 @@ export async function loadThreads(db: Db, project: string, me: UserRow, onlyThre
       editedAt: c.edited_at,
       mentions: mentioned,
       reactions: [...grouped].map(([emoji, ids]) => ({ emoji, userIds: ids })),
-      files: (filesBy.get(c.id) ?? []).map((f) => ({
-        id: f.id,
-        url: `/files/${f.id}`,
-        mime: f.mime,
-        width: f.width,
-        height: f.height,
-      })),
+      files: (filesBy.get(c.id) ?? []).map(fileRef),
     }
     commentsBy.set(c.thread_id, [...(commentsBy.get(c.thread_id) ?? []), comment])
   }
@@ -162,6 +189,7 @@ export async function loadThreads(db: Db, project: string, me: UserRow, onlyThre
     if (t.assignee_id) userIds.add(t.assignee_id)
     const list = commentsBy.get(t.id) ?? []
     const read = reads.get(t.id)
+    const screenshot = screenshots.get(t.id)
     const unread =
       read?.unread === 1 ||
       list.some((c) => c.authorId !== me.id && c.createdAt > (read?.read_at ?? Number.NEGATIVE_INFINITY))
@@ -177,6 +205,7 @@ export async function loadThreads(db: Db, project: string, me: UserRow, onlyThre
       resolvedBy: t.resolved_by,
       context: t.context ? JSON.parse(t.context) : null,
       assigneeId: t.assignee_id,
+      screenshot: screenshot ? fileRef(screenshot) : null,
       unread,
       comments: list,
     }

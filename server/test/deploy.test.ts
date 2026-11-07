@@ -68,7 +68,7 @@ describe("images in S3", () => {
     let now = Date.now()
     const { s, id } = await withImage(() => now)
     now += 25 * 60 * 60 * 1000
-    expect(await s.app.cleanupFiles()).toBe(1)
+    expect((await s.app.cleanup()).files).toBe(1)
     expect(objects.has(`/comma/files/${id}`)).toBe(false)
   })
 })
@@ -90,6 +90,8 @@ describe("settings", () => {
 
   test("missing or bad settings give a message for the person who deploys", () => {
     expect(() => readSettings({ COMMA_SECRET: "short" })).toThrow("COMMA_SECRET")
+    // No .env: a git worktree does not copy it.
+    expect(() => readSettings({})).toThrow("Set COMMA_SECRET")
     expect(() => readSettings({ COMMA_SECRET: secret, COMMA_URL: "comma.example.com" })).toThrow("COMMA_URL")
     expect(() => readSettings({ COMMA_SECRET: secret, COMMA_FILES: "s3" })).toThrow("COMMA_S3_BUCKET")
   })
