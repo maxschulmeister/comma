@@ -165,6 +165,26 @@ test("a detached thread shows in the panel with a label", async ({ page }) => {
   await expect(page.getByRole("status").filter({ hasText: "Click the new place" })).toBeVisible()
 })
 
+test("a search or filter that does not show the open thread closes it", async ({ page }) => {
+  const me = await guestSession("Searcher")
+  const path = testPath("search-closes")
+  await apiThread(me, path, "Apples")
+  await apiThread(me, path, "Pears")
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  await items(page).filter({ hasText: "Apples" }).click()
+  await expect(threadPopover(page)).toContainText("Apples")
+  const search = panel(page).getByRole("searchbox", { name: "Search comments" })
+  // A search that still shows it: it stays open.
+  await search.fill("app")
+  await expect(threadPopover(page)).toContainText("Apples")
+  await search.fill("pear")
+  await expect(threadPopover(page)).toBeHidden()
+  await expect(items(page)).toHaveCount(1)
+  await expect(items(page)).toContainText("Pears")
+})
+
 test("the panel takes the focus and gives it back", async ({ page }) => {
   await signIn(page, await guestSession("Focus"))
   await openTestPage(page, "focus")

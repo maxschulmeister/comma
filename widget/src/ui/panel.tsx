@@ -147,7 +147,14 @@ export function Panel() {
   return <PanelContent />
 }
 
-const setFilters = (patch: Partial<Filters>) => setState((s) => ({ filters: { ...s.filters, ...patch } }))
+// A search or filter that does not show the open thread closes it: else it would stay in the list against them.
+const setFilters = (patch: Partial<Filters>) =>
+  setState((s) => {
+    const filters = { ...s.filters, ...patch }
+    const open = s.openThreadId
+    const shown = visibleThreads(s.threads, filters, s.page, s.session?.user.id, null).some((t) => t.id === open)
+    return { filters, ...(open && !shown ? { openThreadId: null } : {}) }
+  })
 
 /** The threads in the panel's order, with its filters. The details go through them too. */
 export function usePanelList() {
