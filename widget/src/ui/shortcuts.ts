@@ -3,6 +3,7 @@ import { fromWidgetPart, isTyping } from "@/lib/dom"
 import { NARROW } from "@/lib/media"
 import { getState, setState, widgetVisible } from "@/store"
 import { preloadEditor } from "./composer"
+import { panelMode } from "./view"
 
 const PINS_KEY = "comma:pins"
 
@@ -28,7 +29,11 @@ export function togglePins() {
 export function setCommentMode(on: boolean) {
   if (on) {
     void preloadEditor().catch(() => {})
-    setState({ commentMode: true, pinsVisible: true, panelOpen: !matchMedia(NARROW).matches })
+    // The panel opens next to the page (push). Floating, it would cover elements to comment on: it stays as it is.
+    // Narrow screens: it covers the page, so it closes.
+    const s = getState()
+    const panelOpen = matchMedia(NARROW).matches ? false : panelMode(s) === "push" || s.panelOpen
+    setState({ commentMode: true, pinsVisible: true, panelOpen })
   } else {
     // A draft with text stays as a pin.
     closeDraft()

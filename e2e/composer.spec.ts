@@ -42,11 +42,11 @@ test("formatting with Markdown and shortcuts", async ({ page, browserName }) => 
   await page.keyboard.press(`${m}+Shift+x`)
   await page.keyboard.type("struck")
   await page.keyboard.press(`${m}+Shift+x`)
-  await page.keyboard.press("Shift+Enter")
-  await page.keyboard.type("- one")
-  await page.keyboard.press("Shift+Enter")
-  await page.keyboard.type("two")
   await page.keyboard.press("Enter")
+  await page.keyboard.type("- one")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("two")
+  await page.keyboard.press("ControlOrMeta+Enter")
   const thread = threadPopover(page)
   await expect(thread.locator("strong", { hasText: "bold" })).toBeVisible()
   await expect(thread.locator("strong", { hasText: "strong" })).toBeVisible()
@@ -64,7 +64,7 @@ test("a link with ⌘K", async ({ page, browserName }) => {
   await popover.getByLabel("Link address").fill("example.com/docs")
   await page.keyboard.press("Enter")
   await expect(popover.locator(".ProseMirror a")).toHaveText("example.com/docs")
-  await page.keyboard.press("Enter")
+  await page.keyboard.press("ControlOrMeta+Enter")
   const link = threadPopover(page).getByRole("link", { name: "example.com/docs" })
   await expect(link).toHaveAttribute("href", "https://example.com/docs")
   await expect(link).toHaveAttribute("rel", "noopener noreferrer")
@@ -81,7 +81,7 @@ test("mention people known to the project", async ({ page }) => {
   await expect(popover.locator(".ProseMirror")).toHaveAttribute("aria-activedescendant", id ?? "")
   await page.keyboard.press("Enter")
   await page.keyboard.type("please")
-  await page.keyboard.press("Enter")
+  await page.keyboard.press("ControlOrMeta+Enter")
   await expect(threadPopover(page).locator(".comma-mention")).toHaveText("@Grace Hopper")
 })
 
@@ -98,7 +98,7 @@ test("emoji with :name: and with the picker", async ({ page }) => {
   await first.click()
   await expect(popover.locator(".ProseMirror")).toContainText("👍")
   await expect(popover.locator(".ProseMirror")).toBeFocused()
-  await page.keyboard.press("Enter")
+  await page.keyboard.press("ControlOrMeta+Enter")
   await expect(threadPopover(page)).toContainText("party 🎉")
   await expect(threadPopover(page)).toContainText("👍")
 })
@@ -135,10 +135,89 @@ test("images by button, paste and drop", async ({ page, browserName }) => {
   const count = browserName === "firefox" ? 2 : 3
   const images = popover.getByRole("list", { name: "Images" }).locator("li[data-state=done]")
   await expect(images).toHaveCount(count)
-  await page.keyboard.press("Enter")
+  await page.keyboard.press("ControlOrMeta+Enter")
   const shown = threadPopover(page).getByRole("link", { name: "Open image" }).locator("img")
   await expect(shown).toHaveCount(count)
   await expect.poll(() => shown.first().evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(2)
+})
+
+test("a screenshot of the visible page is added as an image", async ({ page }) => {
+  const popover = await startComment(page, "screenshot")
+  await typeComment(page, popover, "look")
+  await popover.getByRole("button", { name: "Add screenshot" }).click()
+  await expect(popover.getByRole("list", { name: "Images" }).locator("li[data-state=done]")).toHaveCount(1)
+  await page.keyboard.press("ControlOrMeta+Enter")
+  const shown = threadPopover(page).getByRole("link", { name: "Open image" }).locator("img")
+  await expect(shown).toHaveCount(1)
+  // The height of the viewport (720), at the device pixel ratio (WebKit on a Mac: 2).
+  const scale = Math.min(await page.evaluate(() => window.devicePixelRatio), 2)
+  await expect.poll(() => shown.evaluate((img: HTMLImageElement) => img.naturalHeight)).toBe(720 * scale)
+})
+
+test("a new thread keeps a screenshot of its element, apart from the images", async ({ page }) => {
+  const popover = await startComment(page, "element-screenshot")
+  const box = await page.getByTestId("lead").boundingBox()
+  if (!box) throw new Error("No box")
+  await typeComment(page, popover, "this text")
+  await page.keyboard.press("ControlOrMeta+Enter")
+  const thread = threadPopover(page)
+  const shot = thread.getByRole("button", { name: /, details$/ }).locator("img")
+  await expect(shot).toHaveCount(1)
+  await expect(thread.getByRole("link", { name: /^Open image/ })).toHaveCount(0)
+  // A small thumbnail on the line with the window size and browser: it takes no room from the comments.
+  const thumb = await shot.boundingBox()
+  expect(thumb?.height).toBeLessThanOrEqual(24)
+  const line = await thread.getByText(/^\d+×\d+ · /).boundingBox()
+  expect(
+    Math.abs((thumb?.y ?? 0) + (thumb?.height ?? 0) / 2 - ((line?.y ?? 0) + (line?.height ?? 0) / 2)),
+  ).toBeLessThan(4)
+  // The element and a little space around it, at the device pixel ratio.
+  const scale = Math.min(await page.evaluate(() => window.devicePixelRatio), 2)
+  await expect.poll(() => shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
+  const [width, height] = await shot.evaluate((img: HTMLImageElement) => [img.naturalWidth, img.naturalHeight])
+  expect(width).toBeGreaterThanOrEqual(box.width * scale)
+  expect(width).toBeLessThanOrEqual((box.width + 40) * scale)
+  expect(height).toBeGreaterThanOrEqual(box.height * scale)
+  expect(height).toBeLessThanOrEqual((box.height + 40) * scale)
+})
+
+test("the screenshot shows the part of the page that is on screen, without the panel", async ({ page }) => {
+  await openTestPage(page, "screenshot-scroll")
+  // A red block above the page, then scroll so that its end is on screen.
+  await page.evaluate(() => {
+    const block = document.createElement("div")
+    block.style.cssText = "height:1000px;background:rgb(255,0,0)"
+    document.body.prepend(block)
+    window.scrollTo(0, 800)
+  })
+  // Comment mode opens the panel too.
+  await page.keyboard.press("c")
+  await clickAt(page, page.getByTestId("lead"))
+  const popover = newCommentPopover(page)
+  await popover.getByRole("button", { name: "Add screenshot" }).click()
+  const preview = popover.getByRole("list", { name: "Images" }).locator("img")
+  await preview.waitFor()
+  // Read the view after the click: Playwright scrolls the button into view before it clicks.
+  const view = await page.evaluate(() => ({
+    scroll: window.scrollY,
+    width:
+      document.documentElement.clientWidth - Number.parseFloat(getComputedStyle(document.documentElement).marginRight),
+    scale: Math.min(window.devicePixelRatio, 2),
+  }))
+  expect(view.scroll).toBeGreaterThan(10)
+  expect(view.scroll).toBeLessThan(990)
+  // Colors 10 px above and below the end of the red block, and the width.
+  const seen = await preview.evaluate(async (img: HTMLImageElement, { scroll, scale }) => {
+    const bitmap = await createImageBitmap(await (await fetch(img.src)).blob())
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D
+    ctx.drawImage(bitmap, 0, 0)
+    const at = (y: number) => [...ctx.getImageData(5 * scale, (1000 - scroll + y) * scale, 1, 1).data.slice(0, 3)]
+    return { above: at(-10), below: at(10), width: bitmap.width }
+  }, view)
+  expect(seen.above).toEqual([255, 0, 0])
+  expect(seen.below).not.toEqual([255, 0, 0])
+  expect(seen.width).toBe(view.width * view.scale)
 })
 
 test("a large image is made smaller before the upload", async ({ page }) => {
@@ -173,29 +252,33 @@ test("a large image is made smaller before the upload", async ({ page }) => {
   })
   expect(size).toBeGreaterThan(4 * 1024 * 1024)
   await expect(popover.getByRole("list", { name: "Images" }).locator("li[data-state=done]")).toHaveCount(1)
-  await page.keyboard.press("Enter")
+  await page.keyboard.press("ControlOrMeta+Enter")
   const shown = threadPopover(page).getByRole("link", { name: "Open image" }).locator("img")
   await expect
     .poll(() => shown.evaluate((img: HTMLImageElement) => [img.naturalWidth, img.naturalHeight]))
     .toEqual([2560, 1920])
 })
 
-test("Enter sends, Shift+Enter adds a line", async ({ page }) => {
+test("Enter adds a paragraph, Shift+Enter a line break, ⌘Enter sends", async ({ page }) => {
   const popover = await startComment(page, "enter")
-  await typeComment(page, popover, "line one")
-  await page.keyboard.press("Shift+Enter")
-  await page.keyboard.type("line two")
-  await expect(threadPopover(page)).toBeHidden()
+  await typeComment(page, popover, "one")
   await page.keyboard.press("Enter")
-  await expect(threadPopover(page).locator("article .comma-prose p")).toHaveText(["line one", "line two"])
+  await page.keyboard.type("two")
+  await page.keyboard.press("Shift+Enter")
+  await page.keyboard.type("three")
+  await expect(threadPopover(page)).toBeHidden()
+  await page.keyboard.press("ControlOrMeta+Enter")
+  const paragraphs = threadPopover(page).locator("article .comma-prose p")
+  await expect(paragraphs).toHaveText(["one", "twothree"])
+  await expect(paragraphs.nth(1).locator("br")).toHaveCount(1)
 })
 
 test("the draft stays when the popover closes, also after a sent reply", async ({ page }) => {
   const popover = await startComment(page, "draft")
   await typeComment(page, popover, "first")
-  await page.keyboard.press("Enter")
+  await page.keyboard.press("ControlOrMeta+Enter")
   await typeComment(page, threadPopover(page), "sent reply")
-  await page.keyboard.press("Enter")
+  await page.keyboard.press("ControlOrMeta+Enter")
   await expect(threadPopover(page).getByRole("article")).toHaveCount(2)
   await typeComment(page, threadPopover(page), "unsent reply")
   await endCommentMode(page)
@@ -279,4 +362,29 @@ test("a draft stays after a reload, and Discard removes it", async ({ page }) =>
   await page.reload()
   await expect(toolbar(page)).toBeVisible()
   await expect(page.getByRole("button", { name: "Unsent comment" })).toHaveCount(0)
+})
+
+test("a comment that cannot reach comma says so and stays in the composer", async ({ page }) => {
+  const popover = await startComment(page, "offline-send")
+  await typeComment(page, popover, "keep me")
+  await page.route(`**/api/threads`, (route) =>
+    route.request().method() === "POST" ? route.abort("connectionrefused") : route.continue(),
+  )
+  await page.keyboard.press("ControlOrMeta+Enter")
+  await expect(popover).toContainText("Cannot reach comma. Try again.")
+  await expect(popover.locator(".ProseMirror")).toHaveText("keep me")
+})
+
+test("a new thread keeps the theme, language, time zone and scroll position", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" })
+  const popover = await startComment(page, "context-more")
+  const sent = page.waitForRequest((r) => r.method() === "POST" && r.url().endsWith("/api/threads"))
+  await typeComment(page, popover, "dark mode")
+  await page.keyboard.press("ControlOrMeta+Enter")
+  const expected = await page.evaluate(() => ({
+    language: navigator.language,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  }))
+  const context = (await sent).postDataJSON().context
+  expect(context).toMatchObject({ theme: "dark", ...expected, scroll: { x: 0, y: expect.any(Number) } })
 })

@@ -12,8 +12,11 @@ export type Notice = { id: number; text: string; action?: { label: string; run: 
 export type ProjectInfo = {
   name?: string
   popupSignIn: boolean
+  slack: boolean
   guests: boolean
   toolbar: "always" | "signed-in"
+  details: "panel" | "dialog"
+  panel: "push" | "overlay"
 }
 
 export type Filters = {
@@ -36,6 +39,8 @@ export type State = {
   pendingLink: string | null
   session: Session | null
   loaded: boolean
+  /** The last load of the threads did not reach comma. */
+  loadFailed: boolean
   threads: Thread[]
   users: Record<string, User>
   /** URL path of the current page. Changes on client-side navigation. */
@@ -43,7 +48,12 @@ export type State = {
   commentMode: boolean
   pinsVisible: boolean
   panelOpen: boolean
+  /** The person's view choices in this browser. null: the project default (see view.ts). */
+  panelMode: "push" | "overlay" | null
+  detailsMode: "panel" | "dialog" | null
   openThreadId: string | null
+  /** The open thread takes the focus. Not when ↑ ↓ in the panel list select it: the focus stays in the list. */
+  threadFocus: boolean
   draft: Draft | null
   /** A click on another place while a draft has text: asks if the draft moves there. */
   draftMove: { anchor: Anchor; element: Element; page: string } | null
@@ -53,6 +63,8 @@ export type State = {
   /** Set when an action needs a signed-in user. */
   signInOpen: boolean
   notice: Notice | null
+  /** The details of the open thread show in the panel (see details.tsx). */
+  detailsOpen: boolean
   /** The key for comment mode (with Shift: show or hide comments). null: no shortcut. */
   shortcut: string | null
 }

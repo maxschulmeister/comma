@@ -113,23 +113,19 @@ function suggestionBridge(kind: SuggestionState["kind"], options: EditorOptions,
 }
 
 export function createEditor(options: EditorOptions) {
-  // While a suggestion list is open, Enter picks an item and does not send.
+  // While a suggestion list is open, Enter picks an item and ⌘Enter does not send.
   const suggestionOpen = { current: false }
   const Keys = Extension.create({
     name: "commaKeys",
     priority: 1000,
     addKeyboardShortcuts() {
       return {
-        Enter: () => {
+        // Enter: a new paragraph or list item. Shift+Enter: a line break (HardBreak). ⌘Enter (Ctrl+Enter): send.
+        "Mod-Enter": () => {
           if (suggestionOpen.current) return false
           options.onSubmit()
           return true
         },
-        "Shift-Enter": ({ editor }) =>
-          editor.commands.first(({ commands }) => [
-            () => commands.splitListItem("listItem"),
-            () => commands.splitBlock(),
-          ]),
         "Mod-k": () => {
           options.onLink()
           return true

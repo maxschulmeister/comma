@@ -3,7 +3,7 @@ import { useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { NARROW, useMedia } from "@/lib/media"
 import { getState, type Notice, setState, useStore } from "@/store"
-import { PANEL_WIDTH } from "./panel"
+import { panelRightEdge } from "./panel"
 
 let nextId = 0
 
@@ -22,7 +22,7 @@ const dismiss = (id: number) => {
  */
 export function Notices() {
   const notice = useStore((s) => s.notice)
-  const panelOpen = useStore((s) => s.panelOpen)
+  const panelEdge = useStore(panelRightEdge)
   const narrow = useMedia(NARROW)
 
   useEffect(() => {
@@ -36,10 +36,14 @@ export function Notices() {
       role="status"
       data-slot="notices"
       className="pointer-events-none fixed bottom-16 max-[639px]:left-1/2 max-[639px]:-translate-x-1/2"
-      style={{ right: narrow ? undefined : (panelOpen ? PANEL_WIDTH : 0) + 16 }}
+      style={{ right: narrow ? undefined : panelEdge + 16 }}
     >
       {notice && (
-        <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-foreground py-1 pr-1 pl-3.5 text-background text-sm shadow-lg">
+        <div
+          // A new message is a new element, so it comes up again.
+          key={notice.id}
+          className="comma-notice pointer-events-auto flex items-center gap-1 rounded-full bg-foreground py-1 pr-1 pl-3.5 text-background text-sm shadow-lg"
+        >
           <span className="whitespace-nowrap">{notice.text}</span>
           {notice.action && (
             <Button

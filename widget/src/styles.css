@@ -5,6 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* A strong ease-out for things that enter. The CSS default is too weak. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --font-heading: var(--font-sans);
   --font-sans: "Public Sans Variable", sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
@@ -135,6 +137,30 @@
   font-size: 14px;
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
+}
+
+/* Motion. Only where it shows where something comes from; keyboard actions (→, ↑ ↓) change at once.
+   The floating panel slides in from its edge, fast and short: people open it many times a day. */
+@media (min-width: 640px) {
+  .comma-panel-float {
+    transition:
+      opacity 150ms var(--ease-out),
+      transform 150ms var(--ease-out);
+    @starting-style {
+      opacity: 0;
+      transform: translateX(8px);
+    }
+  }
+}
+/* A status message comes up from the bottom. */
+.comma-notice {
+  transition:
+    opacity 400ms ease,
+    transform 400ms ease;
+  @starting-style {
+    opacity: 0;
+    transform: translateY(100%);
+  }
 }
 
 /* Reduced motion: popups, pins and menus change at once, without slides and zooms.

@@ -49,8 +49,9 @@ const openPanel = async (page: Page) => {
 const items = (page: Page) => panel(page).locator("[data-slot=panel-item]")
 
 test("the panel pushes the page and pins follow", async ({ page }) => {
-  await signIn(page, await guestSession("Pusher"))
-  await openTestPage(page, "push")
+  await signIn(page, await guestSession("Pusher", SITE, "push"), SITE, "push")
+  await page.goto(`${testPath("push")}?project=push`)
+  await expect(toolbar(page)).toBeVisible()
   await addComment(page, page.getByTestId("lead"), "Pinned")
   await endCommentMode(page)
   const lead = page.getByTestId("lead")
@@ -332,8 +333,96 @@ test("an unread thread shows its newest reply, and pages show their title", asyn
   const titled = `With a title ${path}`
   await addComment(page, page.getByTestId("lead"), titled)
   await endCommentMode(page)
+  await openPanel(page)
   await panel(page).getByRole("button", { name: "Filter and sort" }).click()
   await page.getByRole("menuitemradio", { name: "All pages" }).click()
   await page.keyboard.press("Escape")
   await expect(items(page).filter({ hasText: titled })).toContainText("Test page")
+})
+
+test("when comma cannot be reached, the panel says so and tries again on request", async ({ page }) => {
+  await signIn(page, await guestSession("Offline"))
+  await page.route(`${COMMA}/api/threads`, (route) => route.abort("connectionrefused"))
+  await openTestPage(page, "offline")
+  await openPanel(page)
+  await expect(panel(page)).toContainText("Could not load comments.")
+  await expect(panel(page)).not.toContainText("Loading…")
+  await page.unroute(`${COMMA}/api/threads`)
+  await panel(page).getByRole("button", { name: "Try again" }).click()
+  await expect(panel(page)).toContainText("No comments on this page")
+})
+
+test("the panel floats over the page by default; a toggle makes it push the page, and stays", async ({ page }) => {
+  await signIn(page, await guestSession("Floater"))
+  await openTestPage(page, "overlay")
+  await openPanel(page)
+  const margin = () => page.evaluate(() => getComputedStyle(document.documentElement).marginRight)
+  const viewport = page.viewportSize() ?? { width: 0, height: 0 }
+  const box = async () => (await panel(page).boundingBox()) ?? { x: 0, y: 0, width: 0, height: 0 }
+  // Overlay: the page keeps its width. A margin on the top, the bottom and the side shows that it floats.
+  expect(await margin()).toBe("0px")
+  // After the short slide-in.
+  await expect.poll(async () => viewport.width - (await box()).x - (await box()).width).toBe(8)
+  const b = await box()
+  expect(b.y).toBe(8)
+  expect(viewport.height - b.y - b.height).toBe(8)
+  // The toolbar is not under the panel.
+  const bar = (await toolbar(page).boundingBox()) ?? { x: 0, width: 0 }
+  expect(bar.x + bar.width).toBeLessThanOrEqual(b.x)
+
+  await panel(page).getByRole("button", { name: "View options" }).click()
+  await page.getByRole("menuitemradio", { name: "Push" }).click()
+  await page.keyboard.press("Escape")
+  await expect.poll(margin).toBe("360px")
+  await expect.poll(async () => (await box()).y).toBe(0)
+
+  // The choice stays after a reload.
+  await page.reload()
+  await openPanel(page)
+  await expect.poll(margin).toBe("360px")
+  await panel(page).getByRole("button", { name: "View options" }).click()
+  await page.getByRole("menuitemradio", { name: "Overlay" }).click()
+  await expect.poll(margin).toBe("0px")
+})
+
+test("a project can make push the default", async ({ page }) => {
+  await signIn(page, await guestSession("Pushed", SITE, "push"), SITE, "push")
+  await page.goto(`${testPath("push-default")}?project=push`)
+  await openPanel(page)
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).marginRight)).toBe("360px")
+  await panel(page).getByRole("button", { name: "View options" }).click()
+  await expect(page.getByRole("menuitemradio", { name: "Push" })).toBeChecked()
+})
+
+test("overlay: comment mode does not open the panel, and a thread opens beside it, not under it", async ({ page }) => {
+  await signIn(page, await guestSession("Beside"))
+  await openTestPage(page, "overlay-beside")
+  // A comment on the right part of the picture, which the panel covers when it is open.
+  await addComment(page, page.getByTestId("picture"), "Right side", 0.95, 0.2)
+  await expect(panel(page)).toBeHidden()
+  await toolbar(page)
+    .getByRole("button", { name: /^Comments/ })
+    .click()
+  await expect(panel(page)).toBeVisible()
+  await expect(threadPopover(page)).toBeVisible()
+  const right = async () => {
+    const thread = (await threadPopover(page).boundingBox()) ?? { x: 0, width: 0 }
+    return thread.x + thread.width - ((await panel(page).boundingBox())?.x ?? 0)
+  }
+  await expect.poll(right).toBeLessThanOrEqual(0)
+})
+
+test("the filter button is next to the search field", async ({ page }) => {
+  await signIn(page, await guestSession("Filterer"))
+  await openTestPage(page, "filter-place")
+  await openPanel(page)
+  const search = (await panel(page).getByRole("searchbox", { name: "Search comments" }).boundingBox()) ?? {
+    y: 0,
+    height: 0,
+  }
+  const filter = (await panel(page).getByRole("button", { name: "Filter and sort" }).boundingBox()) ?? {
+    y: 0,
+    height: 0,
+  }
+  expect(Math.abs(filter.y + filter.height / 2 - (search.y + search.height / 2))).toBeLessThan(4)
 })

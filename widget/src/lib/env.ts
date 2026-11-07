@@ -14,10 +14,18 @@ export function pageContext() {
     dpr: Math.round(devicePixelRatio * 100) / 100,
     browser: browserOf(navigator.userAgent),
     os: osOf(navigator.userAgent, navigator.maxTouchPoints),
+    // The browser setting. A page can have its own theme switch.
+    theme: matchMedia("(prefers-color-scheme: dark)").matches ? ("dark" as const) : ("light" as const),
+    language: navigator.language,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    scroll: { x: Math.max(0, Math.round(scrollX)), y: Math.max(0, Math.round(scrollY)) },
   }
 }
 
 export type PageContext = ReturnType<typeof pageContext>
+type AddedLater = "theme" | "language" | "timeZone" | "scroll"
+/** A saved context. Threads made before a field was added do not have it. */
+export type SavedContext = Omit<PageContext, AddedLater> & Partial<Pick<PageContext, AddedLater>>
 
 // Order matters: Edge and Opera also say "Chrome", Chrome also says "Safari".
 const BROWSERS: [RegExp, string][] = [
@@ -50,7 +58,7 @@ export function osOf(ua: string, touchPoints = 0) {
 }
 
 /** "1280×800 · Chrome 131 · macOS · 2×" */
-export function describeContext(c: PageContext) {
+export function describeContext(c: SavedContext) {
   return [`${c.viewport.width}×${c.viewport.height}`, c.browser, c.os, c.dpr !== 1 && `${c.dpr}×`]
     .filter(Boolean)
     .join(" · ")

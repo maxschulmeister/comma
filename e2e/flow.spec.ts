@@ -38,7 +38,7 @@ test("comment, mention, image, reply, react, unread, resolve, reload", async ({ 
   await ada.keyboard.type("check this")
   await composer.locator("input[type=file]").setInputFiles({ name: "shot.png", mimeType: "image/png", buffer: PNG })
   await expect(composer.locator("li[data-state=done]")).toHaveCount(1)
-  await ada.keyboard.press("Enter")
+  await ada.keyboard.press("ControlOrMeta+Enter")
   const adaThread = threadPopover(ada)
   await expect(adaThread.locator(".comma-mention")).toHaveText(`@${bea}`)
   await expect(adaThread.getByRole("link", { name: "Open image" })).toBeVisible()
@@ -54,7 +54,7 @@ test("comment, mention, image, reply, react, unread, resolve, reload", async ({ 
   const beaThread = threadPopover(beaPage)
   await expect(beaThread).toContainText("check this")
   await typeComment(beaPage, beaThread, "On it")
-  await beaPage.keyboard.press("Enter")
+  await beaPage.keyboard.press("ControlOrMeta+Enter")
   const first = beaThread.getByRole("article").first()
   await first.hover()
   await first.getByRole("button", { name: "Add reaction" }).click()
@@ -94,9 +94,6 @@ test("comment, mention, image, reply, react, unread, resolve, reload", async ({ 
   expect(Math.abs((pin?.x ?? 0) - ((box?.x ?? 0) + (box?.width ?? 0) * 0.5))).toBeLessThan(2)
   expect(Math.abs((pin?.y ?? 0) + (pin?.height ?? 0) - ((box?.y ?? 0) + (box?.height ?? 0) * 0.5))).toBeLessThan(2)
 
-  // The panel narrows the page.
-  expect(await ada.evaluate(() => getComputedStyle(document.documentElement).marginRight)).toBe("360px")
-  expect(await ada.evaluate(() => document.querySelector("main")?.getBoundingClientRect().right)).toBeLessThanOrEqual(
-    1280 - 360,
-  )
+  // The panel floats over the page (the default): the page keeps its width.
+  expect(await ada.evaluate(() => getComputedStyle(document.documentElement).marginRight)).toBe("0px")
 })

@@ -26,7 +26,7 @@ import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { NARROW, useMedia } from "@/lib/media"
 import { setState, useStore } from "@/store"
-import { PANEL_WIDTH } from "./panel"
+import { panelRightEdge } from "./panel"
 import { setCommentMode, togglePins } from "./shortcuts"
 import { SignInForm } from "./sign-in"
 import { UserAvatar } from "./user-avatar"
@@ -35,6 +35,7 @@ import { UserAvatar } from "./user-avatar"
 export function Toolbar() {
   const commentMode = useStore((s) => s.commentMode)
   const panelOpen = useStore((s) => s.panelOpen)
+  const panelEdge = useStore(panelRightEdge)
   const pinsVisible = useStore((s) => s.pinsVisible)
   const key = useStore((s) => s.shortcut?.toUpperCase())
   const me = useStore((s) => s.session?.user)
@@ -51,7 +52,7 @@ export function Toolbar() {
       aria-label="Comments"
       data-slot="toolbar"
       className="fixed bottom-4 flex items-center gap-0.5 rounded-full bg-background p-1 shadow-lg ring-1 ring-foreground/10 max-[639px]:left-1/2 max-[639px]:-translate-x-1/2"
-      style={{ right: narrow ? undefined : panelOpen ? PANEL_WIDTH + 16 : 16 }}
+      style={{ right: narrow ? undefined : panelEdge + 16 }}
     >
       <Tooltip>
         <TooltipTrigger
@@ -79,6 +80,8 @@ export function Toolbar() {
               size="icon"
               className="relative rounded-full"
               data-panel-button
+              // Opening the panel keeps the open thread: its item shows there.
+              data-keeps-thread
               aria-label={unread ? `Comments, ${unread} unread` : "Comments"}
               aria-pressed={panelOpen}
               onClick={() => setState({ panelOpen: !panelOpen })}

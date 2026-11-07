@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { lazy, Suspense, useEffect } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { pageBox, useResolved } from "./live"
 import { getState, setState, useStore, widgetVisible } from "./store"
@@ -7,6 +7,9 @@ import { CommentOverlay } from "./ui/overlay"
 import { Panel } from "./ui/panel"
 import { PinsLayer } from "./ui/pins"
 import { Toolbar } from "./ui/toolbar"
+import { detailsMode } from "./ui/view"
+
+const DetailsDialog = lazy(() => import("./ui/details").then((m) => ({ default: m.DetailsDialog })))
 
 const HASH = /^#comma=([\w-]+)$/
 
@@ -46,6 +49,7 @@ function useDeepLink() {
 export function App() {
   const placing = useStore((s) => s.commentMode || !!s.moving)
   const visible = useStore(widgetVisible)
+  const dialog = useStore((s) => s.detailsOpen && detailsMode(s) === "dialog")
   useDeepLink()
   return (
     <TooltipProvider delay={400}>
@@ -54,6 +58,11 @@ export function App() {
       <Panel />
       {visible && <Toolbar />}
       <Notices />
+      {dialog && (
+        <Suspense fallback={null}>
+          <DetailsDialog />
+        </Suspense>
+      )}
     </TooltipProvider>
   )
 }

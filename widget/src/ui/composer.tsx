@@ -1,4 +1,4 @@
-import { ArrowUpIcon, AtIcon, ImageIcon, LinkIcon, XIcon } from "@phosphor-icons/react"
+import { ArrowUpIcon, AtIcon, CameraIcon, ImageIcon, LinkIcon, XIcon } from "@phosphor-icons/react"
 import { cn } from "cn"
 import { type DragEvent, useEffect, useId, useRef, useState } from "react"
 import type { Anchor } from "@/anchor"
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { draftKey, loadDraft, saveDraft } from "@/drafts"
 import type { Editor, EditorOptions, JSONContent, SuggestionState } from "@/editor/editor"
+import { isMac } from "@/lib/dom"
 import { initials, userColor } from "@/lib/format"
 import { shrinkImage } from "@/lib/image"
 import { useStore } from "@/store"
@@ -94,6 +95,7 @@ export function Composer({
   )
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [capturing, setCapturing] = useState(false)
   const uploadsRef = useRef(uploads)
   uploadsRef.current = uploads
   const listId = useId()
@@ -163,6 +165,20 @@ export function Composer({
     }
   }
 
+  const addScreenshot = async () => {
+    setCapturing(true)
+    try {
+      const { screenshotPage } = await import("@/lib/screenshot")
+      addFiles([await screenshotPage()])
+    } catch {
+      setError("Could not take a screenshot.")
+    } finally {
+      setCapturing(false)
+      // Back to the text, so Enter sends and does not take one more screenshot.
+      editorRef.current?.commands.focus()
+    }
+  }
+
   const submitRef = useRef<() => void>(() => {})
   submitRef.current = async () => {
     const editor = editorRef.current
@@ -180,7 +196,8 @@ export function Composer({
     setSuggestion(null)
     setError(null)
     // No typing while it sends: the text is cleared when the server has it.
-    editor.setEditable(false)
+    // No update event: it would clear the error (see onChange).
+    editor.setEditable(false, false)
     // If the popover closes while it sends, the text stays as a draft (see cleanup). The user can open it and
     // write something new. Delete the saved draft only if it is still the text that was sent.
     const snapshot = (json: JSONContent | undefined, ids: string[]) => JSON.stringify([json, ids])
@@ -205,7 +222,7 @@ export function Composer({
       setError(e instanceof Error ? e.message : "Could not send. Try again.")
     } finally {
       if (!editor.isDestroyed) {
-        editor.setEditable(true)
+        editor.setEditable(true, false)
         editor.commands.focus()
       }
       setSending(false)
@@ -377,6 +394,17 @@ export function Composer({
             >
               <ImageIcon />
             </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Add screenshot"
+              title="Add screenshot of the page"
+              disabled={uploads.length >= MAX_FILES || sending || capturing}
+              onClick={() => void addScreenshot()}
+            >
+              {capturing ? <Spinner /> : <CameraIcon />}
+            </Button>
             <input
               ref={fileInputRef}
               type="file"
@@ -418,7 +446,7 @@ export function Composer({
           type="button"
           size="icon-sm"
           aria-label={submitLabel}
-          title={`${submitLabel} (Enter)`}
+          title={`${submitLabel} (${isMac() ? "⌘" : "Ctrl+"}Enter)`}
           disabled={!canSend}
           onClick={() => submitRef.current()}
         >

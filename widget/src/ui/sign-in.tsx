@@ -7,15 +7,15 @@ import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { useStore } from "@/store"
 
-/** Sign in with the app (popup), or as a guest with a name. The project decides which ones it has. */
+/** Sign in with the app or Slack (popup), or as a guest with a name. The project decides which ones it has. */
 export function SignInForm({ title = "Sign in to comment" }: { title?: string }) {
   const info = useStore((s) => s.projectInfo)
   const [name, setName] = useState("")
-  const [busy, setBusy] = useState<"guest" | "popup" | null>(null)
+  const [busy, setBusy] = useState<"guest" | "popup" | "slack" | null>(null)
   const [error, setError] = useState<string | null>(null)
   const id = useId()
 
-  const run = async (kind: "guest" | "popup", action: () => Promise<void>) => {
+  const run = async (kind: "guest" | "popup" | "slack", action: () => Promise<void>) => {
     setBusy(kind)
     setError(null)
     try {
@@ -45,16 +45,28 @@ export function SignInForm({ title = "Sign in to comment" }: { title?: string })
   }
 
   const app = info.name ?? "your account"
+  const popups = info.popupSignIn || info.slack
   return (
     <form className="flex flex-col gap-2.5" onSubmit={onSubmit} noValidate>
       <p className="font-medium text-sm">{title}</p>
       {info.popupSignIn && (
-        <Button type="button" onClick={() => run("popup", signInWithPopup)} disabled={!!busy}>
+        <Button type="button" onClick={() => run("popup", () => signInWithPopup("app"))} disabled={!!busy}>
           {busy === "popup" && <Spinner />}
           Sign in with {app}
         </Button>
       )}
-      {info.popupSignIn && info.guests && (
+      {info.slack && (
+        <Button
+          type="button"
+          variant={info.popupSignIn ? "outline" : "default"}
+          onClick={() => run("slack", () => signInWithPopup("slack"))}
+          disabled={!!busy}
+        >
+          {busy === "slack" && <Spinner />}
+          Sign in with Slack
+        </Button>
+      )}
+      {popups && info.guests && (
         <div className="flex items-center gap-2 text-muted-foreground text-xs">
           <Separator className="flex-1" />
           or
@@ -70,17 +82,17 @@ export function SignInForm({ title = "Sign in to comment" }: { title?: string })
               value={name}
               maxLength={60}
               autoComplete="name"
-              autoFocus={!info.popupSignIn}
+              autoFocus={!popups}
               onChange={(e) => setName(e.currentTarget.value)}
             />
           </div>
-          <Button type="submit" variant={info.popupSignIn ? "outline" : "default"} disabled={!!busy}>
+          <Button type="submit" variant={popups ? "outline" : "default"} disabled={!!busy}>
             {busy === "guest" && <Spinner />}
             Continue as guest
           </Button>
         </>
       )}
-      {!info.popupSignIn && !info.guests && (
+      {!popups && !info.guests && (
         <p className="text-muted-foreground text-sm">Sign in to {info.name ?? "the app"} to comment.</p>
       )}
       {error && (

@@ -7,9 +7,9 @@ export const SITE = "http://localhost:4900"
 type Session = { token: string; user: { id: string; name: string } }
 
 /** A guest session made with the API. */
-export async function guestSession(name: string, origin = SITE): Promise<Session> {
+export async function guestSession(name: string, origin = SITE, project = "example"): Promise<Session> {
   const api = await request.newContext()
-  const res = await api.post(`${COMMA}/api/session/guest`, { headers: { origin }, data: { project: "example", name } })
+  const res = await api.post(`${COMMA}/api/session/guest`, { headers: { origin }, data: { project, name } })
   expect(res.ok()).toBe(true)
   const session = await res.json()
   await api.dispose()
@@ -35,12 +35,12 @@ export async function appSession(name: string, admin = false): Promise<Session> 
 }
 
 /** Signs the page in before its scripts run. */
-export async function signIn(page: Page, session: Session, origin = SITE) {
+export async function signIn(page: Page, session: Session, origin = SITE, project = "example") {
   await page.addInitScript(
     ([key, value]) => {
       if (location.origin === key[1]) localStorage.setItem(key[0], value)
     },
-    [[`comma:${COMMA}:example`, origin], JSON.stringify(session)] as const,
+    [[`comma:${COMMA}:${project}`, origin], JSON.stringify(session)] as const,
   )
 }
 
@@ -58,6 +58,16 @@ export const panel = (page: Page) => page.getByRole("complementary", { name: "Co
 export const threadPopover = (page: Page) => page.getByRole("dialog", { name: "Comment thread" })
 export const newCommentPopover = (page: Page) => page.getByRole("dialog", { name: "New comment" })
 export const pins = (page: Page) => page.locator("[data-slot=pin]")
+
+/** Opens the panel with the toolbar button, if it is closed. */
+export async function showPanel(page: Page) {
+  if (!(await panel(page).isVisible())) {
+    await toolbar(page)
+      .getByRole("button", { name: /^Comments/ })
+      .click()
+  }
+  await expect(panel(page)).toBeVisible()
+}
 
 export const overlay = (page: Page) => page.locator("[data-slot=comment-overlay]")
 
@@ -85,7 +95,7 @@ export async function addComment(page: Page, target: Locator, text: string, x = 
   await clickAt(page, target, x, y)
   const popover = newCommentPopover(page)
   await typeComment(page, popover, text)
-  await page.keyboard.press("Enter")
+  await page.keyboard.press("ControlOrMeta+Enter")
   await expect(threadPopover(page)).toContainText(text.replace(/[*~`]/g, ""))
 }
 

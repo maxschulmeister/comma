@@ -33,7 +33,11 @@ function saveSession(session: Session | null) {
     // Storage can be blocked. The session then lasts until reload.
   }
   etag = null
-  setState({ session, signInOpen: false, ...(session ? {} : { threads: [], users: {}, loaded: false }) })
+  setState({
+    session,
+    signInOpen: false,
+    ...(session ? {} : { threads: [], users: {}, loaded: false, loadFailed: false }),
+  })
   if (session) void refresh()
 }
 
@@ -44,6 +48,8 @@ function saveSession(session: Session | null) {
 const isCurrent = (session: Session | null) => getState().session?.token === session?.token
 
 /** `signedIn: false`: no session (sign-in, project info). The answer does not depend on the current session. */
+const OFFLINE = "Cannot reach comma. Try again."
+
 async function request<T>(method: string, path: string, body?: unknown, signedIn = true): Promise<T> {
   const { server } = getState()
   const session = signedIn ? getState().session : null
@@ -55,7 +61,9 @@ async function request<T>(method: string, path: string, body?: unknown, signedIn
     h["content-type"] = "application/json"
     init.body = JSON.stringify(body)
   }
-  const res = await fetch(`${server}${path}`, init)
+  const res = await fetch(`${server}${path}`, init).catch(() => {
+    throw new ApiError(0, OFFLINE)
+  })
   const data = await res.json().catch(() => ({}))
   if (signedIn) {
     if (res.status === 401 && session && isCurrent(session)) saveSession(null)
@@ -73,8 +81,11 @@ export async function loadProject() {
     projectInfo: {
       name: info.name,
       popupSignIn: info.popupSignIn,
+      slack: info.slack === true,
       guests: info.guests,
       toolbar: info.toolbar === "signed-in" ? "signed-in" : "always",
+      details: info.details === "dialog" ? "dialog" : "panel",
+      panel: info.panel === "overlay" ? "overlay" : "push",
     },
   })
 }
@@ -98,16 +109,22 @@ export const identify = (appToken: string) => signIn("/api/session/app", { appTo
 export function signOut() {
   authAttempt++
   // The next person on this tab must not see the drafts.
-  const user = getState().session?.user.id
-  if (user) clearDrafts(user)
+  const { server, session } = getState()
+  if (session) clearDrafts(session.user.id)
   setState({ draft: null, draftMove: null })
   saveSession(null)
+  // End the session on the server too, so a copy of the token stops working. The tab is signed out already.
+  if (session) {
+    const headers = { authorization: `Bearer ${session.token}` }
+    void fetch(`${server}/api/session`, { method: "DELETE", headers, credentials: "omit" }).catch(() => {})
+  }
 }
 
-// Opens the app sign-in in a popup. The popup sends the session back with postMessage.
-export function signInWithPopup() {
+// Opens the app sign-in (or Slack's) in a popup. The popup sends the session back with postMessage.
+export function signInWithPopup(provider: "app" | "slack" = "app") {
   const { server, project } = getState()
-  const url = `${server}/auth/start?project=${encodeURIComponent(project)}&origin=${encodeURIComponent(location.origin)}`
+  const path = provider === "slack" ? "/auth/slack/start" : "/auth/start"
+  const url = `${server}${path}?project=${encodeURIComponent(project)}&origin=${encodeURIComponent(location.origin)}`
   const popup = window.open(url, "comma-sign-in", "popup,width=480,height=640")
   const attempt = ++authAttempt
   return new Promise<void>((resolve, reject) => {
@@ -168,11 +185,13 @@ export function refresh(): Promise<void> {
           threads,
           users: data.users,
           loaded: true,
+          loadFailed: false,
           session: session && { ...session, user: data.me },
         })
       }
     } catch {
-      // Polling tries again later.
+      // Polling tries again later. Before the first load, the panel shows it.
+      if (!getState().loadFailed) setState({ loadFailed: true })
     } finally {
       inFlight = null
     }
@@ -276,6 +295,7 @@ export async function createThread(input: {
   body: unknown
   files: string[]
   context: PageContext
+  screenshot?: string
 }) {
   return applyThread(await request<ThreadResult>("POST", "/api/threads", input))
 }

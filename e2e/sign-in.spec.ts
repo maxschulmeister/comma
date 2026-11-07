@@ -195,3 +195,43 @@ test("a shared link asks a signed-out teammate to sign in, then opens the thread
   // Guests are marked as guests for everyone.
   await expect(page.getByRole("dialog", { name: "Comment thread" }).getByRole("article")).toContainText("Linker Guest")
 })
+
+test("sign-out in the widget ends the session on the server", async ({ page }) => {
+  const session = await guestSession("Olga")
+  await signIn(page, session)
+  await page.goto(testPath("sign-out"))
+  await toolbar(page).getByRole("button", { name: "Account: Olga" }).click()
+  const ended = page.waitForResponse((r) => r.url() === `${COMMA}/api/session` && r.request().method() === "DELETE")
+  await page.getByRole("menuitem", { name: "Sign out" }).click()
+  expect((await ended).status()).toBe(200)
+  const api = await request.newContext()
+  const res = await api.get(`${COMMA}/api/threads`, {
+    headers: { origin: SITE, authorization: `Bearer ${session.token}` },
+  })
+  expect(res.status()).toBe(401)
+  await api.dispose()
+})
+
+test("Sign in with Slack opens Slack's sign-in for the project's workspace in a popup", async ({ page, context }) => {
+  // Playwright does not route the target of a redirect: read comma's redirect to Slack, show a fake Slack page.
+  let slack: URL | undefined
+  await context.route(`${COMMA}/auth/slack/start?**`, async (route) => {
+    const res = await route.fetch({ maxRedirects: 0 })
+    slack = new URL(res.headers().location ?? "")
+    await route.fulfill({ contentType: "text/html", body: "<h1>Slack sign-in</h1>" })
+  })
+  await page.goto(`${testPath("slack")}?project=slack`)
+  await toolbar(page)
+    .getByRole("button", { name: /^Comments/ })
+    .click()
+  await expect(panel(page).getByLabel("Your name")).toHaveCount(0)
+  const popupPromise = page.waitForEvent("popup")
+  await panel(page).getByRole("button", { name: "Sign in with Slack" }).click()
+  const popup = await popupPromise
+  await expect(popup.getByRole("heading", { name: "Slack sign-in" })).toBeVisible()
+  expect(`${slack?.origin}${slack?.pathname}`).toBe("https://slack.com/openid/connect/authorize")
+  expect(slack?.searchParams.get("team")).toBe("T0E2E")
+  expect(slack?.searchParams.get("redirect_uri")).toBe(`${COMMA}/auth/slack/callback`)
+  await popup.close()
+  await expect(panel(page).getByRole("alert")).toHaveText("Sign-in was closed.")
+})

@@ -7,6 +7,7 @@ import {
   openTestPage,
   panel,
   pins,
+  showPanel,
   signIn,
   testPath,
   threadPopover,
@@ -35,7 +36,7 @@ test("replies and reactions", async ({ page, context }) => {
   const bob = await asOther(context, "reply", await guestSession("Bob"))
   const bobThread = threadPopover(bob)
   await typeComment(bob, bobThread, "A reply")
-  await bob.keyboard.press("Enter")
+  await bob.keyboard.press("ControlOrMeta+Enter")
   await expect(bobThread.getByRole("article")).toHaveCount(2)
 
   // Quick reaction on the first comment.
@@ -66,7 +67,7 @@ test("replies and reactions", async ({ page, context }) => {
 test("edit and delete own comments", async ({ page }) => {
   const thread = await withComment(page, "edit", "Edith")
   await typeComment(page, thread, "Second")
-  await page.keyboard.press("Enter")
+  await page.keyboard.press("ControlOrMeta+Enter")
   const second = thread.getByRole("article").nth(1)
   await expect(second).toContainText("Second")
 
@@ -78,7 +79,7 @@ test("edit and delete own comments", async ({ page }) => {
   await editor.click()
   await page.keyboard.press("End")
   await page.keyboard.type(" edited")
-  await page.keyboard.press("Enter")
+  await page.keyboard.press("ControlOrMeta+Enter")
   await expect(second).toContainText("Second edited")
   await expect(second).toContainText("(edited)")
 
@@ -139,13 +140,12 @@ test("resolve hides the pin, reopen from the panel shows it", async ({ page }) =
   await expect(thread).toBeHidden()
   await expect(pins(page)).toHaveCount(0)
   await expect(panel(page).getByRole("button", { name: /First comment/ })).toHaveCount(0)
+  await showPanel(page)
 
   await panel(page).getByRole("button", { name: "Filter and sort" }).click()
   await page.getByRole("menuitemcheckbox", { name: "Show resolved" }).click()
   await page.keyboard.press("Escape")
-  await panel(page)
-    .getByRole("button", { name: /First comment/ })
-    .click()
+  await panel(page).locator("[data-slot=panel-item]", { hasText: "First comment" }).click()
   await expect(thread).toContainText("Resolved by Res")
   await thread.getByRole("button", { name: "Reopen" }).click()
   await expect(thread).not.toContainText("Resolved")
@@ -192,7 +192,7 @@ test("a poll during a slow reply does not lose the reply", async ({ page }) => {
   const thread = await withComment(page, "slow-reply", "Slow")
   const release = await hold(page, "**/api/threads/*/comments")
   await typeComment(page, thread, "Slow reply")
-  await page.keyboard.press("Enter")
+  await page.keyboard.press("ControlOrMeta+Enter")
   // A poll finishes while the reply is still on its way.
   await page.evaluate(() => window.dispatchEvent(new Event("focus")))
   await page.waitForResponse("**/api/threads")
@@ -213,7 +213,7 @@ test("an old answer does not hide a newer reply", async ({ page, context }) => {
   await pins(other).first().click()
   const thread = threadPopover(other)
   await typeComment(other, thread, "Newer reply")
-  await other.keyboard.press("Enter")
+  await other.keyboard.press("ControlOrMeta+Enter")
   await expect(thread.getByRole("article")).toHaveCount(2)
   release()
   await other.waitForResponse("**/api/threads/*/read")

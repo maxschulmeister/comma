@@ -1,20 +1,30 @@
 import { cn } from "cn"
-import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef, useState } from "react"
-import type { Box } from "@/anchor"
-import { createThread, moveThread } from "@/client"
+import {
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
+import { type Anchor, anchorBox, type Box } from "@/anchor"
+import { createThread, moveThread, uploadFile } from "@/client"
 import { Button } from "@/components/ui/button"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { Popover, PopoverContent } from "@/components/ui/popover"
 import { closeDraft, loadDraft, newDraft, newDraftKey, saveDraft } from "@/drafts"
-import { pressInsideWidget } from "@/lib/dom"
+import { focusMovesTo, fromWidgetPart, pressInsideWidget } from "@/lib/dom"
 import { pageContext } from "@/lib/env"
 import { plural, timeAgo } from "@/lib/format"
+import { shrinkImage } from "@/lib/image"
 import { NARROW, useMedia } from "@/lib/media"
 import { pageBox, useLayoutTick, useResolved } from "@/live"
 import { type Draft, getState, type State, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
 import { Composer } from "./composer"
+import { focusOpenItem } from "./details-state"
 import { movedAnchor } from "./overlay"
+import { panelRightEdge } from "./panel"
 import { SignInForm } from "./sign-in"
 import { type Placement, ThreadView } from "./thread"
 import { UserAvatar } from "./user-avatar"
@@ -23,6 +33,30 @@ import { nameOf, UserName } from "./user-name"
 /** Elements a thread popover can attach to: pins and clusters on the page, items in the panel. */
 export const pinElements = new Map<string, HTMLElement>()
 export const panelElements = new Map<string, HTMLElement>()
+
+// The open thread's popover follows when its panel item appears (a link can open it before the list renders).
+let anchorVersion = 0
+const anchorListeners = new Set<() => void>()
+export function setPanelElement(id: string, el: HTMLElement | null) {
+  if (!el) {
+    panelElements.delete(id)
+    return
+  }
+  if (panelElements.get(id) === el) return
+  panelElements.set(id, el)
+  if (id === getState().openThreadId) {
+    anchorVersion++
+    for (const listener of anchorListeners) listener()
+  }
+}
+const useAnchorVersion = () =>
+  useSyncExternalStore(
+    (listener) => {
+      anchorListeners.add(listener)
+      return () => anchorListeners.delete(listener)
+    },
+    () => anchorVersion,
+  )
 
 const PIN = 28
 const CLUSTER_DISTANCE = 24
@@ -49,9 +83,22 @@ function cluster(items: Item[], keep: string | null) {
 }
 
 /** Opens a thread. A draft with text stays as a pin. */
-export const openThread = (id: string) => {
+/** Opens a thread. `focus: false`: the focus stays where it is (↑ ↓ in the panel list select a thread). */
+export const openThread = (id: string, focus = true) => {
   closeDraft()
-  setState({ openThreadId: id, draftMove: null })
+  setState({ openThreadId: id, draftMove: null, threadFocus: focus })
+}
+
+// The open thread's comment list, for focusOpenThread.
+let threadList: RefObject<HTMLDivElement | null> | null = null
+
+/** Moves the focus into the open thread: its reply box, or its comment list (← or Enter in the panel list). */
+export function focusOpenThread() {
+  const list = threadList?.current
+  const reply = list
+    ?.closest("[data-slot=popover-content]")
+    ?.querySelector<HTMLElement>("[data-slot=composer] .ProseMirror")
+  ;(reply ?? list)?.focus()
 }
 
 export function PinsLayer() {
@@ -320,15 +367,25 @@ function Cluster({ x, y, items }: { x: number; y: number; items: Item[] }) {
 
 function ThreadPopover() {
   const thread = useStore((s) => s.threads.find((t) => t.id === s.openThreadId))
+  // With the details open, or selected in the panel list, the focus stays there.
+  const quiet = useStore((s) => s.detailsOpen || !s.threadFocus)
+  // The thread opens beside the panel, not under it.
+  const panelEdge = useStore(panelRightEdge)
   const page = useStore((s) => s.page)
   const resolved = useResolved()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  threadList = listRef
   const id = thread?.id
+  useAnchorVersion()
 
-  // The pin or cluster on the page, else the item in the panel.
+  // The pin or cluster on the page, else the item in the panel. A pin under the floating panel cannot show its
+  // thread beside it: the thread opens beside its item in the panel.
   useLayoutEffect(() => {
-    const el = id ? (pinElements.get(id) ?? panelElements.get(id) ?? null) : null
+    const pin = id ? pinElements.get(id) : undefined
+    const covered = !!pin && panelEdge > 0 && pin.getBoundingClientRect().right > window.innerWidth - panelEdge
+    const item = id ? panelElements.get(id) : undefined
+    const el = (covered && item) || pin || item || null
     if (el !== anchor) setAnchor(el)
   })
 
@@ -343,7 +400,11 @@ function ThreadPopover() {
     <Popover
       open={!!thread && !!anchor}
       onOpenChange={(open, details) => {
-        if (!open && !pressInsideWidget(details)) setState({ openThreadId: null })
+        // The details and their lightbox show this thread: focus or Escape there keeps it open.
+        const keep =
+          focusMovesTo(details, "[data-keeps-thread]") ||
+          (details.reason === "escape-key" && !!details.event && fromWidgetPart(details.event, "[data-keeps-thread]"))
+        if (!open && !pressInsideWidget(details) && !keep) setState({ openThreadId: null })
       }}
     >
       <PopoverContent
@@ -351,11 +412,20 @@ function ThreadPopover() {
         side="right"
         align="start"
         sideOffset={8}
-        collisionPadding={8}
         className="w-80 gap-0 p-0"
         aria-label="Comment thread"
-        initialFocus={listRef}
+        collisionPadding={{ top: 8, bottom: 8, left: 8, right: 8 + panelEdge }}
+        initialFocus={quiet ? false : listRef}
         finalFocus={anchor?.isConnected ? { current: anchor } : true}
+        // → goes to the panel on the right (← in the panel came here). In text, only when it is empty: there → has
+        // nothing to move.
+        onKeyDown={(event) => {
+          const target = event.target as HTMLElement
+          if (event.key !== "ArrowRight" || target.closest("input, textarea")) return
+          if (target.isContentEditable && target.textContent?.trim()) return
+          event.preventDefault()
+          focusOpenItem()
+        }}
       >
         {thread && <ThreadView thread={thread} placement={placement} listRef={listRef} />}
       </PopoverContent>
@@ -423,6 +493,7 @@ function DraftComposer({ draft }: { draft: Draft }) {
                   body,
                   files,
                   context: pageContext(),
+                  screenshot: await elementScreenshot(draft.anchor, draft.element),
                 })
                 // A slow answer: the user may be on another page or writing another comment by now.
                 if (getState().draft?.id === draft.id) setState({ draft: null, openThreadId: thread.id })
@@ -435,6 +506,31 @@ function DraftComposer({ draft }: { draft: Draft }) {
       </Popover>
     </>
   )
+}
+
+const SCREENSHOT_SPACE = 16
+const SCREENSHOT_TIMEOUT = 5000
+
+/** Uploads a screenshot of the element (or region) and the space around it. The comment does not wait for a failed
+ * or slow one. */
+async function elementScreenshot(anchor: Anchor, el: Element) {
+  const box = anchor.rect ? anchorBox(anchor, el) : el.getBoundingClientRect()
+  const space = SCREENSHOT_SPACE
+  try {
+    const { screenshotPage } = await import("@/lib/screenshot")
+    const file = await Promise.race([
+      screenshotPage({
+        x: box.x - space,
+        y: box.y - space,
+        width: box.width + 2 * space,
+        height: box.height + 2 * space,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), SCREENSHOT_TIMEOUT)),
+    ])
+    return (await uploadFile(await shrinkImage(file))).id
+  } catch {
+    return undefined
+  }
 }
 
 /** A click on another place while the draft has text: the draft moves there, or a new one starts. */

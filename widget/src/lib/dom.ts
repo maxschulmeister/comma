@@ -40,6 +40,13 @@ export function pressInsideWidget(details: { reason: string; event?: Event }) {
   return details.event.composedPath().some((node) => node instanceof Element && node.localName === HOST_TAG)
 }
 
+/** True when a popup closes because the focus moved to an element that matches the selector (or is in one). */
+export function focusMovesTo(details: { reason: string; event?: Event }, selector: string) {
+  if (details.reason !== "focus-out") return false
+  const next = (details.event as FocusEvent | undefined)?.relatedTarget
+  return next instanceof Element && !!next.closest(selector)
+}
+
 /** True when the event comes from a part of the widget (in its shadow root) that matches the selector. */
 export function fromWidgetPart(event: Event, selector: string) {
   const path = event.composedPath()
