@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import {
   appUserClaims,
+  type Claims,
   createGuest,
   getSessionUser,
   newId,
@@ -187,20 +188,33 @@ export function createApp(options: AppOptions) {
           )
         ).map((f) => f.id)
       : []
-  const threadFiles = async (id: string) => [
-    ...(await filesOf("thread_id = ?", id)),
-    ...(store ? (await all<{ id: string }>(db, "select id from files where thread_id = ?", id)).map((f) => f.id) : []),
-  ]
+  // The files of a thread: its comments' images and its element screenshot.
+  const threadFiles = async (id: string) =>
+    store
+      ? (
+          await all<{ id: string }>(
+            db,
+            "select id from files where thread_id = ? or comment_id in (select id from comments where thread_id = ?)",
+            id,
+            id,
+          )
+        ).map((f) => f.id)
+      : []
   const deleteStored = async (ids: string[]) => {
     if (store && ids.length > 0) await store.delete(ids)
   }
 
   // Other clients must see a new name or avatar: a change invalidates their ETag.
-  const appUser = async (project: Project, claims: NonNullable<Awaited<ReturnType<typeof appUserClaims>>>) => {
+  const appUser = async (project: Project, claims: Claims) => {
     const { user, changed } = await upsertAppUser(db, project, claims, now())
     if (changed) await db.execute(bump(project.id))
     return user
   }
+  // A new session: the answer of every sign-in.
+  const sessionOf = async (user: UserRow) => ({
+    token: await startSession(db, secret, user, now()),
+    user: publicUser(user),
+  })
 
   const app = new Hono<Env>()
 
@@ -237,16 +251,9 @@ export function createApp(options: AppOptions) {
       slackUrl: options.slackUrl,
       session: async (project, appToken) => {
         const claims = await appUserClaims(project, appToken)
-        if (!claims) return null
-        const user = await appUser(project, claims)
-        return { token: await startSession(db, secret, user, now()), user: publicUser(user) }
+        return claims && sessionOf(await appUser(project, claims))
       },
-      // A Slack user is an app user with the id `slack:<Slack user id>`.
-      slackSession: async (project, profile) => {
-        const { id, ...rest } = profile
-        const user = await appUser(project, { sub: `slack:${id}`, ...rest })
-        return { token: await startSession(db, secret, user, now()), user: publicUser(user) }
-      },
+      slackSession: async (project, claims) => sessionOf(await appUser(project, claims)),
     }),
   )
 
@@ -278,12 +285,12 @@ export function createApp(options: AppOptions) {
   // Returns the host of the site.
   const checkOrigin = (c: Context, project: Project) => {
     const origin = c.req.header("origin")
-    const host = origin ? null : (c.req.header("x-forwarded-host") ?? new URL(c.req.url).host)
+    const host = c.req.header("x-forwarded-host") ?? new URL(c.req.url).host
     const allowed = origin
       ? allowsOrigin(project, origin)
-      : c.req.header("sec-fetch-site") === "same-origin" && host !== null && allowsHost(project, host)
+      : c.req.header("sec-fetch-site") === "same-origin" && allowsHost(project, host)
     if (!allowed) throw new HTTPException(403, { message: "Origin not allowed" })
-    return origin ? new URL(origin).host : (host as string)
+    return origin ? new URL(origin).host : host
   }
 
   const projectFor = (id: unknown, c: Context) => {
@@ -313,8 +320,7 @@ export function createApp(options: AppOptions) {
     if (!project.guests) throw new HTTPException(403, { message: "Sign in with your account to comment on this site" })
     if (!(await limitOk(`guests:${project.id}`, project.limits.guestsPerHour)))
       throw new HTTPException(429, { message: "Too many new guests. Try again later." })
-    const user = await createGuest(db, project, input.name, now())
-    return c.json({ token: await startSession(db, secret, user, now()), user: publicUser(user) })
+    return c.json(await sessionOf(await createGuest(db, project, input.name, now())))
   })
 
   app.post("/api/session/app", async (c) => {
@@ -323,8 +329,7 @@ export function createApp(options: AppOptions) {
     if (!project.appSignIn) throw new HTTPException(404, { message: "This project has no app sign-in" })
     const claims = await appUserClaims(project, input.appToken)
     if (!claims) throw new HTTPException(401, { message: "Invalid app token" })
-    const user = await appUser(project, claims)
-    return c.json({ token: await startSession(db, secret, user, now()), user: publicUser(user) })
+    return c.json(await sessionOf(await appUser(project, claims)))
   })
 
   const auth = createMiddleware<Env>(async (c, next) => {

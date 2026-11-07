@@ -49,11 +49,10 @@ export const ProjectSchema = z
     panel: z.enum(["push", "overlay"]).default("overlay"),
   })
   .refine((p) => !(p.appSecret && p.userUrl), "Use appSecret or userUrl, not both")
-  .transform((p) => ({
-    ...p,
-    appSignIn: !!(p.appSecret || p.userUrl),
-    guests: p.guests ?? !(p.appSecret || p.userUrl),
-  }))
+  .transform((p) => {
+    const appSignIn = !!(p.appSecret || p.userUrl)
+    return { ...p, appSignIn, guests: p.guests ?? !appSignIn }
+  })
 
 export const ConfigSchema = z.object({ projects: z.array(ProjectSchema).min(1) })
 

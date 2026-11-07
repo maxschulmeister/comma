@@ -86,7 +86,7 @@ const UserClaims = z.object({
   admin: z.boolean().optional(),
 })
 const AppClaims = UserClaims.extend({ exp: z.number() })
-type Claims = z.infer<typeof UserClaims>
+export type Claims = z.infer<typeof UserClaims>
 
 const USER_URL_TIMEOUT_MS = 5000
 
@@ -111,14 +111,18 @@ async function fetchUser(project: Project, url: string, token: string): Promise<
   try {
     const body = await res.json()
     const claims = UserClaims.safeParse(project.user ? project.user(body) : body)
-    return claims.success ? claims.data : null
-  } catch {
+    if (claims.success) return claims.data
+    // A 200 without a user is a config problem (`userUrl` or `user`), not a bad token: say what is missing.
+    console.warn(`comma: ${project.id}: the userUrl answer has no valid user:`, z.prettifyError(claims.error))
+    return null
+  } catch (e) {
+    console.warn(`comma: ${project.id}: could not read the userUrl answer:`, e instanceof Error ? e.message : e)
     return null // Not JSON, or `user` could not read it.
   }
 }
 
 // App token: a short JWT signed by the app backend with the project secret.
-export async function verifyAppToken(project: Project, token: string) {
+async function verifyAppToken(project: Project, token: string) {
   if (!project.appSecret) return null
   try {
     const payload = await verify(token, project.appSecret, "HS256")

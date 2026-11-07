@@ -6,17 +6,17 @@ import { type Context, Hono } from "hono"
 import { html, raw } from "hono/html"
 import { sign, verify } from "hono/jwt"
 import { z } from "zod"
-import type { User } from "./auth"
+import type { Claims, User } from "./auth"
 import { allowsOrigin, type Project } from "./config"
 
 type Result = { token: string; user: User }
-export type SlackProfile = { id: string; name: string; email?: string; avatar?: string }
 
 type Options = {
   projects: Map<string, Project>
   secret: string
   session: (project: Project, appToken: string) => Promise<Result | null>
-  slackSession: (project: Project, profile: SlackProfile) => Promise<Result>
+  /** A Slack user is an app user with the id `slack:<Slack user id>`. */
+  slackSession: (project: Project, claims: Claims) => Promise<Result>
   /** The address users reach comma at (behind a proxy). Default: the address of the request. */
   publicUrl?: string
   /** Slack's address. Tests use a fake. */
@@ -24,6 +24,8 @@ type Options = {
 }
 
 const STATE_SECONDS = 10 * 60
+// Slack sends people back only to a redirect URL that the Slack app lists: both requests must use this one.
+const SLACK_CALLBACK = "/auth/slack/callback"
 const SLACK_TIMEOUT_MS = 10_000
 
 // The answer of Slack's `openid.connect.userInfo`.
@@ -125,7 +127,7 @@ export function popupRoutes({ projects, secret, session, slackSession, publicUrl
     url.searchParams.set("scope", "openid profile email")
     url.searchParams.set("client_id", project.slack.clientId)
     url.searchParams.set("team", project.slack.team)
-    url.searchParams.set("redirect_uri", callbackUrl(c, "/auth/slack/callback"))
+    url.searchParams.set("redirect_uri", callbackUrl(c, SLACK_CALLBACK))
     url.searchParams.set("state", await newState(project, origin, "comma-slack"))
     return c.redirect(url.href, 302)
   })
@@ -144,18 +146,24 @@ export function popupRoutes({ projects, secret, session, slackSession, publicUrl
             code: c.req.query("code") ?? "",
             client_id: slack.clientId,
             client_secret: slack.clientSecret,
-            redirect_uri: callbackUrl(c, "/auth/slack/callback"),
+            redirect_uri: callbackUrl(c, SLACK_CALLBACK),
           }),
           signal: AbortSignal.timeout(SLACK_TIMEOUT_MS),
         }).then((r) => r.json())
-        if (token?.ok !== true || typeof token.access_token !== "string") return null
+        // Slack's errors name setup problems (for example `bad_redirect_uri`, `invalid_client_id`): log them.
+        if (token?.ok !== true || typeof token.access_token !== "string") {
+          console.warn(`comma: ${state.project.id}: Slack sign-in failed:`, token?.error ?? "no access token")
+          return null
+        }
         const info = await fetch(new URL("/api/openid.connect.userInfo", slackBase), {
           headers: { authorization: `Bearer ${token.access_token}` },
           signal: AbortSignal.timeout(SLACK_TIMEOUT_MS),
         }).then((r) => r.json())
         const parsed = SlackUser.safeParse(info)
+        if (!parsed.success) console.warn(`comma: ${state.project.id}: Slack sent no valid user:`, info?.error)
         return parsed.success ? parsed.data : null
-      } catch {
+      } catch (e) {
+        console.warn(`comma: ${state.project.id}: Slack sign-in failed:`, e instanceof Error ? e.message : e)
         return null
       }
     })()
@@ -164,7 +172,7 @@ export function popupRoutes({ projects, secret, session, slackSession, publicUrl
       return c.html(page("Sign in with your account of the team's Slack workspace."), 403)
     }
     const result = await slackSession(state.project, {
-      id: user.sub,
+      sub: `slack:${user.sub}`,
       name: user.name,
       email: user.email,
       avatar: user.picture,
