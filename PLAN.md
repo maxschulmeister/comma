@@ -86,7 +86,7 @@ Two modes and two sides. Each person chooses in the panel's view menu (sliders i
 
 - `overlay` (default): the panel floats over the page, 8 px from the top, the bottom and the right, with rounded corners. The page keeps its width, but its right part is covered.
 - `push`: the page gets a right margin and reflows next to the panel. Nothing is covered, but the page is 360 px narrower: its media queries still see the full window, so it shows a state no real device shows.
-- Left or right, in both modes. Push on the left gives the page a left margin. Toolbar, notices and threads stay out of the panel's side.
+- Left or right, in both modes. Push on the left gives the page a left margin. Notices and threads stay out of the panel's side.
 - Floating, the panel must not hide what people work on: comment mode does not open it (push mode does), and a thread opens beside it, never under it. A thread whose pin is under the panel opens beside its item in the panel.
 
 - Each item: author, page (title and path), first lines, reply count, assignee, unread state, time.
@@ -101,7 +101,7 @@ Two modes and two sides. Each person chooses in the panel's view menu (sliders i
 - The arrows follow the panel's side. Toward the page (`←` with the panel on the right): into the thread, or close the details. Away from the page: open the details, or from the thread (if no text is typed) back to the list. The details close with ×, not a back arrow: "back" has no direction when the panel can be on either side.
 - A thread on another page: click navigates to that page and opens the thread.
 - Detached threads show with an "Element not found" label.
-- Screens narrower than 640 px: the panel covers the full screen. The toolbar hides while it is open. A thread with a pin opens at its pin, and the panel closes.
+- Screens narrower than 640 px: the panel covers the full screen. The toolbar stays over it. A thread with a pin opens at its pin, and the panel closes.
 
 ### Details
 
@@ -130,6 +130,7 @@ Only where it shows where something comes from, fast and short; keyboard actions
 ### Toolbar
 
 - Small floating bar: comment mode, panel button with unread count, user menu (name, avatar, sign in or out, show or hide pins).
+- It does not move. It stays in the bottom corner on the panel's side (16 px from the edges; centered on narrow screens), also while the panel is closed. The open panel takes it in, so the same click opens and closes the panel. Its look is the same over the page and over the panel; the panel's list and details fade out before it and have room at the end, so their last line scrolls clear of it.
 - Project setting `toolbar: "signed-in"`: visitors see no toolbar and no shortcut until they sign in. `?comma` in the URL, or a link to a thread, shows the sign-in.
 
 ### Unread and updates (in the widget)
@@ -203,8 +204,8 @@ window.comma.identify(token) // token from your backend, see "Login"
   - **Pins**: positioned on their elements. Update on scroll, resize and DOM changes (one `requestAnimationFrame` per frame).
   - **Comment mode overlay**: catches pointer events, finds the element under the cursor with `elementsFromPoint` (skip own layers), draws the outline.
   - **Popovers**: composer and thread, next to the pin.
-  - **Panel**: fixed on the right.
-  - **Toolbar**: floating, bottom right.
+  - **Panel**: fixed on the right or the left.
+  - **Toolbar**: floating, in the bottom corner on the panel's side.
 - No iframe in v1.
 
 ### UI

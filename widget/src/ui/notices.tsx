@@ -3,7 +3,8 @@ import { useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { NARROW, useMedia } from "@/lib/media"
 import { getState, type Notice, setState, useStore } from "@/store"
-import { panelRightEdge } from "./panel"
+import { panelLeftEdge, panelRightEdge } from "./panel"
+import { panelSide } from "./view"
 
 let nextId = 0
 
@@ -22,7 +23,10 @@ const dismiss = (id: number) => {
  */
 export function Notices() {
   const notice = useStore((s) => s.notice)
-  const panelEdge = useStore(panelRightEdge)
+  // Above the toolbar, on the panel's side. With the panel open: on the page, beside the panel.
+  const side = useStore(panelSide)
+  const leftEdge = useStore(panelLeftEdge)
+  const rightEdge = useStore(panelRightEdge)
   const narrow = useMedia(NARROW)
 
   useEffect(() => {
@@ -36,7 +40,7 @@ export function Notices() {
       role="status"
       data-slot="notices"
       className="pointer-events-none fixed bottom-16 max-[639px]:left-1/2 max-[639px]:-translate-x-1/2"
-      style={{ right: narrow ? undefined : panelEdge + 16 }}
+      style={narrow ? undefined : side === "left" ? { left: leftEdge + 16 } : { right: rightEdge + 16 }}
     >
       {notice && (
         <div

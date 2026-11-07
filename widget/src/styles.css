@@ -139,6 +139,14 @@
   -webkit-text-size-adjust: 100%;
 }
 
+/* The toolbar stays over the bottom of the open panel (see toolbar.tsx). Scroll areas under it have room at the end,
+   so their last line scrolls clear of it, and their content fades out before it.
+   Outside a layer, so its padding wins over the Tailwind utilities. */
+.comma-toolbar-room {
+  padding-bottom: 4rem;
+  mask-image: linear-gradient(to top, transparent 1.5rem, black 5rem);
+}
+
 /* Motion. Only where it shows where something comes from; keyboard actions (→, ↑ ↓) change at once.
    The floating panel slides in from its edge, fast and short: people open it many times a day. */
 @media (min-width: 640px) {

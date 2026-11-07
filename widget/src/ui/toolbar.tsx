@@ -24,35 +24,38 @@ import {
 import { Kbd } from "@/components/ui/kbd"
 import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { NARROW, useMedia } from "@/lib/media"
 import { setState, useStore } from "@/store"
-import { panelRightEdge } from "./panel"
 import { setCommentMode, togglePins } from "./shortcuts"
 import { SignInForm } from "./sign-in"
 import { UserAvatar } from "./user-avatar"
+import { panelSide } from "./view"
 
-/** Small floating bar: comment mode, panel with unread count, user menu. */
+/**
+ * Small floating bar: comment mode, panel with unread count, user menu. It does not move: it stays in the bottom
+ * corner on the panel's side, so the open panel takes it in, and the same click opens and closes the panel.
+ * Narrow screens: centered, also over the panel, which then covers the screen.
+ */
 export function Toolbar() {
   const commentMode = useStore((s) => s.commentMode)
   const panelOpen = useStore((s) => s.panelOpen)
-  const panelEdge = useStore(panelRightEdge)
+  const side = useStore(panelSide)
+  const align = side === "left" ? "start" : "end"
   const pinsVisible = useStore((s) => s.pinsVisible)
   const key = useStore((s) => s.shortcut?.toUpperCase())
   const me = useStore((s) => s.session?.user)
   const unread = useStore((s) => s.threads.filter((t) => t.unread && t.status === "open").length)
-  const narrow = useMedia(NARROW)
   const [signInAnchor, setSignInAnchor] = useState<HTMLElement | null>(null)
   const [signInOpen, setSignInOpen] = useState(false)
 
-  // On narrow screens the open panel covers the screen and has its own close button.
-  if (narrow && panelOpen) return null
   return (
     <div
       role="toolbar"
       aria-label="Comments"
       data-slot="toolbar"
-      className="fixed bottom-4 flex items-center gap-0.5 rounded-full bg-background p-1 shadow-lg ring-1 ring-foreground/10 max-[639px]:left-1/2 max-[639px]:-translate-x-1/2"
-      style={{ right: narrow ? undefined : panelEdge + 16 }}
+      className={cn(
+        "fixed bottom-4 flex items-center gap-0.5 rounded-full bg-background p-1 shadow-lg ring-1 ring-foreground/10 max-[639px]:left-1/2 max-[639px]:-translate-x-1/2",
+        side === "left" ? "min-[640px]:left-4" : "min-[640px]:right-4",
+      )}
     >
       <Tooltip>
         <TooltipTrigger
@@ -116,7 +119,7 @@ export function Toolbar() {
         >
           {me ? <UserAvatar user={me} className="size-6" /> : <UserIcon />}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" side="top" className="w-52">
+        <DropdownMenuContent align={align} side="top" className="w-52">
           {me && (
             <DropdownMenuGroup>
               <DropdownMenuLabel className="truncate">
@@ -146,7 +149,7 @@ export function Toolbar() {
       </DropdownMenu>
 
       <Popover open={signInOpen && !me} onOpenChange={setSignInOpen}>
-        <PopoverContent anchor={signInAnchor} side="top" align="end" className="w-64">
+        <PopoverContent anchor={signInAnchor} side="top" align={align} className="w-64">
           <SignInForm title="Sign in" />
         </PopoverContent>
       </Popover>

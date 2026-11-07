@@ -225,16 +225,19 @@ test.describe("narrow screens", () => {
     await expect(panel(page)).toBeHidden()
   })
 
-  test("the toolbar is centered and small, and hides while the panel covers the screen", async ({ page }) => {
+  test("the toolbar is centered and small, and stays in place over the panel", async ({ page }) => {
     await signIn(page, await guestSession("Narrow bar"))
     await openTestPage(page, "narrow-bar")
     const box = await toolbar(page).boundingBox()
     expect(box?.width).toBeLessThan(140)
     expect(Math.abs((box?.x ?? 0) + (box?.width ?? 0) / 2 - 200)).toBeLessThan(2)
     await openPanel(page)
-    await expect(toolbar(page)).toBeHidden()
-    await panel(page).getByRole("button", { name: "Close comments" }).click()
-    await expect(toolbar(page)).toBeVisible()
+    expect(await toolbar(page).boundingBox()).toEqual(box)
+    // The same button closes the panel.
+    await toolbar(page)
+      .getByRole("button", { name: /^Comments/ })
+      .click()
+    await expect(panel(page)).toBeHidden()
   })
 
   test("a thread opens next to its pin: the panel closes", async ({ page }) => {
@@ -366,9 +369,6 @@ test("the panel floats over the page by default; a toggle makes it push the page
   const b = await box()
   expect(b.y).toBe(8)
   expect(viewport.height - b.y - b.height).toBe(8)
-  // The toolbar is not under the panel.
-  const bar = (await toolbar(page).boundingBox()) ?? { x: 0, width: 0 }
-  expect(bar.x + bar.width).toBeLessThanOrEqual(b.x)
 
   await panel(page).getByRole("button", { name: "View options" }).click()
   await page.getByRole("menuitemradio", { name: "Push" }).click()
@@ -474,7 +474,7 @@ test("the panel goes to the side it is dragged to, in both modes; the view menu 
   await expect.poll(margins).toEqual(["360px", "0px"])
 })
 
-test("overlay on the left: a thread opens beside the panel, and the toolbar stays on the right", async ({ page }) => {
+test("overlay on the left: a thread opens beside the panel", async ({ page }) => {
   await signIn(page, await guestSession("LeftBeside"))
   await page.addInitScript(() => localStorage.setItem("comma:panel-side", "left"))
   await openTestPage(page, "overlay-left")
@@ -490,6 +490,69 @@ test("overlay on the left: a thread opens beside the panel, and the toolbar stay
     return thread.x - (side.x + side.width)
   }
   await expect.poll(gap).toBeGreaterThanOrEqual(0)
-  const bar = (await toolbar(page).boundingBox()) ?? { x: 0, width: 0 }
-  expect(bar.x + bar.width).toBe((page.viewportSize()?.width ?? 0) - 16)
+})
+
+test("the toolbar stays in place: the open panel takes it in, on both sides and in both modes", async ({ page }) => {
+  await signIn(page, await guestSession("Docked"))
+  await openTestPage(page, "docked")
+  const viewport = page.viewportSize() ?? { width: 0, height: 0 }
+  for (const [mode, side] of [
+    ["overlay", "right"],
+    ["overlay", "left"],
+    ["push", "right"],
+    ["push", "left"],
+  ]) {
+    await page.evaluate(
+      ([mode, side]) => {
+        localStorage.setItem("comma:panel-mode", mode)
+        localStorage.setItem("comma:panel-side", side)
+      },
+      [mode, side],
+    )
+    await page.reload()
+    const bar = (await toolbar(page).boundingBox()) ?? { x: 0, y: 0, width: 0, height: 0 }
+    // On the panel's side, also while the panel is closed.
+    expect(side === "left" ? bar.x : viewport.width - bar.x - bar.width).toBe(16)
+    expect(viewport.height - bar.y - bar.height).toBe(16)
+    const button = (await toolbar(page)
+      .getByRole("button", { name: /^Comments/ })
+      .boundingBox()) ?? { x: 0, y: 0, width: 0, height: 0 }
+    // One click opens the panel, the next click at the same place closes it.
+    await page.mouse.click(button.x + button.width / 2, button.y + button.height / 2)
+    await expect(panel(page)).toBeVisible()
+    expect(await toolbar(page).boundingBox()).toEqual(bar)
+    const box = async () => (await panel(page).boundingBox()) ?? { x: 0, width: 0 }
+    await expect
+      .poll(async () => (side === "left" ? (await box()).x : viewport.width - (await box()).x - (await box()).width))
+      .toBe(mode === "overlay" ? 8 : 0)
+    const p = await box()
+    expect(bar.x).toBeGreaterThanOrEqual(p.x)
+    expect(bar.x + bar.width).toBeLessThanOrEqual(p.x + p.width)
+    await page.mouse.click(button.x + button.width / 2, button.y + button.height / 2)
+    await expect(panel(page)).toBeHidden()
+  }
+})
+
+test("the list and the details scroll clear of the toolbar", async ({ page }) => {
+  const me = await guestSession("Clear")
+  const path = testPath("clear")
+  for (let i = 1; i <= 15; i++) await apiThread(me, path, `Comment ${i}`)
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  await expect(items(page)).toHaveCount(15)
+  const list = panel(page).getByRole("list", { name: "Threads" })
+  await list.evaluate((el) => el.scrollTo(0, el.scrollHeight))
+  const bar = (await toolbar(page).boundingBox()) ?? { y: 0 }
+  const last = (await items(page).last().boundingBox()) ?? { y: 0, height: 0 }
+  expect(last.y + last.height).toBeLessThanOrEqual(bar.y)
+
+  // A low window: the details scroll too.
+  await page.setViewportSize({ width: 1280, height: 400 })
+  await panel(page).getByRole("button", { name: "Details: Comment 1", exact: true }).click()
+  const details = panel(page).getByRole("region", { name: "Details" })
+  await details.locator(".overflow-y-auto").evaluate((el) => el.scrollTo(0, el.scrollHeight))
+  const copy = (await details.getByRole("button", { name: "Copy as bug report" }).boundingBox()) ?? { y: 0, height: 0 }
+  const lowBar = (await toolbar(page).boundingBox()) ?? { y: 0 }
+  expect(copy.y + copy.height).toBeLessThanOrEqual(lowBar.y)
 })

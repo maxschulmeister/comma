@@ -264,7 +264,7 @@ export function DetailsLayer() {
           <XIcon />
         </Button>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
+      <div className="comma-toolbar-room flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
         {thread.screenshot && (
           <button
             type="button"

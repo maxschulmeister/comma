@@ -126,15 +126,12 @@ function useFocusManagement(ref: RefObject<HTMLElement | null>) {
   }, [ref])
 }
 
-/**
- * Closes the panel. If the focus is in it, the focus goes back to the toolbar button, after the render:
- * on narrow screens the toolbar shows only when the panel is closed.
- */
+/** Closes the panel. If the focus is in it, the focus goes back to the toolbar button. */
 function closePanel(aside: HTMLElement | null) {
   const root = aside?.getRootNode() as ShadowRoot | undefined
-  const focused = !!aside && !!root && aside.contains(root.activeElement)
+  if (aside && root && aside.contains(root.activeElement))
+    root.querySelector<HTMLElement>("[data-panel-button]")?.focus()
   setState({ panelOpen: false })
-  if (focused) setTimeout(() => root?.querySelector<HTMLElement>("[data-panel-button]")?.focus())
 }
 
 export function Panel() {
@@ -463,7 +460,7 @@ function PanelContent() {
         ) : (
           <ul
             ref={listRef}
-            className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1"
+            className="comma-toolbar-room flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1"
             aria-label="Threads"
             onKeyDown={onKeyDown}
           >
