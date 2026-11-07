@@ -34,7 +34,7 @@ import { pageBox, resolvedElement, useResolved } from "@/live"
 import { type Filters, getState, type PanelSide, type State, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
 import { closeDetails, openDetails } from "./details-state"
-import { focusOpenThread, openThread, setPanelElement } from "./pins"
+import { focusOpenThread, openThread, panelElements, setPanelElement } from "./pins"
 import { setCommentMode } from "./shortcuts"
 import { SignInForm } from "./sign-in"
 import { threadLink } from "./thread"
@@ -125,7 +125,9 @@ function usePushPage(active: boolean, side: PanelSide) {
 }
 
 /**
- * Opened from the toolbar, the focus moves into the panel (see `closePanel` for the way back).
+ * Opened from the toolbar (or by Shift+C), the focus moves into the panel (see `closePanel` for the way back): to the
+ * open thread's item, else the first one, else the panel. Not the search: there, the keys (Shift+C, ↑ ↓) would type.
+ * Only the focus: no thread opens.
  * On narrow screens the panel covers the page, so the page is inert (no focus, no clicks) while it is open.
  */
 function useFocusManagement(ref: RefObject<HTMLElement | null>) {
@@ -134,7 +136,10 @@ function useFocusManagement(ref: RefObject<HTMLElement | null>) {
     if (!aside) return
     const root = aside.getRootNode() as ShadowRoot
     const opener = root.activeElement instanceof HTMLElement ? root.activeElement : null
-    if (opener?.closest("[data-slot=toolbar]")) aside.querySelector<HTMLElement>("input")?.focus()
+    if (opener?.closest("[data-slot=toolbar]")) {
+      const open = panelElements.get(getState().openThreadId ?? "")
+      ;(open ?? aside.querySelector<HTMLElement>("[data-slot=panel-item]") ?? aside).focus()
+    }
     const media = matchMedia(NARROW)
     const wasInert = document.body.inert
     const apply = () => {

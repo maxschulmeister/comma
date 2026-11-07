@@ -322,6 +322,25 @@ test.describe("comment mode", () => {
     await expect(pins(page)).toHaveCount(0)
   })
 
+  test("with the panel open, Shift+C hides and shows again and again", async ({ page }) => {
+    await signIn(page, await guestSession("Peek often"))
+    await openTestPage(page, "hide-often")
+    await addComment(page, page.getByTestId("title"), "Hello")
+    await endCommentMode(page)
+    await toolbar(page)
+      .getByRole("button", { name: /^Comments/ })
+      .focus()
+    await page.keyboard.press("Enter")
+    await expect(panel(page)).toBeVisible()
+    for (let i = 0; i < 2; i++) {
+      await page.keyboard.press("Shift+C")
+      await expect(panel(page)).toBeHidden()
+      await page.keyboard.press("Shift+C")
+      await expect(panel(page)).toBeVisible()
+    }
+    await expect(panel(page).getByRole("searchbox", { name: "Search comments" })).toHaveValue("")
+  })
+
   test("opening the panel while comments are hidden shows them", async ({ page }) => {
     await signIn(page, await guestSession("Peek panel"))
     await openTestPage(page, "hide-panel")

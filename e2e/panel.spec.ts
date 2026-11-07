@@ -237,15 +237,38 @@ test("a search or filter that does not show the open thread closes it", async ({
 })
 
 test("the panel takes the focus and gives it back", async ({ page }) => {
-  await signIn(page, await guestSession("Focus"))
-  await openTestPage(page, "focus")
+  const me = await guestSession("Focus")
+  const path = testPath("focus")
+  await apiThread(me, path, "Older")
+  await apiThread(me, path, "Newer", "A paragraph that people comment on in tests.", "p")
+  await signIn(page, me)
+  await page.goto(path)
   const button = toolbar(page).getByRole("button", { name: /^Comments/ })
   await button.focus()
   await page.keyboard.press("Enter")
-  await expect(panel(page).getByRole("searchbox", { name: "Search comments" })).toBeFocused()
+  // The first item, not the search: the keys (Shift+C, ↑ ↓) work. Only the focus: no thread opens.
+  await expect(items(page).first()).toBeFocused()
+  await expect(threadPopover(page)).toBeHidden()
   await page.keyboard.press("Escape")
   await expect(panel(page)).toBeHidden()
   await expect(button).toBeFocused()
+
+  // With a thread open: its item.
+  await pins(page).first().click()
+  await expect(threadPopover(page)).toBeVisible()
+  await button.focus()
+  await page.keyboard.press("Enter")
+  await expect(items(page).filter({ hasText: "Older" })).toBeFocused()
+})
+
+test("an empty panel takes the focus itself", async ({ page }) => {
+  await signIn(page, await guestSession("Empty focus"))
+  await openTestPage(page, "focus-empty")
+  await toolbar(page)
+    .getByRole("button", { name: /^Comments/ })
+    .focus()
+  await page.keyboard.press("Enter")
+  await expect(panel(page)).toBeFocused()
 })
 
 test("a link opens a resolved, detached thread", async ({ page }) => {
