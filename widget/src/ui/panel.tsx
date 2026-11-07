@@ -639,18 +639,24 @@ function PanelItem({
           )}
         </span>
       </button>
-      {/* The mouse way to the details, as high as the item. An icon without a direction: it says "details" on
-          both sides and in both layouts. The tooltip names the key, which depends on the side. */}
+      {/* The mouse way to the details: the hit area is as high as the item, the highlight only a circle around the
+          icon. It shows with the item (hover, the open thread), and always on touch screens. An icon without a
+          direction: it says "details" on both sides and in both layouts. The tooltip names the key. */}
       <button
         type="button"
         tabIndex={-1}
         aria-label={`Details: ${shortText(first?.text ?? "")}`}
         title={`Details (${detailsKey})`}
         data-icon="info"
-        className="absolute inset-y-0 right-0 flex w-8 items-center justify-center rounded-r-md text-muted-foreground hover:bg-foreground/10 hover:text-foreground [&_svg]:size-3.5"
+        className={cn(
+          "group/info absolute inset-y-0 right-0 flex w-8 items-center justify-center text-muted-foreground [&_svg]:size-3.5",
+          !active && "opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100",
+        )}
         onClick={onDetails}
       >
-        <InfoIcon />
+        <span className="flex size-7 items-center justify-center rounded-full transition-colors group-hover/info:bg-foreground/[0.06] group-hover/info:text-foreground">
+          <InfoIcon />
+        </span>
       </button>
     </li>
   )

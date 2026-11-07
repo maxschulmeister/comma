@@ -121,6 +121,24 @@ test("an admin deletes any thread", async ({ page, context }) => {
   await admin.close()
 })
 
+test("the preview of a pin does not come back when its thread closes", async ({ page }) => {
+  await withComment(page, "preview-back", "Previewer")
+  await page.keyboard.press("Escape")
+  await expect(threadPopover(page)).toBeHidden()
+  // Hover until the preview shows, then click: the thread opens.
+  const preview = page.locator("[data-slot=hover-card-content]")
+  await pins(page).first().hover()
+  await expect(preview).toBeVisible()
+  await pins(page).first().click()
+  await expect(threadPopover(page)).toBeVisible()
+  // The mouse goes away, and the thread closes.
+  await page.mouse.move(5, 5)
+  await page.keyboard.press("Escape")
+  await expect(threadPopover(page)).toBeHidden()
+  await page.waitForTimeout(500)
+  await expect(preview).toBeHidden()
+})
+
 test("resolve tells what happened and can be undone", async ({ page }) => {
   const thread = await withComment(page, "resolve-undo", "Undoer")
   await thread.getByRole("button", { name: "Resolve" }).click()

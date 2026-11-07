@@ -2,7 +2,7 @@
 // or the project default `details`): a layer of the side panel (default), or a dialog over the page.
 // They follow the open thread. Previous and next go through the panel list, so a reviewer can keep them open.
 // A chunk of its own: it loads when the details open first.
-import { CaretDownIcon, CaretUpIcon, CopyIcon, XIcon } from "@phosphor-icons/react"
+import { ArrowLeftIcon, CaretDownIcon, CaretUpIcon, CopyIcon, XIcon } from "@phosphor-icons/react"
 import { cn } from "cn"
 import { type CSSProperties, type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { fileUrl } from "@/client"
@@ -250,19 +250,19 @@ export function DetailsLayer() {
         } else stepKeys(event, nav, go)
       }}
     >
-      {/* Close (×), not a back arrow: "back" has no direction when the panel can be on either side. */}
-      <header className="flex h-11 shrink-0 items-center gap-1 border-b pr-1.5 pl-3">
-        <h2 className="flex-1 font-medium text-sm">Details</h2>
-        <Stepper nav={nav} go={go} />
+      {/* Back to the list: the details are a layer on it. ← means "back" here, as in a browser, on both sides. */}
+      <header className="flex h-11 shrink-0 items-center gap-1 border-b px-1.5">
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="Close details"
-          title="Close details (Esc)"
+          aria-label="Back to comments"
+          title="Back to comments (Esc)"
           onClick={closeDetails}
         >
-          <XIcon />
+          <ArrowLeftIcon />
         </Button>
+        <h2 className="flex-1 font-medium text-sm">Details</h2>
+        <Stepper nav={nav} go={go} />
       </header>
       <div className="comma-toolbar-room flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
         {thread.screenshot && (

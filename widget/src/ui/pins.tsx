@@ -235,9 +235,18 @@ function Pin({
 
   const label = `Comment by ${nameOf(author)}${thread.unread ? ", unread" : ""}: ${first?.text.slice(0, 80) ?? ""}`
 
-  // No preview while the thread is open: it would also take the Escape key.
+  // No preview while the thread is open: it would also take the Escape key. The card stays mounted, so Base UI ends
+  // its exit animation: unmounted earlier, it came back stuck when the thread closed.
   return (
-    <HoverCard open={preview && !open} onOpenChange={setPreview}>
+    <HoverCard
+      open={preview && !open}
+      onOpenChange={(next, details) => {
+        // Only the mouse shows the preview. When a thread closes, the focus goes back to its pin: a preview then
+        // would stay until the focus moves on. The pin's label tells screen readers the same.
+        if (next && details.reason === "trigger-focus") details.cancel()
+        else setPreview(next)
+      }}
+    >
       <HoverCardTrigger
         delay={300}
         closeDelay={100}
@@ -275,7 +284,7 @@ function Pin({
           <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-blue-500 ring-2 ring-background" />
         )}
       </HoverCardTrigger>
-      {!open && first && (
+      {first && (
         <HoverCardContent side="right" align="start" sideOffset={8} className="w-64">
           <div className="flex items-center gap-1.5">
             <UserName user={author} className="font-medium" />

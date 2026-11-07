@@ -155,7 +155,11 @@ test("the details show where the comment was made, and Back keeps the place in t
   // The thread stays open next to the details.
   await expect(threadPopover(page)).toContainText("Comment 4")
 
-  await layer.getByRole("button", { name: "Close details" }).click()
+  // The back button is first in the header, before the title.
+  const back = layer.getByRole("button", { name: "Back to comments" })
+  const title = layer.getByRole("heading", { name: "Details" })
+  expect((await back.boundingBox())?.x ?? 0).toBeLessThan((await title.boundingBox())?.x ?? 0)
+  await back.click()
   await expect(details(page)).toBeHidden()
   await expect(list).toBeVisible()
   expect(await list.evaluate((el) => el.scrollTop)).toBe(scrollTop)
@@ -164,7 +168,7 @@ test("the details show where the comment was made, and Back keeps the place in t
   // Escape also goes back. The panel and the thread stay open.
   await openDetails(page)
   await expect(details(page)).toBeVisible()
-  await details(page).getByRole("button", { name: "Close details" }).focus()
+  await details(page).getByRole("button", { name: "Back to comments" }).focus()
   await page.keyboard.press("Escape")
   await expect(details(page)).toBeHidden()
   await expect(panel(page)).toBeVisible()
