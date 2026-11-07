@@ -9,7 +9,7 @@ import { createShadowHost } from "./shadow"
 import { getState, initStore, setState } from "./store"
 import { preloadEditor } from "./ui/composer"
 import { loadPinsVisible, startShortcuts } from "./ui/shortcuts"
-import { loadView } from "./ui/view"
+import { keepReview, loadReview, loadView } from "./ui/view"
 
 type Loader = { __queue: [string, unknown[]][]; __script: { src: string; project: string; shortcut?: string } }
 
@@ -56,7 +56,8 @@ function start({ __queue: queue, __script: script }: Loader) {
     shortcut: parseShortcut(script.shortcut),
     detailsOpen: false,
   })
-  setState({ session: loadSession() })
+  setState({ session: loadSession(), ...loadReview() })
+  keepReview()
   followOtherTabs()
   // `?comma`: a visitor wants to sign in (the toolbar can be hidden for visitors).
   if (getState().revealed && !getState().session) setState({ panelOpen: true })

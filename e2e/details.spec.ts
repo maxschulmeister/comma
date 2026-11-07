@@ -437,7 +437,8 @@ test("the view menu switches where the details open, and the choice stays", asyn
   await page.keyboard.press("Escape")
   await expect(panel(page).getByRole("button", { name: "Details: Only" })).toHaveAttribute("title", "Details (→)")
   await page.reload()
-  await openPanel(page)
+  // The panel stays open for the tab.
+  await expect(panel(page)).toBeVisible()
   await panel(page).getByRole("button", { name: "Details: Only" }).click()
   await expect(page.getByRole("dialog", { name: "Details" })).toBeVisible()
   await expect(details(page)).toBeHidden()

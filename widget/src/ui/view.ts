@@ -1,7 +1,7 @@
 // View settings: how the side panel shows (over the page, or next to it), on which side, and where the details
 // open (in the panel, or in a window). Each person chooses in the panel's view menu (the side also by dragging the
 // panel); the choice stays in this browser. Without a choice, the project config decides (`panel`, `details`).
-import { type DetailsMode, type PanelMode, type PanelSide, type State, setState } from "@/store"
+import { type DetailsMode, getState, type PanelMode, type PanelSide, type State, setState, subscribe } from "@/store"
 
 const PANEL_KEY = "comma:panel-mode"
 const SIDE_KEY = "comma:panel-side"
@@ -57,4 +57,45 @@ export function arrowKeys(side: PanelSide) {
   return side === "right"
     ? { toPage: "ArrowLeft", fromPage: "ArrowRight", fromPageGlyph: "→" }
     : { toPage: "ArrowRight", fromPage: "ArrowLeft", fromPageGlyph: "←" }
+}
+
+// The review in this tab: the panel and its filters. Kept for the tab (sessionStorage), so a review goes on after
+// a page load, also on another page of the site.
+const reviewKey = () => `comma:review:${getState().server}:${getState().project}`
+
+export function loadReview(): Pick<State, "panelOpen" | "filters"> | null {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(reviewKey()) ?? "null")
+    const f = value?.filters
+    if (
+      typeof value?.panelOpen !== "boolean" ||
+      !["page", "all"].includes(f?.scope) ||
+      !["date", "unread"].includes(f?.sort) ||
+      ![f.mine, f.assigned, f.resolved].every((b) => typeof b === "boolean") ||
+      typeof f.query !== "string"
+    )
+      return null
+    const { scope, sort, mine, assigned, resolved, query } = f
+    return {
+      panelOpen: value.panelOpen,
+      filters: { scope, sort, mine, assigned, resolved, query: query.slice(0, 200) },
+    }
+  } catch {
+    return null // Storage can be blocked.
+  }
+}
+
+export function keepReview() {
+  let last = ""
+  return subscribe(() => {
+    const { panelOpen, filters } = getState()
+    const value = JSON.stringify({ panelOpen, filters })
+    if (value === last) return
+    last = value
+    try {
+      sessionStorage.setItem(reviewKey(), value)
+    } catch {
+      // Storage can be blocked. The review then starts again after a page load.
+    }
+  })
 }

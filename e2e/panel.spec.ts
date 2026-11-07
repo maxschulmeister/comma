@@ -177,6 +177,28 @@ test("a thread on another page: click goes there and opens it", async ({ page })
   await expect(pins(page)).toHaveCount(1)
 })
 
+test("the review goes on on the other page: the panel, its filters and search stay", async ({ page }) => {
+  const me = await guestSession("Reviewer on the way")
+  const path = testPath("review-travel")
+  const text = `Far away ${path}`
+  await apiThread(me, `${path}-b`, text)
+  await apiThread(me, `${path}-b`, "Also far away, not found")
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  await panel(page).getByRole("button", { name: "Filter and sort" }).click()
+  await page.getByRole("menuitemradio", { name: "All pages" }).click()
+  await page.keyboard.press("Escape")
+  await panel(page).getByRole("searchbox", { name: "Search comments" }).fill("far away")
+  await items(page).filter({ hasText: text }).click()
+  await expect(page).toHaveURL(new RegExp(`${path}-b$`))
+  await expect(threadPopover(page)).toContainText(text)
+  await expect(panel(page)).toBeVisible()
+  await expect(panel(page).getByRole("searchbox", { name: "Search comments" })).toHaveValue("far away")
+  // Still all pages: the item says its page.
+  await expect(items(page).filter({ hasText: text })).toContainText(`${path}-b`)
+})
+
 test("a detached thread shows in the panel with a label", async ({ page }) => {
   const me = await guestSession("Detacher")
   const path = testPath("detached")
@@ -474,7 +496,8 @@ test("the panel floats over the page by default; a toggle makes it push the page
 
   // The choice stays after a reload.
   await page.reload()
-  await openPanel(page)
+  // The panel stays open for the tab.
+  await expect(panel(page)).toBeVisible()
   await expect.poll(margin).toBe("360px")
   await panel(page).getByRole("button", { name: "View options" }).click()
   await page.getByRole("menuitemradio", { name: "Overlay" }).click()
@@ -550,7 +573,8 @@ test("the panel goes to the side it is dragged to, in both modes; the view menu 
 
   // The side stays after a reload, and in push mode: the page gets its margin on the left.
   await page.reload()
-  await openPanel(page)
+  // The panel stays open for the tab.
+  await expect(panel(page)).toBeVisible()
   await expect.poll(async () => (await box()).x).toBe(8)
   await panel(page).getByRole("button", { name: "View options" }).click()
   await expect(page.getByRole("menuitemradio", { name: "Left" })).toBeChecked()
