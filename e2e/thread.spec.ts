@@ -203,8 +203,9 @@ test("a message shows beside the toolbar; with the panel open, at the other end 
     if (!message || !bar) throw new Error("no box")
     return { message, bar, middle: (b: typeof bar) => b.y + b.height / 2 }
   }
-  // The same row, left of the toolbar. Its buttons stay in place.
+  // The same row, left of the toolbar, as high as it. Its buttons stay in place.
   const closed = await box()
+  expect(Math.round(closed.message.height)).toBe(Math.round(closed.bar.height))
   expect(closed.message.x + closed.message.width).toBeLessThanOrEqual(closed.bar.x)
   expect(Math.abs(closed.middle(closed.message) - closed.middle(closed.bar))).toBeLessThan(2)
   await expect.poll(async () => (await comments.boundingBox())?.x).toBe(before?.x)

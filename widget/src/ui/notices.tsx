@@ -87,9 +87,10 @@ export function Notices({ floating, from }: { floating: boolean; from: "left" | 
       <div
         ref={content}
         className={cn(
-          "pointer-events-auto flex h-8 min-w-0 items-center gap-0.5 whitespace-nowrap text-muted-foreground text-xs transition-[opacity,translate,visibility] duration-200 ease-out",
+          // As high as the toolbar, and ↶ as large as its buttons: the two pills are a pair.
+          "pointer-events-auto flex h-10 min-w-0 items-center gap-0.5 whitespace-nowrap text-xs transition-[opacity,translate,visibility] duration-200 ease-out",
           floating && "rounded-full bg-background shadow-lg ring-1 ring-foreground/10",
-          floating ? (action ? "ps-3 pe-1" : "px-3") : "px-2",
+          floating ? (action ? "ps-3.5 pe-1" : "px-3.5") : "px-2",
           // Hidden: it fades toward the toolbar, and comes out of it.
           !notice && "invisible opacity-0",
           !notice && floating && { left: "-translate-x-1", right: "translate-x-1", below: "translate-y-1" }[from],
@@ -102,8 +103,8 @@ export function Notices({ floating, from }: { floating: boolean; from: "left" | 
               render={
                 <Button
                   variant="ghost"
-                  size="icon-xs"
-                  className="rounded-full text-muted-foreground hover:text-foreground"
+                  size="icon"
+                  className="rounded-full"
                   aria-label={action.label}
                   data-notice-action
                   onClick={() => {
