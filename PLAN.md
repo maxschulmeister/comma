@@ -66,7 +66,7 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 - Click: thread popover.
 - Pins close together merge into a cluster with a count and avatars. Click a cluster to see its threads.
 - Drag a pin to move it (thread author only). This saves a new anchor. A move that fails says so ("Could not move the comment"), and the pin goes back.
-- Pins show by default. The eye in the toolbar or `Shift+C` shows or hides them. The widget remembers the choice.
+- Pins show by default. The eye in the toolbar or `Shift+C` hides comma from the page, for a look at the page as visitors see it: the pins, the panel, the open thread with its details, and comment mode. Showing brings the panel, the thread and the details back (kept for the tab, also after a page load). The widget remembers the choice. Opening the panel shows the comments again (the panel lists them). Hidden by key, the focus goes to the eye.
 - Resolved threads do not show on the page.
 
 ### Thread popover

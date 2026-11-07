@@ -74,6 +74,9 @@ export function Toolbar() {
             variant="ghost"
             size="icon"
             className="rounded-full"
+            data-pins-button
+            // Hiding takes the open thread off the page, and showing brings it back: a click here keeps it until then.
+            data-keeps-thread
             aria-label={pinsVisible ? "Hide comments" : "Show comments"}
             onClick={togglePins}
           />

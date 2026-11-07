@@ -8,7 +8,7 @@ import { startTracking, watchPage } from "./live"
 import { createShadowHost } from "./shadow"
 import { getState, initStore, setState } from "./store"
 import { preloadEditor } from "./ui/composer"
-import { loadPinsVisible, startShortcuts } from "./ui/shortcuts"
+import { loadPinsVisible, showCommentsWithPanel, startShortcuts } from "./ui/shortcuts"
 import { keepReview, loadReview, loadView } from "./ui/view"
 
 type Loader = { __queue: [string, unknown[]][]; __script: { src: string; project: string; shortcut?: string } }
@@ -42,6 +42,7 @@ function start({ __queue: queue, __script: script }: Loader) {
     page: location.pathname,
     commentMode: false,
     pinsVisible: loadPinsVisible(),
+    hiddenView: null,
     panelOpen: false,
     ...loadView(),
     threadFocus: true,
@@ -58,6 +59,7 @@ function start({ __queue: queue, __script: script }: Loader) {
   })
   setState({ session: loadSession(), ...loadReview() })
   keepReview()
+  showCommentsWithPanel()
   followOtherTabs()
   // `?comma`: a visitor wants to sign in (the toolbar can be hidden for visitors).
   if (getState().revealed && !getState().session) setState({ panelOpen: true })

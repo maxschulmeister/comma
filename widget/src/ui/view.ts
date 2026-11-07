@@ -59,14 +59,21 @@ export function arrowKeys(side: PanelSide) {
     : { toPage: "ArrowRight", fromPage: "ArrowLeft", fromPageGlyph: "←" }
 }
 
-// The review in this tab: the panel and its filters. Kept for the tab (sessionStorage), so a review goes on after
-// a page load, also on another page of the site.
+// The review in this tab: the panel, its filters, and what hiding the comments took off the page. Kept for the tab
+// (sessionStorage), so a review goes on after a page load, also on another page of the site.
 const reviewKey = () => `comma:review:${getState().server}:${getState().project}`
 
-export function loadReview(): Pick<State, "panelOpen" | "filters"> | null {
+export function loadReview(): Pick<State, "panelOpen" | "filters" | "hiddenView"> | null {
   try {
     const value = JSON.parse(sessionStorage.getItem(reviewKey()) ?? "null")
     const f = value?.filters
+    const h = value?.hiddenView
+    const hiddenView =
+      typeof h?.panelOpen === "boolean" &&
+      typeof h.details === "boolean" &&
+      (h.threadId === null || typeof h.threadId === "string")
+        ? { panelOpen: h.panelOpen, threadId: h.threadId, details: h.details }
+        : null
     if (
       typeof value?.panelOpen !== "boolean" ||
       !["page", "all"].includes(f?.scope) ||
@@ -79,6 +86,7 @@ export function loadReview(): Pick<State, "panelOpen" | "filters"> | null {
     return {
       panelOpen: value.panelOpen,
       filters: { scope, sort, mine, assigned, resolved, query: query.slice(0, 200) },
+      hiddenView,
     }
   } catch {
     return null // Storage can be blocked.
@@ -88,8 +96,8 @@ export function loadReview(): Pick<State, "panelOpen" | "filters"> | null {
 export function keepReview() {
   let last = ""
   return subscribe(() => {
-    const { panelOpen, filters } = getState()
-    const value = JSON.stringify({ panelOpen, filters })
+    const { panelOpen, filters, hiddenView } = getState()
+    const value = JSON.stringify({ panelOpen, filters, hiddenView })
     if (value === last) return
     last = value
     try {

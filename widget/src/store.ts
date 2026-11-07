@@ -52,6 +52,8 @@ export type State = {
   page: string
   commentMode: boolean
   pinsVisible: boolean
+  /** What hiding the comments took off the page. Showing them brings it back (see togglePins). */
+  hiddenView: HiddenView | null
   panelOpen: boolean
   /** The person's view choices in this browser. null: the project default (see view.ts). */
   panelMode: PanelMode | null
@@ -76,6 +78,8 @@ export type State = {
   /** The key for comment mode (with Shift: show or hide comments). null: no shortcut. */
   shortcut: string | null
 }
+
+export type HiddenView = { panelOpen: boolean; threadId: string | null; details: boolean }
 
 type Listener = () => void
 

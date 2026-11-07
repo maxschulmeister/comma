@@ -1,8 +1,9 @@
 import { closeDraft } from "@/drafts"
-import { fromWidgetPart, isTyping } from "@/lib/dom"
+import { fromWidgetPart, HOST_TAG, isTyping } from "@/lib/dom"
 import { NARROW } from "@/lib/media"
-import { getState, setState, widgetVisible } from "@/store"
+import { getState, type State, setState, subscribe, widgetVisible } from "@/store"
 import { preloadEditor } from "./composer"
+import { setFocusOnClose } from "./thread"
 import { panelMode } from "./view"
 
 const PINS_KEY = "comma:pins"
@@ -15,14 +16,53 @@ export function loadPinsVisible() {
   }
 }
 
-export function togglePins() {
-  const pinsVisible = !getState().pinsVisible
-  setState({ pinsVisible })
+function setPinsVisible(pinsVisible: boolean, patch: Partial<State> = {}) {
+  setState({ ...patch, pinsVisible })
   try {
     localStorage.setItem(PINS_KEY, pinsVisible ? "visible" : "hidden")
   } catch {
     // Storage can be blocked. The choice then lasts until reload.
   }
+}
+
+/**
+ * Hide: comma goes off the page, for a look at the page as visitors see it. The pins, the panel, the open thread
+ * with its details, and comment mode. Show: the panel, the thread and the details come back.
+ */
+export function togglePins() {
+  const s = getState()
+  if (!s.pinsVisible) {
+    const view = s.hiddenView
+    const thread = s.threads.find((t) => t.id === view?.threadId && t.page === s.page)
+    setPinsVisible(true, {
+      hiddenView: null,
+      panelOpen: view?.panelOpen ?? s.panelOpen,
+      ...(thread && { openThreadId: thread.id, threadFocus: false, detailsOpen: !!view?.details }),
+    })
+    return
+  }
+  if (s.commentMode) setCommentMode(false)
+  // The focus is in what closes (the thread, the panel): it goes to the eye, which brings it back.
+  const root = document.querySelector(HOST_TAG)?.shadowRoot
+  if (root?.activeElement && !root.activeElement.closest("[data-slot=toolbar]")) {
+    const eye = () => root.querySelector<HTMLElement>("[data-pins-button]")
+    if (s.openThreadId) setFocusOnClose(eye)
+    else eye()?.focus()
+  }
+  setPinsVisible(false, {
+    hiddenView: { panelOpen: s.panelOpen, threadId: s.openThreadId, details: s.detailsOpen },
+    panelOpen: false,
+    openThreadId: null,
+    detailsOpen: false,
+  })
+}
+
+/** The panel lists the comments: opening it while they are hidden shows them (without bringing a thread back). */
+export function showCommentsWithPanel() {
+  return subscribe(() => {
+    const s = getState()
+    if (s.panelOpen && !s.pinsVisible) setPinsVisible(true, { hiddenView: null })
+  })
 }
 
 /** Comment mode. The panel opens with it. On narrow screens the panel covers the page, so it closes. */
@@ -33,7 +73,7 @@ export function setCommentMode(on: boolean) {
     // Narrow screens: it covers the page, so it closes.
     const s = getState()
     const panelOpen = matchMedia(NARROW).matches ? false : panelMode(s) === "push" || s.panelOpen
-    setState({ commentMode: true, pinsVisible: true, panelOpen })
+    setPinsVisible(true, { commentMode: true, panelOpen, hiddenView: null })
   } else {
     // A draft with text stays as a pin.
     closeDraft()

@@ -10,6 +10,7 @@ import {
   overlay,
   panel,
   pins,
+  showPanel,
   signIn,
   testPath,
   threadPopover,
@@ -262,10 +263,75 @@ test.describe("comment mode", () => {
     await expect(pins(page)).toHaveCount(0)
     await page.reload()
     await expect(toolbar(page)).toBeVisible()
-    await page.waitForTimeout(500)
+    await page.waitForTimeout(1500)
     await expect(pins(page)).toHaveCount(0)
     await page.keyboard.press("Shift+C")
     await expect(pins(page)).toHaveCount(1)
+  })
+
+  test("hiding takes the panel and the open thread off the page; showing brings them back, also after reload", async ({
+    page,
+  }) => {
+    await signIn(page, await guestSession("Peek"))
+    await openTestPage(page, "hide-view")
+    await addComment(page, page.getByTestId("title"), "Hello")
+    await endCommentMode(page)
+    await pins(page).first().click()
+    await showPanel(page)
+    await expect(threadPopover(page)).toContainText("Hello")
+    await toolbar(page).getByRole("button", { name: "Hide comments" }).click()
+    await expect(panel(page)).toBeHidden()
+    await expect(threadPopover(page)).toBeHidden()
+    await expect(pins(page)).toHaveCount(0)
+    // The thread comes back once the comments loaded.
+    const loaded = page.waitForResponse("**/api/threads*")
+    await page.reload()
+    await loaded
+    await expect(panel(page)).toBeHidden()
+    await page.keyboard.press("Shift+C")
+    await expect(panel(page)).toBeVisible()
+    await expect(threadPopover(page)).toContainText("Hello")
+    await expect(pins(page)).toHaveCount(1)
+  })
+
+  test("hiding by key: comment mode ends, and the focus goes from the thread to the eye", async ({ page }) => {
+    await signIn(page, await guestSession("Peek keys"))
+    await openTestPage(page, "hide-keys")
+    await addComment(page, page.getByTestId("title"), "Hello")
+    await addComment(page, page.getByTestId("lead"), "Second")
+    await endCommentMode(page)
+    // A thread selected with ↓ in the panel list: the focus stays in the list.
+    await showPanel(page)
+    const items = panel(page).locator("[data-slot=panel-item]")
+    await items.first().focus()
+    await page.keyboard.press("ArrowDown")
+    await expect(threadPopover(page)).toContainText("Hello")
+    await page.keyboard.press("Shift+C")
+    await expect(threadPopover(page)).toBeHidden()
+    await expect(panel(page)).toBeHidden()
+    await expect(toolbar(page).getByRole("button", { name: "Show comments" })).toBeFocused()
+    await page.keyboard.press("Enter")
+    await expect(panel(page)).toBeVisible()
+    await expect(threadPopover(page)).toContainText("Hello")
+
+    await page.mouse.click(1, 1)
+    await page.keyboard.press("c")
+    await expect(toolbar(page).getByRole("button", { name: "Comment mode" })).toHaveAttribute("aria-pressed", "true")
+    await page.keyboard.press("Shift+C")
+    await expect(toolbar(page).getByRole("button", { name: "Comment mode" })).toHaveAttribute("aria-pressed", "false")
+    await expect(pins(page)).toHaveCount(0)
+  })
+
+  test("opening the panel while comments are hidden shows them", async ({ page }) => {
+    await signIn(page, await guestSession("Peek panel"))
+    await openTestPage(page, "hide-panel")
+    await addComment(page, page.getByTestId("title"), "Hello")
+    await endCommentMode(page)
+    await page.keyboard.press("Shift+C")
+    await expect(pins(page)).toHaveCount(0)
+    await showPanel(page)
+    await expect(pins(page)).toHaveCount(1)
+    await expect(toolbar(page).getByRole("button", { name: "Hide comments" })).toBeVisible()
   })
 
   test("the eye in the toolbar hides and shows comments", async ({ page }) => {
