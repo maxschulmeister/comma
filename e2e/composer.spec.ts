@@ -176,6 +176,18 @@ test("a screenshot of the visible page is added as an image", async ({ page }) =
   await expect.poll(() => shown.evaluate((img: HTMLImageElement) => img.naturalHeight)).toBe(720 * scale)
 })
 
+test("a slow screenshot upload does not hold the comment back", async ({ page }) => {
+  // The upload never answers.
+  await page.route("**/api/files", () => {})
+  const popover = await startComment(page, "slow-screenshot")
+  await typeComment(page, popover, "sent anyway")
+  await page.keyboard.press("ControlOrMeta+Enter")
+  // After the screenshot's time limit (5 s), the comment goes without it.
+  const thread = threadPopover(page)
+  await expect(thread).toContainText("sent anyway", { timeout: 8000 })
+  await expect(thread.getByRole("button", { name: /, details$/ }).locator("img")).toHaveCount(0)
+})
+
 test("a new thread keeps a screenshot of its element, apart from the images", async ({ page }) => {
   const popover = await startComment(page, "element-screenshot")
   const box = await page.getByTestId("lead").boundingBox()

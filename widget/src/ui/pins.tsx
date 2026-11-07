@@ -533,22 +533,25 @@ const SCREENSHOT_SPACE = 16
 const SCREENSHOT_TIMEOUT = 5000
 
 /** Uploads a screenshot of the element (or region) and the space around it. The comment does not wait for a failed
- * or slow one. */
+ * or slow one: the time limit is for the capture and the upload together. */
 async function elementScreenshot(anchor: Anchor, el: Element) {
   const box = anchor.rect ? anchorBox(anchor, el) : el.getBoundingClientRect()
   const space = SCREENSHOT_SPACE
-  try {
+  const upload = async () => {
     const { screenshotPage } = await import("@/lib/screenshot")
-    const file = await Promise.race([
-      screenshotPage({
-        x: box.x - space,
-        y: box.y - space,
-        width: box.width + 2 * space,
-        height: box.height + 2 * space,
-      }),
+    const file = await screenshotPage({
+      x: box.x - space,
+      y: box.y - space,
+      width: box.width + 2 * space,
+      height: box.height + 2 * space,
+    })
+    return (await uploadFile(await shrinkImage(file))).id
+  }
+  try {
+    return await Promise.race([
+      upload(),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), SCREENSHOT_TIMEOUT)),
     ])
-    return (await uploadFile(await shrinkImage(file))).id
   } catch {
     return undefined
   }
