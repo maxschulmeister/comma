@@ -7,6 +7,7 @@ import { elementAt, fromWidgetPart, HOST_TAG, isTyping } from "@/lib/dom"
 import { resolvedElement, useLayoutTick } from "@/live"
 import { getState, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
+import { tellMoveFailed } from "./notices"
 
 const DRAG_MIN = 6
 
@@ -46,7 +47,7 @@ export function placeAt(el: Element, at: Parameters<typeof createAnchor>[1]) {
   if (thread) {
     setState({ moving: null, openThreadId: thread.id })
     const anchor = "point" in at ? movedAnchor(thread, at.point.x, at.point.y, el) : createAnchor(el, at)
-    void moveThread(thread, page, anchor).catch(() => {})
+    void moveThread(thread, page, anchor).catch(tellMoveFailed)
     return
   }
   const anchor = createAnchor(el, at)

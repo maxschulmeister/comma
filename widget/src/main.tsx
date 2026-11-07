@@ -99,8 +99,27 @@ function start({ __queue: queue, __script: script }: Loader) {
   startTracking()
   startShortcuts()
   startPolling()
-  void loadProject().catch(() => {})
+  void loadProjectUntilItWorks()
   void refresh()
   const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 2000))
   idle(() => void preloadEditor().catch(() => {}))
+}
+
+/**
+ * The toolbar needs the project's settings. A failed load (offline, server down) tries again: after 5 s, then
+ * twice as long each time up to a minute, and at once when the browser is online again.
+ */
+async function loadProjectUntilItWorks() {
+  for (let wait = 5000; ; wait = Math.min(wait * 2, 60_000)) {
+    try {
+      return await loadProject()
+    } catch {
+      const done = new AbortController()
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, wait)
+        window.addEventListener("online", () => resolve(), { once: true, signal: done.signal })
+      })
+      done.abort()
+    }
+  }
 }

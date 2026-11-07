@@ -206,6 +206,34 @@ async function hold(page: Page, pattern: string, late: "request" | "answer" = "r
   return release
 }
 
+test("a move that fails says so, and the pin stays at its place", async ({ page }) => {
+  const thread = await withComment(page, "move-fails", "Mover")
+  const before = await pins(page).first().boundingBox()
+  await page.route("**/api/threads/*", (route) =>
+    route.request().method() === "PATCH" ? route.abort() : route.continue(),
+  )
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await page.getByRole("menuitem", { name: "Move" }).click()
+  await page.getByRole("link", { name: "Home" }).focus()
+  await page.keyboard.press("Enter")
+  await expect(page.getByRole("status")).toContainText("Could not move the comment")
+  await expect.poll(async () => (await pins(page).first().boundingBox())?.x).toBe(before?.x)
+})
+
+test("when updates fail, a message says so, and Try again loads them", async ({ page }) => {
+  await withComment(page, "poll-fails", "Poller")
+  await page.route("**/api/threads", (route) => route.abort())
+  // A poll: the window gets the focus.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  const status = page.getByRole("status").filter({ hasText: "Cannot reach comma" })
+  await expect(status).toBeVisible()
+  // The comments stay.
+  await expect(pins(page)).toHaveCount(1)
+  await page.unroute("**/api/threads")
+  await status.getByRole("button", { name: "Try again" }).click()
+  await expect(status).toBeHidden()
+})
+
 test("a poll during a slow reply does not lose the reply", async ({ page }) => {
   const thread = await withComment(page, "slow-reply", "Slow")
   const release = await hold(page, "**/api/threads/*/comments")

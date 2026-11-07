@@ -198,6 +198,8 @@ export function refresh(): Promise<void> {
       const session = getState().session
       const before = changes
       const result = await requestThreads()
+      // The server answered (also "no change"): updates work.
+      if (getState().loadFailed) setState({ loadFailed: false })
       stale = before !== changes
       if (result && !stale && isCurrent(session)) {
         const { data } = result

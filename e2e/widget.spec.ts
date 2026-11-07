@@ -299,6 +299,14 @@ test.describe("comment mode", () => {
     await expect.poll(labels).toEqual(["Account: Mirror", "Comments", "Hide comments", "Comment mode"])
   })
 
+  test("when the first load fails, comma tries again and shows up", async ({ page }) => {
+    let failed = 0
+    await page.route("**/api/projects/**", (route) => (failed++ === 0 ? route.abort() : route.continue()))
+    await page.goto(testPath("first-load"))
+    await expect(toolbar(page)).toBeVisible({ timeout: 10_000 })
+    expect(failed).toBeGreaterThan(1)
+  })
+
   test("pins close together merge into a cluster", async ({ page }) => {
     await signIn(page, await guestSession("Cluster"))
     await openTestPage(page, "cluster")

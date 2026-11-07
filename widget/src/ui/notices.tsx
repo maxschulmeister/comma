@@ -1,5 +1,6 @@
 import { XIcon } from "@phosphor-icons/react"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
+import { refresh } from "@/client"
 import { Button } from "@/components/ui/button"
 import { NARROW, useMedia } from "@/lib/media"
 import { getState, type Notice, setState, useStore } from "@/store"
@@ -11,7 +12,11 @@ let nextId = 0
 /** Shows a short message: what an action did ("Thread resolved"), with an optional action ("Undo"). */
 export function notify(text: string, action?: Notice["action"]) {
   setState({ notice: { id: ++nextId, text, action } })
+  return nextId
 }
+
+/** A pin move that did not reach the server. The pin is back at its old place. */
+export const tellMoveFailed = () => notify("Could not move the comment. Try again.")
 
 const dismiss = (id: number) => {
   if (getState().notice?.id === id) setState({ notice: null })
@@ -34,6 +39,22 @@ export function Notices() {
     const timer = setTimeout(() => dismiss(notice.id), 4000)
     return () => clearTimeout(timer)
   }, [notice])
+
+  // The comments loaded, then updates failed: they can be out of date. Polling goes on; the message goes when an
+  // update works again.
+  const updatesFailed = useStore((s) => s.loaded && s.loadFailed)
+  const updatesNotice = useRef<number | null>(null)
+  useEffect(() => {
+    if (updatesFailed) {
+      updatesNotice.current = notify("Cannot reach comma. Comments may be out of date.", {
+        label: "Try again",
+        run: () => void refresh(),
+      })
+    } else if (updatesNotice.current !== null) {
+      dismiss(updatesNotice.current)
+      updatesNotice.current = null
+    }
+  }, [updatesFailed])
 
   return (
     <div

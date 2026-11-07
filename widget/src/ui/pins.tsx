@@ -23,6 +23,7 @@ import { type Draft, getState, type State, setState, threadTakesFocus, useStore 
 import type { Thread } from "@/types"
 import { Composer } from "./composer"
 import { focusOpenItem } from "./details-state"
+import { tellMoveFailed } from "./notices"
 import { movedAnchor } from "./overlay"
 import { panelLeftEdge, panelRightEdge } from "./panel"
 import { SignInForm } from "./sign-in"
@@ -225,7 +226,7 @@ function Pin({
       if (!dragged.current || e.type === "pointercancel") return onDrag(null)
       const anchor = movedAnchor(thread, e.clientX, e.clientY)
       moveThread(thread, getState().page, anchor)
-        .catch(() => {})
+        .catch(tellMoveFailed)
         .finally(() => onDrag(null))
     }
     window.addEventListener("pointermove", move)
