@@ -1,12 +1,14 @@
-import { type BrowserContext, expect, type Page, test } from "@playwright/test"
+import { type BrowserContext, expect, type Page, request, test } from "@playwright/test"
 import { sign } from "hono/jwt"
 import {
   addComment,
   appSession,
+  COMMA,
   guestSession,
   openTestPage,
   panel,
   pins,
+  SITE,
   showPanel,
   signIn,
   testPath,
@@ -216,7 +218,7 @@ test("a move that fails says so, and the pin stays at its place", async ({ page 
   await page.getByRole("menuitem", { name: "Move" }).click()
   await page.getByRole("link", { name: "Home" }).focus()
   await page.keyboard.press("Enter")
-  await expect(page.getByRole("status")).toContainText("Could not move the comment")
+  await expect(page.getByRole("status").filter({ hasText: "Could not move the comment" })).toBeVisible()
   await expect.poll(async () => (await pins(page).first().boundingBox())?.x).toBe(before?.x)
 })
 
@@ -232,6 +234,57 @@ test("when updates fail, a message says so, and Try again loads them", async ({ 
   await page.unroute("**/api/threads")
   await status.getByRole("button", { name: "Try again" }).click()
   await expect(status).toBeHidden()
+})
+
+// A thread with replies by the API, as another user.
+async function apiReplies(session: { token: string }, threadId: string, texts: string[]) {
+  const api = await request.newContext()
+  for (const text of texts) {
+    const res = await api.post(`${COMMA}/api/threads/${threadId}/comments`, {
+      headers: { origin: SITE, authorization: `Bearer ${session.token}` },
+      data: { body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] } },
+    })
+    expect(res.ok()).toBe(true)
+  }
+  await api.dispose()
+}
+
+test("a new reply does not move the list while I read older ones; a button shows it", async ({ page }) => {
+  const thread = await withComment(page, "new-reply-reading", "Reader")
+  const id = (await pins(page).first().getAttribute("data-thread")) ?? ""
+  const other = await guestSession("Replier")
+  await apiReplies(
+    other,
+    id,
+    Array.from({ length: 12 }, (_, i) => `Older reply ${i + 1}, long enough to take a line or two in the thread.`),
+  )
+  const poll = () => page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await poll()
+  await expect(thread).toContainText("Older reply 12")
+  const list = thread.locator("[data-slot=thread-comments]")
+  await list.evaluate((el) => el.scrollTo(0, 0))
+  await apiReplies(other, id, ["The newest reply"])
+  await poll()
+  const button = thread.getByRole("button", { name: "1 new reply" })
+  await expect(button).toBeVisible()
+  expect(await list.evaluate((el) => el.scrollTop)).toBe(0)
+  // Screen readers hear it.
+  await expect(thread.locator("[aria-live=polite]")).toHaveText("Replier replied")
+  await button.click()
+  await expect(button).toBeHidden()
+  await expect(thread.getByText("The newest reply")).toBeInViewport()
+  // Shown, so read.
+  await expect(pins(page).first()).not.toHaveAttribute("aria-label", /unread/)
+})
+
+test("a new reply shows at once when I am at the end, and is read", async ({ page }) => {
+  const thread = await withComment(page, "new-reply-end", "Watcher")
+  const id = (await pins(page).first().getAttribute("data-thread")) ?? ""
+  await apiReplies(await guestSession("Answerer"), id, ["Here is my answer"])
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await expect(thread.getByText("Here is my answer")).toBeInViewport()
+  await expect(thread.getByRole("button", { name: /new repl/ })).toHaveCount(0)
+  await expect(pins(page).first()).not.toHaveAttribute("aria-label", /unread/)
 })
 
 test("a poll during a slow reply does not lose the reply", async ({ page }) => {

@@ -1,5 +1,6 @@
 import {
   ArrowCounterClockwiseIcon,
+  ArrowDownIcon,
   ArrowsOutCardinalIcon,
   CheckCircleIcon,
   CheckIcon,
@@ -14,7 +15,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react"
 import { cn } from "cn"
-import { type RefObject, useEffect, useState } from "react"
+import { type RefObject, useEffect, useRef, useState } from "react"
 import {
   deleteComment,
   deleteThread,
@@ -51,7 +52,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { describe, kindOf, shortText } from "@/lib/describe"
 import { pressInsideWidget } from "@/lib/dom"
 import { describeContext } from "@/lib/env"
-import { fullDate, timeAgo } from "@/lib/format"
+import { fullDate, plural, timeAgo } from "@/lib/format"
 import { setState, threadTakesFocus, useStore } from "@/store"
 import type { Comment, Thread, User } from "@/types"
 import { CommentBody } from "./body"
@@ -97,11 +98,39 @@ export function ThreadView({
     if (thread.unread && me) setRead(thread, true).catch(() => {})
   }, [thread.id])
 
-  // Show the newest comment.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when a comment is added.
-  useEffect(() => {
+  // New comments. At the end of the list (or with my own reply), the list follows them, and replies by others are
+  // read. Reading older comments, the list stays, and a button shows how many are new. Screen readers hear them.
+  const users = useStore((s) => s.users)
+  const shownCount = useRef(thread.comments.length)
+  const atEnd = useRef(true)
+  const [newBelow, setNewBelow] = useState(0)
+  const [heard, setHeard] = useState("")
+  const toEnd = () => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
+    atEnd.current = true
+    setNewBelow(0)
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: when comments are added.
+  useEffect(() => {
+    const added = thread.comments.slice(shownCount.current)
+    shownCount.current = thread.comments.length
+    const others = added.filter((c) => c.authorId !== me?.id)
+    const last = others.at(-1)
+    if (last) setHeard(`${users[last.authorId]?.name ?? "Someone"} replied`)
+    if (added.length === 0 || others.length < added.length || atEnd.current) {
+      toEnd()
+      if (others.length > 0 && me) setRead(thread, true).catch(() => {})
+    } else setNewBelow((n) => n + others.length)
   }, [thread.comments.length])
+  const onScroll = () => {
+    const list = listRef.current
+    if (!list) return
+    atEnd.current = list.scrollHeight - list.scrollTop - list.clientHeight < 24
+    if (atEnd.current && newBelow > 0) {
+      setNewBelow(0)
+      if (me) setRead(thread, true).catch(() => {})
+    }
+  }
 
   const act = async (action: () => Promise<unknown>) => {
     setError(null)
@@ -263,43 +292,68 @@ export function ThreadView({
         </div>
       )}
 
-      <div ref={listRef} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto py-1 outline-none">
-        {resolved && (
-          <p className="flex items-center gap-1.5 px-3 py-1 text-muted-foreground text-xs">
-            <CheckIcon className="shrink-0" />
-            <span className="truncate">
-              Resolved{thread.resolvedBy && ` by ${nameOf(resolver)}`}
-              {thread.resolvedAt && ` · ${timeAgo(thread.resolvedAt)}`}
-            </span>
-          </p>
+      <p className="sr-only" aria-live="polite">
+        {heard}
+      </p>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={listRef}
+          tabIndex={-1}
+          data-slot="thread-comments"
+          className="min-h-0 flex-1 overflow-y-auto py-1 outline-none"
+          onScroll={onScroll}
+        >
+          {resolved && (
+            <p className="flex items-center gap-1.5 px-3 py-1 text-muted-foreground text-xs">
+              <CheckIcon className="shrink-0" />
+              <span className="truncate">
+                Resolved{thread.resolvedBy && ` by ${nameOf(resolver)}`}
+                {thread.resolvedAt && ` · ${timeAgo(thread.resolvedAt)}`}
+              </span>
+            </p>
+          )}
+          {thread.comments.map((comment, index) => (
+            <CommentItem
+              // A new user gets new items: an unsaved edit of the previous user goes away.
+              key={`${comment.id}:${me?.id ?? ""}`}
+              comment={comment}
+              onDelete={() =>
+                setConfirm(
+                  index === 0
+                    ? {
+                        title: "Delete thread?",
+                        description: "This is the first comment. Deleting it deletes the thread and all its replies.",
+                        action: "Delete thread",
+                        done: "Thread deleted",
+                        run: () => deleteComment(comment),
+                      }
+                    : {
+                        title: "Delete comment?",
+                        description: "You cannot undo this.",
+                        action: "Delete comment",
+                        done: "Comment deleted",
+                        run: () => deleteComment(comment),
+                      },
+                )
+              }
+              onError={setError}
+            />
+          ))}
+        </div>
+        {newBelow > 0 && (
+          <Button
+            size="xs"
+            variant="secondary"
+            className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full shadow-sm"
+            onClick={() => {
+              toEnd()
+              if (me) setRead(thread, true).catch(() => {})
+            }}
+          >
+            <ArrowDownIcon />
+            {plural(newBelow, "new reply", "new replies")}
+          </Button>
         )}
-        {thread.comments.map((comment, index) => (
-          <CommentItem
-            // A new user gets new items: an unsaved edit of the previous user goes away.
-            key={`${comment.id}:${me?.id ?? ""}`}
-            comment={comment}
-            onDelete={() =>
-              setConfirm(
-                index === 0
-                  ? {
-                      title: "Delete thread?",
-                      description: "This is the first comment. Deleting it deletes the thread and all its replies.",
-                      action: "Delete thread",
-                      done: "Thread deleted",
-                      run: () => deleteComment(comment),
-                    }
-                  : {
-                      title: "Delete comment?",
-                      description: "You cannot undo this.",
-                      action: "Delete comment",
-                      done: "Comment deleted",
-                      run: () => deleteComment(comment),
-                    },
-              )
-            }
-            onError={setError}
-          />
-        ))}
       </div>
 
       {error && (
