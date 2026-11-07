@@ -114,6 +114,35 @@ test("list, search, sort and filters", async ({ page }) => {
   await expect(items(page).nth(0)).toContainText("Beta from other")
 })
 
+test("unread first keeps its order while I read: ↓ goes on to the next unread thread", async ({ page }) => {
+  const other = await guestSession("Other")
+  const me = await guestSession("Reader")
+  const path = testPath("unread-order")
+  // Mine (read) is the newest; the three by Other are unread for me.
+  for (const text of ["Unread A", "Unread B", "Unread C"]) await apiThread(other, path, text)
+  await apiThread(me, path, "Mine")
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  await panel(page).getByRole("button", { name: "Filter and sort" }).click()
+  await page.getByRole("menuitemradio", { name: "Unread first" }).click()
+  await page.keyboard.press("Escape")
+  await expect(items(page).nth(0)).toContainText("Unread C")
+  await items(page).nth(0).focus()
+  // ↓ selects (and reads) one unread thread after the other.
+  for (const text of ["Unread B", "Unread A"]) {
+    await page.keyboard.press("ArrowDown")
+    await expect(threadPopover(page)).toContainText(text)
+  }
+  // A new sort order when the panel opens again: the read ones go down.
+  await toolbar(page)
+    .getByRole("button", { name: /^Comments/ })
+    .click()
+  await expect(panel(page)).toBeHidden()
+  await openPanel(page)
+  await expect(items(page).nth(0)).toContainText("Unread C")
+})
+
 test("arrow keys move between threads, Enter opens one", async ({ page }) => {
   const me = await guestSession("Keys")
   const path = testPath("keys")

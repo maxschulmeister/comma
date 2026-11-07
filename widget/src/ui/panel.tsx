@@ -57,6 +57,23 @@ const DetailsLayer = lazy(() => import("./details").then((m) => ({ default: m.De
 
 const lastActivity = (t: Thread) => t.comments.at(-1)?.createdAt ?? t.updatedAt
 
+// "Unread first" sorts by the unread state when the panel opens (or the sort changes). Read in the panel, a thread
+// keeps its place, so ↓ goes on to the next unread one. Threads that come later sort by their own state.
+let unreadAtSort: { known: Set<string>; unread: Set<string> } | null = null
+const resetUnreadOrder = () => {
+  unreadAtSort = null
+}
+function unreadForSort(threads: Thread[]) {
+  if (!unreadAtSort || unreadAtSort.known.size === 0) {
+    unreadAtSort = {
+      known: new Set(threads.map((t) => t.id)),
+      unread: new Set(threads.filter((t) => t.unread).map((t) => t.id)),
+    }
+  }
+  const { known, unread } = unreadAtSort
+  return (t: Thread) => (known.has(t.id) ? unread.has(t.id) : t.unread)
+}
+
 /** Threads in the panel: filters, search and sort. The open thread always shows (it can need its item as anchor). */
 export function visibleThreads(
   threads: Thread[],
@@ -75,8 +92,9 @@ export function visibleThreads(
     if (q && !t.comments.some((c) => c.text.toLowerCase().includes(q))) return false
     return true
   })
+  const unread = filters.sort === "unread" ? unreadForSort(threads) : null
   return list.sort((a, b) => {
-    if (filters.sort === "unread" && a.unread !== b.unread) return a.unread ? -1 : 1
+    if (unread && unread(a) !== unread(b)) return unread(a) ? -1 : 1
     return lastActivity(b) - lastActivity(a)
   })
 }
@@ -139,6 +157,12 @@ export function Panel() {
   const push = useStore((s) => panelMode(s) === "push")
   const side = useStore(panelSide)
   usePushPage(open && push, side)
+  // "Unread first" sorts again each time the panel opens. Before the list renders, so in render.
+  const wasOpen = useRef(open)
+  if (open !== wasOpen.current) {
+    wasOpen.current = open
+    resetUnreadOrder()
+  }
   // The details are a layer of the panel: they close with it. In dialog mode they do not need it.
   useEffect(() => {
     if (!open && getState().detailsOpen && detailsMode(getState()) === "panel") setState({ detailsOpen: false })
@@ -151,6 +175,7 @@ export function Panel() {
 const setFilters = (patch: Partial<Filters>) =>
   setState((s) => {
     const filters = { ...s.filters, ...patch }
+    if (patch.sort) resetUnreadOrder()
     const open = s.openThreadId
     const shown = visibleThreads(s.threads, filters, s.page, s.session?.user.id, null).some((t) => t.id === open)
     return { filters, ...(open && !shown ? { openThreadId: null } : {}) }
