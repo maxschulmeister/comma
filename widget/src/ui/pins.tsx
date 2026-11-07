@@ -30,7 +30,7 @@ import { SignInForm } from "./sign-in"
 import { type Placement, ThreadView } from "./thread"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
-import { arrowKeys, panelSide } from "./view"
+import { arrowKeys, detailsMode, panelSide } from "./view"
 
 /** Elements a thread popover can attach to: pins and clusters on the page, items in the panel. */
 export const pinElements = new Map<string, HTMLElement>()
@@ -383,9 +383,12 @@ function ThreadPopover() {
   const thread = useStore((s) => s.threads.find((t) => t.id === s.openThreadId))
   // With the details open, or selected in the panel list, the focus stays there.
   const takesFocus = useStore(threadTakesFocus)
-  // The thread opens beside the panel, not under it.
-  const leftEdge = useStore(panelLeftEdge)
-  const rightEdge = useStore(panelRightEdge)
+  // The thread opens beside the panel, not under it. On narrow screens the panel covers the screen: no room beside it.
+  const narrow = useMedia(NARROW)
+  const leftEdge = useStore((s) => (narrow ? 0 : panelLeftEdge(s)))
+  const rightEdge = useStore((s) => (narrow ? 0 : panelRightEdge(s)))
+  // There, the details in the panel cover the screen too: the thread waits until they close.
+  const underDetails = useStore((s) => narrow && s.detailsOpen && detailsMode(s) === "panel")
   const keys = arrowKeys(useStore(panelSide))
   const page = useStore((s) => s.page)
   const resolved = useResolved()
@@ -415,7 +418,7 @@ function ThreadPopover() {
         : "missing"
   return (
     <Popover
-      open={!!thread && !!anchor}
+      open={!!thread && !!anchor && !underDetails}
       onOpenChange={(open, details) => {
         // Opened from the panel list: Escape goes back to its item, and the thread stays open (selected).
         if (details.reason === "escape-key" && getState().threadFromList && getState().panelOpen) {
@@ -434,7 +437,7 @@ function ThreadPopover() {
         side="right"
         align="start"
         sideOffset={8}
-        className="w-80 gap-0 p-0"
+        className="w-80 max-w-[calc(100vw-16px)] gap-0 p-0"
         aria-label="Comment thread"
         collisionPadding={{ top: 8, bottom: 8, left: 8 + leftEdge, right: 8 + rightEdge }}
         initialFocus={takesFocus ? listRef : false}
@@ -495,7 +498,7 @@ function DraftComposer({ draft }: { draft: Draft }) {
           align="start"
           sideOffset={8}
           collisionPadding={8}
-          className="w-80 p-2"
+          className="w-80 max-w-[calc(100vw-16px)] p-2"
           aria-label="New comment"
         >
           {me ? (

@@ -12,6 +12,7 @@ import {
   testPath,
   threadPopover,
   toolbar,
+  typeComment,
 } from "./helpers"
 
 type Session = Awaited<ReturnType<typeof guestSession>>
@@ -250,6 +251,52 @@ test.describe("narrow screens", () => {
     await items(page).first().click()
     await expect(panel(page)).toBeHidden()
     await expect(threadPopover(page)).toContainText("Read me on the page")
+  })
+
+  test("a thread without its element opens on the screen, and does not cover its details", async ({ page }) => {
+    const me = await guestSession("Narrow detached")
+    const path = testPath("narrow-detached")
+    await apiThread(me, path, "On the page")
+    await apiThread(me, path, "Element gone", "This heading is gone")
+    await signIn(page, me)
+    await page.goto(path)
+    // First a thread with a pin (the panel closes), then the panel again, and the one without its element.
+    await openPanel(page)
+    await items(page).filter({ hasText: "On the page" }).click()
+    await expect(threadPopover(page)).toContainText("On the page")
+    await openPanel(page)
+    await items(page).filter({ hasText: "Element gone" }).click()
+    const thread = threadPopover(page)
+    await expect(thread).toContainText("Element gone")
+    const box = (await thread.boundingBox()) ?? { x: -1, width: 0 }
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(400)
+    // The details cover the screen: the thread hides until they close.
+    await panel(page).getByRole("button", { name: "Details: Element gone" }).click()
+    await expect(panel(page).getByRole("region", { name: "Details" })).toBeVisible()
+    await expect(thread).toBeHidden()
+    await panel(page).getByRole("button", { name: "Back to comments" }).click()
+    await expect(threadPopover(page)).toContainText("Element gone")
+  })
+})
+
+test.describe("very narrow screens", () => {
+  test.use({ viewport: { width: 320, height: 640 }, hasTouch: true, isMobile: false })
+  test("the composer fits the screen", async ({ page }) => {
+    await signIn(page, await guestSession("Small"))
+    await openTestPage(page, "very-narrow")
+    await page.getByTestId("picture").scrollIntoViewIfNeeded()
+    await toolbar(page).getByRole("button", { name: "Comment mode" }).tap()
+    // At the right edge of the picture. Comment mode covers the page, so a tap at the place, not on the element.
+    const picture = (await page.getByTestId("picture").boundingBox()) ?? { x: 0, y: 0, width: 0 }
+    await page.touchscreen.tap(picture.x + picture.width - 10, picture.y + 20)
+    const composer = page.getByRole("dialog", { name: "New comment" })
+    await typeComment(page, composer, "Small screen")
+    const box = (await composer.boundingBox()) ?? { x: -1, width: 999 }
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(320)
+    // The page does not get wider.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
   })
 })
 
