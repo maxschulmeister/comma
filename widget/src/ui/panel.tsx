@@ -50,6 +50,11 @@ function panelInsets(s: State) {
   const width = !s.panelOpen ? 0 : panelMode(s) === "overlay" ? PANEL_WIDTH + PANEL_MARGIN : PANEL_WIDTH
   return panelSide(s) === "left" ? { left: width, right: 0 } : { left: 0, right: width }
 }
+/**
+ * With the panel open, the toolbar row spans the panel's bottom: as far from the panel's inner edge as the toolbar is
+ * from its outer edge (the toolbar is 16 px from the window edge).
+ */
+export const panelRowWidth = (s: State) => PANEL_WIDTH - 2 * (16 - (panelMode(s) === "overlay" ? PANEL_MARGIN : 0))
 export const panelRightEdge = (s: State) => panelInsets(s).right
 export const panelLeftEdge = (s: State) => panelInsets(s).left
 

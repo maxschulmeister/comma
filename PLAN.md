@@ -81,7 +81,7 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 - Resolve and reopen. A resolved thread says who resolved it and when.
 - Assign: anyone in the project assigns the thread to a person (search). The thread becomes unread for them.
 - Element not found (detached): the thread says what it was on ("Paragraph “A paragraph…”"). The author can move it.
-- Status messages: in the toolbar, on the side away from the corner, so the toolbar grows away from it and its buttons do not move. One `role="status"` region. Short texts, so they fit in the open panel (360 px): "Thread resolved" with ↶ (Undo), "Link copied", "Could not move". A message goes after 4 s, one with ↶ after 8 s, but not while the mouse is on it or the keyboard focus is in it. "Cannot reach comma" with ↻ (Try again) stays until an update works.
+- Status messages: small, muted text beside the toolbar, in the same row, on the side away from the corner. Over the page: a pill. With the panel open: plain text at the other end of the panel's bottom row. Narrow screens: a pill above the toolbar. The toolbar does not move. One `role="status"` region. Short texts, so they fit in the open panel (360 px): "Thread resolved" with ↶ (Undo), "Link copied", "Could not move". A message goes after 4 s, one with ↶ after 8 s, but not while the mouse is on it or the keyboard focus is in it. "Cannot reach comma" with ↻ (Try again) stays until an update works.
 
 ### Panel
 

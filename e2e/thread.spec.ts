@@ -189,21 +189,38 @@ test("resolve tells what happened and can be undone", async ({ page }) => {
   await expect(threadPopover(page)).not.toContainText("Resolved")
 })
 
-test("messages show in the toolbar, and its buttons stay in place", async ({ page }) => {
+test("a message shows beside the toolbar; with the panel open, at the other end of the panel's row", async ({
+  page,
+}) => {
   const thread = await withComment(page, "notice-toolbar", "Noticer")
   const comments = toolbar(page).getByRole("button", { name: /^Comments/ })
   const before = await comments.boundingBox()
   await thread.getByRole("button", { name: "Resolve" }).click()
-  await expect(toolbar(page).getByRole("status")).toContainText("Thread resolved")
-  await expect(toolbar(page).getByRole("status").getByRole("button", { name: "Undo" })).toBeVisible()
+  const status = page.locator("[data-slot=notices]")
+  await expect(status.getByRole("button", { name: "Undo" })).toBeVisible()
+  const box = async () => {
+    const [message, bar] = [await status.boundingBox(), await toolbar(page).boundingBox()]
+    if (!message || !bar) throw new Error("no box")
+    return { message, bar, middle: (b: typeof bar) => b.y + b.height / 2 }
+  }
+  // The same row, left of the toolbar. Its buttons stay in place.
+  const closed = await box()
+  expect(closed.message.x + closed.message.width).toBeLessThanOrEqual(closed.bar.x)
+  expect(Math.abs(closed.middle(closed.message) - closed.middle(closed.bar))).toBeLessThan(2)
   await expect.poll(async () => (await comments.boundingBox())?.x).toBe(before?.x)
+  // Panel open: at the panel's other edge.
+  await showPanel(page)
+  const sidePanel = await panel(page).boundingBox()
+  const open = await box()
+  expect(open.message.x - (sidePanel?.x ?? 0)).toBeLessThan(24)
+  expect(Math.abs(open.middle(open.message) - open.middle(open.bar))).toBeLessThan(2)
 })
 
 test("Undo goes after 8 s, and stays while the mouse is on it", async ({ page }) => {
   await page.clock.install()
   const thread = await withComment(page, "notice-time", "Timer")
   await thread.getByRole("button", { name: "Resolve" }).click()
-  const status = toolbar(page).getByRole("status")
+  const status = page.locator("[data-slot=notices]")
   await expect(status).toContainText("Thread resolved")
   await status.getByRole("button", { name: "Undo" }).hover()
   await page.clock.runFor(10_000)
@@ -292,7 +309,7 @@ test("when updates fail, a message says so, and Try again loads them", async ({ 
   await expect(pins(page)).toHaveCount(1)
   await page.unroute("**/api/threads")
   await status.getByRole("button", { name: "Try again" }).click()
-  await expect(status).toBeHidden()
+  await expect(status.getByText("Cannot reach comma")).toBeHidden()
 })
 
 // A thread with replies by the API, as another user.

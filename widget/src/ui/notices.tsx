@@ -1,10 +1,10 @@
 import { ArrowClockwiseIcon, ArrowCounterClockwiseIcon } from "@phosphor-icons/react"
 import { cn } from "cn"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { refresh } from "@/client"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { getState, type Notice, type PanelSide, setState, useStore } from "@/store"
+import { getState, type Notice, setState, useStore } from "@/store"
 
 let nextId = 0
 
@@ -27,22 +27,18 @@ const ACTIONS = {
 }
 
 /**
- * The messages, in the toolbar: on the side away from the corner, so the toolbar grows away from it and its buttons do
- * not move. One status region that is always there, so screen readers announce each message.
+ * The messages, beside the toolbar (see Toolbar). One status region that is always there, so screen readers announce
+ * each message. `floating`: a pill over the page. Else plain text in the open panel's bottom row. `from`: the toolbar's
+ * side, where a message comes from.
  * A message goes after 4 s, one with Undo after 8 s, but not while the mouse is on it or the keyboard focus is in it.
- * The area opens and closes with its width; the content stays in place on the buttons' side, and the last message
- * stays while the area closes.
+ * The last message stays while it fades out.
  */
-export function Notices({ side }: { side: PanelSide }) {
+export function Notices({ floating, from }: { floating: boolean; from: "left" | "right" | "below" }) {
   const notice = useStore((s) => s.notice)
   const last = useRef(notice)
   if (notice) last.current = notice
   const shown = last.current
   const content = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(0)
-  useLayoutEffect(() => {
-    setWidth(notice ? (content.current?.scrollWidth ?? 0) : 0)
-  }, [notice])
 
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -78,45 +74,11 @@ export function Notices({ side }: { side: PanelSide }) {
   }, [updatesFailed])
 
   const action = shown?.action && ACTIONS[shown.action.kind]
-  const parts = [
-    <div key="message" className="flex items-center gap-1 ps-3 pe-0.5">
-      <span className="max-w-36 truncate">{shown?.text}</span>
-      {shown && action && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="rounded-full"
-                aria-label={action.label}
-                data-notice-action
-                onClick={() => {
-                  dismiss(shown.id)
-                  shown.action?.run()
-                }}
-              />
-            }
-          >
-            <action.Icon />
-          </TooltipTrigger>
-          <TooltipContent>{action.label}</TooltipContent>
-        </Tooltip>
-      )}
-    </div>,
-    <div key="divider" aria-hidden className="mx-1 h-5 w-px bg-foreground/10" />,
-  ]
-
   return (
     <div
       role="status"
       data-slot="notices"
-      // The toolbar's gap is in the content, so the closed area takes no room.
-      className={cn(
-        "flex shrink-0 overflow-hidden transition-[width] duration-200 ease-out",
-        side === "left" ? "-ms-0.5 justify-start" : "-me-0.5 justify-end",
-      )}
-      style={{ width }}
+      className="flex min-w-0"
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
       onFocus={(event) => setFocused((event.target as Element).matches(":focus-visible"))}
@@ -125,11 +87,37 @@ export function Notices({ side }: { side: PanelSide }) {
       <div
         ref={content}
         className={cn(
-          "flex w-max shrink-0 items-center whitespace-nowrap text-sm transition-[opacity,visibility] duration-200 ease-out",
+          "pointer-events-auto flex h-8 min-w-0 items-center gap-0.5 whitespace-nowrap text-muted-foreground text-xs transition-[opacity,translate,visibility] duration-200 ease-out",
+          floating && "rounded-full bg-background shadow-lg ring-1 ring-foreground/10",
+          floating ? (action ? "ps-3 pe-1" : "px-3") : "px-2",
+          // Hidden: it fades toward the toolbar, and comes out of it.
           !notice && "invisible opacity-0",
+          !notice && floating && { left: "-translate-x-1", right: "translate-x-1", below: "translate-y-1" }[from],
         )}
       >
-        {side === "left" ? parts.toReversed() : parts}
+        <span className="truncate">{shown?.text}</span>
+        {shown && action && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="rounded-full text-muted-foreground hover:text-foreground"
+                  aria-label={action.label}
+                  data-notice-action
+                  onClick={() => {
+                    dismiss(shown.id)
+                    shown.action?.run()
+                  }}
+                />
+              }
+            >
+              <action.Icon />
+            </TooltipTrigger>
+            <TooltipContent>{action.label}</TooltipContent>
+          </Tooltip>
+        )}
       </div>
     </div>
   )

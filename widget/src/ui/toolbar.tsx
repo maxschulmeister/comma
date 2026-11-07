@@ -23,8 +23,10 @@ import {
 import { Kbd } from "@/components/ui/kbd"
 import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { NARROW, useMedia } from "@/lib/media"
 import { setState, useStore } from "@/store"
 import { Notices } from "./notices"
+import { panelRowWidth } from "./panel"
 import { setCommentMode, togglePins } from "./shortcuts"
 import { SignInForm } from "./sign-in"
 import { UserAvatar } from "./user-avatar"
@@ -49,10 +51,11 @@ export function Toolbar() {
   const [signInAnchor, setSignInAnchor] = useState<HTMLElement | null>(null)
   const [signInOpen, setSignInOpen] = useState(false)
 
-  // Mirrored with the panel on the left: the account is at the outer corner on both sides. The messages are on the
-  // side away from the corner, so the toolbar grows away from it and its buttons do not move.
+  const narrow = useMedia(NARROW)
+  const rowWidth = useStore((s) => (s.panelOpen ? panelRowWidth(s) : null))
+
+  // Mirrored with the panel on the left: the account is at the outer corner on both sides.
   const items = [
-    <Notices key="notices" side={side} />,
     <Tooltip key="comment">
       <TooltipTrigger
         render={
@@ -161,24 +164,37 @@ export function Toolbar() {
     </DropdownMenu>,
   ]
 
+  // The row: the toolbar, and beside it the messages. With the panel open, it spans the panel's bottom, and the
+  // message is at its other end. Narrow screens: the message is above the toolbar.
   return (
     <div
-      role="toolbar"
-      aria-label="Comments"
-      data-slot="toolbar"
       className={cn(
-        "fixed bottom-4 flex items-center gap-0.5 rounded-full bg-background p-1 ring-foreground/10 transition-shadow duration-150 ease-out max-[639px]:left-1/2 max-[639px]:-translate-x-1/2",
-        side === "left" ? "min-[640px]:left-4" : "min-[640px]:right-4",
-        panelOpen ? "shadow-none ring-0" : "shadow-lg ring-1",
+        "pointer-events-none fixed bottom-4 flex items-center justify-between gap-2",
+        "max-[639px]:left-1/2 max-[639px]:-translate-x-1/2 max-[639px]:flex-col-reverse",
+        side === "left"
+          ? "min-[640px]:left-4 min-[640px]:flex-row"
+          : "min-[640px]:right-4 min-[640px]:flex-row-reverse",
       )}
+      style={rowWidth && !narrow ? { width: rowWidth } : undefined}
     >
-      {side === "left" ? items.toReversed() : items}
+      <div
+        role="toolbar"
+        aria-label="Comments"
+        data-slot="toolbar"
+        className={cn(
+          "pointer-events-auto flex items-center gap-0.5 rounded-full bg-background p-1 ring-foreground/10 transition-shadow duration-150 ease-out",
+          panelOpen ? "shadow-none ring-0" : "shadow-lg ring-1",
+        )}
+      >
+        {side === "left" ? items.toReversed() : items}
 
-      <Popover open={signInOpen && !me} onOpenChange={setSignInOpen}>
-        <PopoverContent anchor={signInAnchor} side="top" align={align} className="w-64">
-          <SignInForm title="Sign in" />
-        </PopoverContent>
-      </Popover>
+        <Popover open={signInOpen && !me} onOpenChange={setSignInOpen}>
+          <PopoverContent anchor={signInAnchor} side="top" align={align} className="w-64">
+            <SignInForm title="Sign in" />
+          </PopoverContent>
+        </Popover>
+      </div>
+      <Notices floating={!rowWidth || narrow} from={narrow ? "below" : side === "left" ? "left" : "right"} />
     </div>
   )
 }
