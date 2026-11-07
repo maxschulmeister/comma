@@ -55,7 +55,7 @@ If a setting is missing or wrong, comma stops with a message that names the sett
 Projects are in `comma.config.ts`. To add, change or remove a project:
 
 1. Edit `comma.config.ts`. Add the env for a new `appSecret`.
-2. Docker: `docker compose restart`. Serverless: build and deploy again (the build includes the projects).
+2. Docker: `docker compose restart`. Serverless: build and deploy again (the build includes the projects). The Lambda build reads `COMMA_CONFIG` too, so the projects can be in a file outside the repo.
 3. Run the [checks](#checks) for that project.
 
 Each site then adds one tag:
@@ -163,6 +163,21 @@ Before you start: `aws sts get-caller-identity` and `sam --version` work. Make t
 4. The output `Url` is the Function URL. Deploy again with `PublicUrl` set to it, or to the custom domain.
 5. Custom domain: Function URLs do not take one. Put CloudFront in front, with an ACM certificate in `us-east-1`. Forward all headers except `Host`, and do not cache `/api/*`. Or use the Function URL as the address.
 6. Run the [checks](#checks). Logs: `sam logs --stack-name <stack> --tail`.
+
+Without the SAM CLI, the AWS CLI deploys the same template. It needs a bucket for the code upload (once):
+
+```sh
+aws s3 mb s3://<deploy bucket> --region <region>
+bun install && bun run build && COMMA_CONFIG=<projects file> bun scripts/build-lambda.ts
+aws cloudformation package --template-file template.yaml --s3-bucket <deploy bucket> \
+  --output-template-file dist/packaged.yaml
+aws cloudformation deploy --template-file dist/packaged.yaml --stack-name <stack> --region <region> \
+  --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
+  --parameter-overrides CommaDb=… CommaDbToken=… CommaSecret=…   # first deploy; later ones keep the values
+aws cloudformation describe-stacks --stack-name <stack> --region <region> --query "Stacks[0].Outputs"
+```
+
+Logs: `aws logs tail /aws/lambda/<function name> --follow`.
 
 Notes:
 
