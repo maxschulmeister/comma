@@ -76,6 +76,18 @@ function pickable() {
   })
 }
 
+/** In the window, and its top and bottom edges show: not under a sticky header or another layer of the page. */
+function showsFully(el: Element) {
+  const r = el.getBoundingClientRect()
+  if (r.top < 0 || r.bottom > window.innerHeight) return false
+  const x = Math.min(Math.max(r.left + r.width / 2, 0), window.innerWidth - 1)
+  const showsAt = (y: number) => {
+    const top = elementAt(x, y)
+    return !!top && el.contains(top)
+  }
+  return showsAt(r.top + 1) && showsAt(r.bottom - 1)
+}
+
 /** "Heading: Pricing", for screen readers. */
 const describeElement = (el: Element) =>
   describe(
@@ -125,15 +137,13 @@ export function CommentOverlay() {
         const index = pickedRef.current ? list.indexOf(pickedRef.current) : -1
         let next: Element | undefined
         if (index === -1) {
-          const inView = list.filter((el) => {
-            const r = el.getBoundingClientRect()
-            return r.bottom > 0 && r.top < window.innerHeight
-          })
+          const inView = list.filter(showsFully)
           next = down ? (inView[0] ?? list[0]) : (inView.at(-1) ?? list.at(-1))
         } else next = list[(index + (down ? 1 : -1) + list.length) % list.length]
         if (!next) return
         pick(next)
-        next.scrollIntoView({ block: "nearest" })
+        // To the middle: "nearest" leaves it under a sticky header, where it counts as in view.
+        if (!showsFully(next)) next.scrollIntoView({ block: "center" })
       } else if (event.key === "Enter") {
         const active = document.activeElement
         const focused = active && active !== document.body && active.localName !== HOST_TAG ? active : null

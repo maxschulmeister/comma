@@ -119,6 +119,35 @@ test.describe("comment mode", () => {
     await expect(newCommentPopover(page)).toBeVisible()
   })
 
+  test("with the keyboard: an element under a sticky header is not picked there, it scrolls out", async ({ page }) => {
+    await signIn(page, await guestSession("Sticky"))
+    await page.setViewportSize({ width: 1280, height: 500 })
+    await openTestPage(page, "sticky")
+    await page.addStyleTag({
+      content: ".site-header { position: sticky; top: 0; z-index: 10; height: 120px; } main { padding-bottom: 800px; }",
+    })
+    const header = page.locator(".site-header")
+    const title = page.getByTestId("title")
+    const headerBottom = async () => {
+      const box = await header.boundingBox()
+      return (box?.y ?? 0) + (box?.height ?? 0)
+    }
+    // The heading is behind the header, the paragraph below it shows.
+    await page.evaluate((y) => window.scrollTo(0, y), ((await title.boundingBox())?.y ?? 0) - 20)
+    expect((await title.boundingBox())?.y ?? 0).toBeLessThan(await headerBottom())
+    await page.keyboard.press("c")
+    await expect(overlay(page)).toBeAttached()
+    const announcement = page.locator("[aria-live=polite]")
+    // ↓ first picks the first element that shows: a link in the header, not the hidden heading.
+    await page.keyboard.press("ArrowDown")
+    await expect(announcement).toContainText("Link: Example")
+    // ↓ to the heading: it scrolls out from under the header.
+    await page.keyboard.press("ArrowDown")
+    await page.keyboard.press("ArrowDown")
+    await expect(announcement).toContainText("Heading: Test page title")
+    await expect.poll(async () => (await title.boundingBox())?.y ?? 0).toBeGreaterThanOrEqual(await headerBottom())
+  })
+
   test("with the keyboard: Shift+Enter comments on the area of the picked element", async ({ page }) => {
     await signIn(page, await guestSession("Area"))
     await openTestPage(page, "area")
