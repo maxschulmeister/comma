@@ -235,3 +235,43 @@ test("Sign in with Slack opens Slack's sign-in for the project's workspace in a 
   await popup.close()
   await expect(panel(page).getByRole("alert")).toHaveText("Sign-in was closed.")
 })
+
+test("tabs follow each other: sign-out and sign-in in one tab change the others", async ({ context }) => {
+  const key = `comma:${COMMA}:example`
+  const path = testPath("tabs")
+  const [a, b] = [await context.newPage(), await context.newPage()]
+  const alice = await guestSession("Alice")
+  await a.goto(path)
+  await a.evaluate(([k, v]) => localStorage.setItem(k, v), [key, JSON.stringify(alice)] as const)
+  for (const tab of [a, b]) {
+    await tab.goto(path)
+    await expect(toolbar(tab).getByRole("button", { name: "Account: Alice" })).toBeVisible()
+  }
+  // Sign out in tab A: tab B is signed out too.
+  await toolbar(a).getByRole("button", { name: "Account: Alice" }).click()
+  await a.getByRole("menuitem", { name: "Sign out" }).click()
+  await expect(toolbar(b).getByRole("button", { name: "Account", exact: true })).toBeVisible()
+  // Bob signs in in tab A: tab B is Bob too.
+  await toolbar(a)
+    .getByRole("button", { name: /^Comments/ })
+    .click()
+  await panel(a).getByLabel("Your name").fill("Bob")
+  await panel(a).getByRole("button", { name: "Continue as guest" }).click()
+  await expect(toolbar(b).getByRole("button", { name: "Account: Bob" })).toBeVisible()
+})
+
+test("a tab whose session ended does not remove the session of another tab", async ({ page }) => {
+  const key = `comma:${COMMA}:example`
+  const alice = await guestSession("Alice")
+  const bob = await guestSession("Bob")
+  await signIn(page, alice)
+  await page.goto(testPath("old-tab"))
+  await expect(toolbar(page).getByRole("button", { name: "Account: Alice" })).toBeVisible()
+  // Another tab stored Bob (without a storage event here), and the server ends Alice's session.
+  await page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, JSON.stringify(bob)] as const)
+  await page.route("**/api/threads", (route) => route.fulfill({ status: 401, json: { error: "Sign in again" } }))
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  // This tab takes Bob's session, and the stored one stays.
+  await expect(toolbar(page).getByRole("button", { name: "Account: Bob" })).toBeVisible()
+  expect(await page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? "null")?.user.name, key)).toBe("Bob")
+})

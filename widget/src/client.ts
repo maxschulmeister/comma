@@ -32,6 +32,11 @@ function saveSession(session: Session | null) {
   } catch {
     // Storage can be blocked. The session then lasts until reload.
   }
+  applySession(session)
+}
+
+// The composer keeps drafts per person: another person sees their own (see Composer).
+function applySession(session: Session | null) {
   etag = null
   setState({
     session,
@@ -39,6 +44,28 @@ function saveSession(session: Session | null) {
     ...(session ? {} : { threads: [], users: {}, loaded: false, loadFailed: false }),
   })
   if (session) void refresh()
+}
+
+/**
+ * The server ended this tab's session. The stored session can be newer: another tab signed in since. Then this tab
+ * takes it; only a stored copy of the ended session is removed.
+ */
+function sessionEnded(session: Session) {
+  const stored = loadSession()
+  if (stored && stored.token !== session.token) applySession(stored)
+  else saveSession(null)
+}
+
+/** All tabs of a site share one session: a sign-in or sign-out in another tab changes this tab too. */
+export function followOtherTabs() {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== storageKey()) return
+    const stored = loadSession()
+    if (stored?.token === getState().session?.token) return
+    // Like a sign-in or sign-out here: an older attempt on its way must not win.
+    authAttempt++
+    applySession(stored)
+  })
 }
 
 /**
@@ -66,7 +93,7 @@ async function request<T>(method: string, path: string, body?: unknown, signedIn
   })
   const data = await res.json().catch(() => ({}))
   if (signedIn) {
-    if (res.status === 401 && session && isCurrent(session)) saveSession(null)
+    if (res.status === 401 && session && isCurrent(session)) sessionEnded(session)
     // The answer belongs to a session that ended (sign-out, other user): it must not change the store.
     if (!isCurrent(session)) throw new ApiError(401, "You are signed out.")
   }
@@ -209,7 +236,7 @@ async function requestThreads() {
   if (res.status === 304) return null
   if (res.status === 401) {
     // Only this session expired. A new one (identify, sign-in) may have started while this request ran.
-    if (isCurrent(session)) saveSession(null)
+    if (session && isCurrent(session)) sessionEnded(session)
     return null
   }
   if (!res.ok) throw new ApiError(res.status, "Could not load comments")
