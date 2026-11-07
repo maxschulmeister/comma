@@ -190,11 +190,13 @@ export function ThreadView({
                       focusOnClose = () => root?.querySelector<HTMLElement>("[data-slot=notices] [data-notice-action]")
                       close()
                       notify("Thread resolved", {
-                        label: "Undo",
-                        run: () =>
-                          void setStatus(thread, "open")
-                            .then(() => setState({ openThreadId: thread.id }))
-                            .catch((e: Error) => notify(e.message)),
+                        action: {
+                          kind: "undo",
+                          run: () =>
+                            void setStatus(thread, "open")
+                              .then(() => setState({ openThreadId: thread.id }))
+                              .catch(() => notify("Could not reopen")),
+                        },
                       })
                     })
                   }
@@ -465,7 +467,7 @@ function AssignButton({ thread, assignee }: { thread: Thread; assignee: User | u
     setQuery("")
     setAssignee(thread, user?.id ?? null)
       .then(() => notify(user ? `Assigned to ${nameOf(user)}` : "Unassigned"))
-      .catch((e: Error) => notify(e.message))
+      .catch(() => notify("Could not assign"))
   }
 
   return (

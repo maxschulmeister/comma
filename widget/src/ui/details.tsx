@@ -211,7 +211,7 @@ function CopyReport({ thread }: { thread: Thread }) {
       onClick={() =>
         navigator.clipboard.writeText(bugReport(thread)).then(
           () => notify("Bug report copied"),
-          () => notify("Could not copy. Allow the clipboard for this site."),
+          () => notify("Could not copy"),
         )
       }
     >

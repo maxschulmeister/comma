@@ -189,6 +189,30 @@ test("resolve tells what happened and can be undone", async ({ page }) => {
   await expect(threadPopover(page)).not.toContainText("Resolved")
 })
 
+test("messages show in the toolbar, and its buttons stay in place", async ({ page }) => {
+  const thread = await withComment(page, "notice-toolbar", "Noticer")
+  const comments = toolbar(page).getByRole("button", { name: /^Comments/ })
+  const before = await comments.boundingBox()
+  await thread.getByRole("button", { name: "Resolve" }).click()
+  await expect(toolbar(page).getByRole("status")).toContainText("Thread resolved")
+  await expect(toolbar(page).getByRole("status").getByRole("button", { name: "Undo" })).toBeVisible()
+  await expect.poll(async () => (await comments.boundingBox())?.x).toBe(before?.x)
+})
+
+test("Undo goes after 8 s, and stays while the mouse is on it", async ({ page }) => {
+  await page.clock.install()
+  const thread = await withComment(page, "notice-time", "Timer")
+  await thread.getByRole("button", { name: "Resolve" }).click()
+  const status = toolbar(page).getByRole("status")
+  await expect(status).toContainText("Thread resolved")
+  await status.getByRole("button", { name: "Undo" }).hover()
+  await page.clock.runFor(10_000)
+  await expect(status).toContainText("Thread resolved")
+  await page.mouse.move(1, 1)
+  await page.clock.runFor(10_000)
+  await expect(status.getByRole("button", { name: "Undo" })).toBeHidden()
+})
+
 test("resolve hides the pin, reopen from the panel shows it", async ({ page }) => {
   const thread = await withComment(page, "resolve", "Res")
   await thread.getByRole("button", { name: "Resolve" }).click()
@@ -253,7 +277,7 @@ test("a move that fails says so, and the pin stays at its place", async ({ page 
   await page.getByRole("menuitem", { name: "Move" }).click()
   await page.getByRole("link", { name: "Home" }).focus()
   await page.keyboard.press("Enter")
-  await expect(page.getByRole("status").filter({ hasText: "Could not move the comment" })).toBeVisible()
+  await expect(page.getByRole("status").filter({ hasText: "Could not move" })).toBeVisible()
   await expect.poll(async () => (await pins(page).first().boundingBox())?.x).toBe(before?.x)
 })
 

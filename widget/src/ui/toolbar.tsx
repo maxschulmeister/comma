@@ -24,6 +24,7 @@ import { Kbd } from "@/components/ui/kbd"
 import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { setState, useStore } from "@/store"
+import { Notices } from "./notices"
 import { setCommentMode, togglePins } from "./shortcuts"
 import { SignInForm } from "./sign-in"
 import { UserAvatar } from "./user-avatar"
@@ -48,8 +49,10 @@ export function Toolbar() {
   const [signInAnchor, setSignInAnchor] = useState<HTMLElement | null>(null)
   const [signInOpen, setSignInOpen] = useState(false)
 
-  // Mirrored with the panel on the left: the account is at the outer corner on both sides.
+  // Mirrored with the panel on the left: the account is at the outer corner on both sides. The messages are on the
+  // side away from the corner, so the toolbar grows away from it and its buttons do not move.
   const items = [
+    <Notices key="notices" side={side} />,
     <Tooltip key="comment">
       <TooltipTrigger
         render={

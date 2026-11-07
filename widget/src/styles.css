@@ -167,16 +167,6 @@
   }
 }
 /* A status message comes up from the bottom. */
-.comma-notice {
-  transition:
-    opacity 400ms ease,
-    transform 400ms ease;
-  @starting-style {
-    opacity: 0;
-    transform: translateY(100%);
-  }
-}
-
 /* Reduced motion: popups, pins and menus change at once, without slides and zooms.
    Outside a layer, so it wins over the Tailwind utilities (they are in layers). */
 @media (prefers-reduced-motion: reduce) {

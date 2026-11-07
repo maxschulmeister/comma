@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { pageBox, useResolved } from "./live"
 import { getState, setState, useStore, widgetVisible } from "./store"
-import { Notices } from "./ui/notices"
 import { CommentOverlay } from "./ui/overlay"
 import { Panel } from "./ui/panel"
 import { PinsLayer } from "./ui/pins"
@@ -57,7 +56,6 @@ export function App() {
       <PinsLayer />
       <Panel />
       {visible && <Toolbar />}
-      <Notices />
       {dialog && (
         <Suspense fallback={null}>
           <DetailsDialog />

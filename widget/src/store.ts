@@ -6,7 +6,13 @@ import type { Session, Thread, User } from "./types"
 export type Draft = { id: number; anchor: Anchor; element: Element; page: string; open: boolean }
 
 /** A short message about what an action did, with an optional action ("Undo"). */
-export type Notice = { id: number; text: string; action?: { label: string; run: () => void } }
+/** A short message in the toolbar (see notices.tsx). `stay`: it does not go after a time. */
+export type Notice = {
+  id: number
+  text: string
+  action?: { kind: "undo" | "retry"; run: () => void }
+  stay?: boolean
+}
 
 /** From the server: how people sign in, and who sees the toolbar. */
 /** View settings (see ui/view.ts). */
