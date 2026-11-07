@@ -67,6 +67,34 @@ test("the panel pushes the page and pins follow", async ({ page }) => {
     .toBeLessThan(2)
 })
 
+test("push: fixed bars at the panel's edge (a site header) move too, and come back", async ({ page }) => {
+  await signIn(page, await guestSession("Bars", SITE, "push"), SITE, "push")
+  await page.goto(`${testPath("push-bars")}?project=push`)
+  await expect(toolbar(page)).toBeVisible()
+  // A header across the top, and a badge placed from the left only.
+  await page.evaluate(() => {
+    const bar = document.createElement("header")
+    bar.dataset.testid = "bar"
+    bar.style.cssText = "position:fixed;top:0;left:0;right:0;height:40px;background:#eee"
+    const badge = document.createElement("div")
+    badge.dataset.testid = "badge"
+    badge.style.cssText = "position:fixed;bottom:10px;left:10px;width:50px;height:20px"
+    document.body.append(bar, badge)
+  })
+  const right = async (id: string) => {
+    const box = await page.getByTestId(id).boundingBox()
+    return (box?.x ?? 0) + (box?.width ?? 0)
+  }
+  const width = page.viewportSize()?.width ?? 0
+  expect(await right("bar")).toBe(width)
+  await openPanel(page)
+  await expect.poll(() => right("bar")).toBe(width - 360)
+  expect(await right("badge")).toBe(60)
+  await panel(page).getByRole("button", { name: "Close comments" }).click()
+  await expect.poll(() => right("bar")).toBe(width)
+  expect(await page.getByTestId("bar").evaluate((el) => el.style.right)).toBe("0px")
+})
+
 test("list, search, sort and filters", async ({ page }) => {
   const me = await guestSession("Lister")
   const other = await guestSession("Other")

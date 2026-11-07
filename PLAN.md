@@ -256,8 +256,9 @@ window.comma.identify(token) // token from your backend, see "Login"
 
 - On open, add `html { margin-right: <panel width> }` in a style tag in the page document. Remove it on close.
 - Normal content reflows. Element-anchored pins follow it.
+- Fixed elements placed from the panel's side (a site header across the top, a chat button in the corner) move by the panel's width too, while it is open. Their own inline value comes back on close.
 - Known limits:
-  - `position: fixed` elements (fixed headers, banners, modals) still go under the panel.
+  - Fixed elements that the site adds later (a modal, a header that becomes fixed on scroll), or that are placed only from the other side (`left: 0; width: 100vw`), still go under the panel.
   - Media queries do not change (the viewport width stays the same).
   - The page scrollbar is under the panel.
 - If these limits are a problem later: load the page in an iframe next to the panel, or use a browser extension side panel.

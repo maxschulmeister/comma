@@ -104,15 +104,33 @@ export function visibleThreads(
   })
 }
 
-// Push mode: the page gets a margin on the panel's side, so its content reflows next to the panel.
+/**
+ * Push mode: the page gets a margin on the panel's side, so its content reflows next to the panel.
+ * Fixed elements (a site header) do not follow that margin. The ones placed from the panel's side move by the panel's
+ * width too, while the panel is open. Fixed elements that the site adds later stay where they are.
+ */
 function usePushPage(active: boolean, side: PanelSide) {
   useEffect(() => {
     if (!active) return
     const media = matchMedia(NARROW)
     const style = document.createElement("style")
     style.dataset.comma = "push"
+    // Each moved element, with its own inline value, to put back.
+    const moved = new Map<HTMLElement, { value: string; priority: string }>()
+    const putBack = () => {
+      for (const [el, old] of moved) el.style.setProperty(side, old.value, old.priority)
+      moved.clear()
+    }
     const apply = () => {
+      putBack()
       style.textContent = media.matches ? "" : `html { margin-${side}: ${PANEL_WIDTH}px !important; }`
+      if (media.matches) return
+      for (const el of document.body.querySelectorAll<HTMLElement>("*")) {
+        const s = getComputedStyle(el)
+        if (s.position !== "fixed" || s[side] === "auto") continue
+        moved.set(el, { value: el.style.getPropertyValue(side), priority: el.style.getPropertyPriority(side) })
+        el.style.setProperty(side, `calc(${s[side]} + ${PANEL_WIDTH}px)`, "important")
+      }
     }
     apply()
     media.addEventListener("change", apply)
@@ -120,6 +138,7 @@ function usePushPage(active: boolean, side: PanelSide) {
     return () => {
       media.removeEventListener("change", apply)
       style.remove()
+      putBack()
     }
   }, [active, side])
 }
