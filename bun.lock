@@ -6,6 +6,7 @@
       "name": "comma",
       "devDependencies": {
         "@biomejs/biome": "^2.6.5",
+        "@libsql/client": "^0.18.0",
         "@playwright/test": "^1.65.0",
         "hono": "^4.13.16",
       },

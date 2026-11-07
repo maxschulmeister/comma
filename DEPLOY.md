@@ -64,6 +64,20 @@ Each site then adds one tag:
 <script src="https://comma.example.com/c.js" data-project="acme" defer></script>
 ```
 
+## Move from SitePing
+
+`scripts/siteping/import.ts` copies the feedback of one SitePing project into a comma project. It only reads SitePing. Make a backup of the SitePing database first (`turso db shell <db> .dump > siteping.sql`).
+
+```sh
+SITEPING_DB=libsql://… SITEPING_DB_TOKEN=… COMMA_DB=… [COMMA_DB_TOKEN, COMMA_FILES=s3 and its settings] \
+[PREVIEW_AUTH=user:password] \
+bun scripts/siteping/import.ts --from <SitePing project> --project <comma project> --origin https://www.acme.com
+```
+
+- Each feedback becomes a thread: the message is the first comment (the type, if not "other", is its first word), the replies follow, the screenshot is the thread's screenshot. Each author name becomes one guest.
+- The pins: Chromium opens each page of the site (`PREVIEW_AUTH` for basic auth) and finds the element as SitePing did. If it is not sure, the thread is detached: it shows in the panel as "Element not found". Nobody can move it, because its author is an imported guest.
+- A second run adds only what is new. Import into a test database first (`COMMA_DB=test.sqlite`), and check the report.
+
 ## Checks
 
 Run this after each deploy, with a project and one of its origins:
