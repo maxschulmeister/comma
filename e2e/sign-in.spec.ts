@@ -34,6 +34,9 @@ test("in the app, comma.identify signs people in without a sign-in screen", asyn
   await page.getByRole("button", { name: "Sign in" }).click()
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible()
   await expect(toolbar(page).getByRole("button", { name: "Account: Linus" })).toBeVisible()
+  // Signing out of the app signs out of comma too (the app calls comma.signOut()).
+  await page.getByRole("link", { name: "Sign out" }).click()
+  await expect(toolbar(page).getByRole("button", { name: "Account", exact: true })).toBeVisible()
 })
 
 test("identify works when the page calls a stub that it read before the widget loaded", async ({ page }) => {

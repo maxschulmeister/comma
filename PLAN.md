@@ -30,6 +30,7 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 - **Element pin**: hover outlines the element under the cursor. Click pins a comment to that element.
 - **Region**: drag draws a rectangle. It is anchored to the element under its center.
 - **Touch**: in comment mode, tap pins a comment.
+- **Keyboard**: `↑` `↓` pick elements. The first pick is an element that shows fully; a picked element that does not (outside the window, or under a sticky header) scrolls to the middle.
 - The composer opens at the pin. The element (or the region) shows an outline while the composer or thread is open.
 
 ### Composer
@@ -61,10 +62,10 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 ### Pins
 
 - A pin shows the author avatar and a dot when unread.
-- Hover: preview (author, first lines, reply count).
+- Hover: preview (author, first lines, reply count). Only the mouse opens it: when a thread closes, the focus goes back to its pin, and a preview there would stay.
 - Click: thread popover.
 - Pins close together merge into a cluster with a count and avatars. Click a cluster to see its threads.
-- Drag a pin to move it (thread author only). This saves a new anchor.
+- Drag a pin to move it (thread author only). This saves a new anchor. A move that fails says so ("Could not move the comment"), and the pin goes back.
 - Pins show by default. The eye in the toolbar or `Shift+C` shows or hides them. The widget remembers the choice.
 - Resolved threads do not show on the page.
 
@@ -75,6 +76,8 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 - Header: the element ("Heading: Pricing"). Under it: the assignee, and the info line: where the comment was made (window size, browser, system) and the screenshot thumbnail. A click on the line opens or closes the details.
 - Menu: copy link, move (author), mark as unread, edit (own), delete comment (own), delete thread (author or admin).
 - Deleting the first comment deletes the thread.
+- New replies while the thread is open: at the end of the list (or with my own reply), the list follows them, and replies by others are read. Reading older comments, the list stays; a "1 new reply" button shows them. Screen readers hear "Ada replied".
+- Focus: `Esc` goes back to the pin. After resolve: Undo. After the thread is deleted: the Comments button.
 - Resolve and reopen. A resolved thread says who resolved it and when.
 - Assign: anyone in the project assigns the thread to a person (search). The thread becomes unread for them.
 - Element not found (detached): the thread says what it was on ("Paragraph “A paragraph…”"). The author can move it.
@@ -91,8 +94,9 @@ Two modes and two sides. Each person chooses in the panel's view menu (sliders i
 
 - Each item: author, page (title and path), first lines, reply count, assignee, unread state, time.
   - Unread: the newest comment by someone else ("Bob replied"), with the first comment as context.
-- Search in comment text.
-- Sort: date, or unread first.
+- Search in comment text. A search or filter that hides the open thread closes it.
+- Sort: date, or unread first. "Unread first" keeps its order while the panel is open: a thread read there keeps its place, so `↓` goes on to the next unread one. It sorts again when the panel opens or the sort changes.
+- The panel's open state, filters, sort and search are kept for the tab (sessionStorage): the review goes on after a page load, also on another page.
 - Filters: this page or all pages, only my threads (I created, replied or was mentioned), assigned to me, show resolved. The filter button is next to the search field and shows when a filter is on.
 - Item states look different: hover is light, the open thread is darker with a bar on the left, the keyboard focus is an inset ring (it does not cover the next item).
 - Empty list: says why, and offers the way out: "Clear search", "Clear filters", "Show all pages" (with the count on other pages), "Show resolved", "Add comment".
@@ -114,7 +118,7 @@ Two layouts (view menu, or the project default `details`): `panel` (default), a 
 - Closing shows the list again at the same scroll position, with the focus on the open thread's item. The list stays under the layer (inert), so it keeps its scroll position.
 - When the thread or the panel closes, the details close too.
 - Lightbox: the screenshot at the size it had on the page (pixels ÷ the pixel ratio of the author's screen, up to 2). Larger than the window: it fits first, a click shows the full size.
-- "Copy as bug report": Markdown with the facts, the screenshot and a link to the thread, for Jira or GitHub.
+- "Copy as bug report": Markdown with the facts, the replies (with author and date), the screenshot and a link to the thread, for Jira or GitHub.
 - They do not open automatically when a thread opens: most reviews need only the list. A remembered choice was considered and left out: it would surprise people.
 - Not now: console and network capture. Categories (bug, change): a label could come later in the thread menu.
 
@@ -139,11 +143,14 @@ Only where it shows where something comes from, fast and short; keyboard actions
 - The panel button shows the count of unread threads.
 - Poll every 15 s while the tab is visible, and when the window gets focus. `ETag`, so no change costs little.
 - Stop polling after 5 minutes with no input (pointer, keys, scroll). On the next input or focus, poll at once and start again. Tabs that stay open do not cost requests.
+- Updates fail after the comments loaded: "Cannot reach comma. Comments may be out of date." with Try again. The comments stay. The message goes when an update works again.
+- The first load of the project fails: comma tries again after 5 s, then twice as long each time up to a minute, and at once when the browser is online again.
 - No push (SSE or WebSocket) in v1: each target needs a different solution. For team use, polling stays in the free tiers.
 
 ### Identity
 
 - Guest name, `identify(token)` in your app, popup sign-in on other sites (see "Login").
+- All tabs of a site share one session: a sign-in or sign-out in one tab changes the others. When the server ends a tab's session, the tab removes the stored session only if it is that one.
 - Guests: project setting `guests`. Default: on without `appSecret`, off with it. Anyone can type any name, so guests show "Guest" next to their name everywhere.
 - The sign-in button names the app: "Sign in with Acme" (project setting `name`).
 - Avatar from the app token. Else initials on a color from the user id.
@@ -160,6 +167,8 @@ Only where it shows where something comes from, fast and short; keyboard actions
   - `prefers-reduced-motion`: no slides, zooms or smooth scroll.
   - The widget root has `lang="en"`.
 - **Text size**: comments 14 px. The composer 16 px on narrow screens (iOS Safari zooms into smaller fields).
+- **Narrow screens**: threads and the composer are at most the screen width less 16 px. The panel covers the screen, so threads keep no room for it, and wait while its details are open.
+- **Keys stay in comma**: key events from inside comma stop at its shadow root (except `Esc` and `Tab`). Else the site sees them on `<comma-widget>`, not on a text field, and its own shortcuts run while people type. comma's own shortcuts listen in the capture phase.
 
 Out (later, maybe):
 
