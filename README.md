@@ -235,17 +235,18 @@ Only people of that workspace can sign in. Their name, email and picture come fr
 
 ## Keyboard
 
-| Key                       |                                                                                                                                                                                     |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `C`                       | Comment mode on or off (the key in `data-shortcut`; the letter on the key, also on other keyboard layouts)                                                                          |
-| `↑` `↓`, then `Enter`     | In comment mode: pick an element and comment on it (`Tab` to a control works too). `Shift+Enter`: comment on its area                                                               |
-| `Esc`                     | Close the popover, then leave comment mode                                                                                                                                          |
-| `Shift+C`                 | Show or hide comments                                                                                                                                                               |
-| `⌘Enter` (`Ctrl+Enter`)   | Send. `Enter`: new paragraph. `Shift+Enter`: line break                                                                                                                             |
-| `⌘B` `⌘I` `⌘⇧X` `⌘E` `⌘K` | Bold, italic, strikethrough, code, link (`Ctrl` on Windows and Linux)                                                                                                               |
-| `⌘⇧8` `⌘⇧7`               | Bulleted and numbered list                                                                                                                                                          |
-| `↑` `↓`                   | In the panel: select a thread (it opens at its pin, the focus stays in the list). In the details: previous and next thread                                                          |
-| `←` `→`                   | In the panel: `←` (or `Enter`) goes into the thread on the page, `→` opens its details. In the details: `←` goes back. In the thread (not while typing): `→` goes back to the panel |
+| Key                       |                                                                                                                                                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `C`                       | Comment mode on or off (the key in `data-shortcut`; the letter on the key, also on other keyboard layouts)                                                                         |
+| `↑` `↓`, then `Enter`     | In comment mode: pick an element and comment on it (`Tab` to a control works too). `Shift+Enter`: comment on its area                                                              |
+| `Esc`                     | Close the popover, then leave comment mode                                                                                                                                         |
+| `Shift+C`                 | Show or hide comments                                                                                                                                                              |
+| `⌘Enter` (`Ctrl+Enter`)   | Send. `Enter`: new paragraph. `Shift+Enter`: line break                                                                                                                            |
+| `⌘B` `⌘I` `⌘⇧X` `⌘E` `⌘K` | Bold, italic, strikethrough, code, link (`Ctrl` on Windows and Linux)                                                                                                              |
+| `⌘⇧8` `⌘⇧7`               | Bulleted and numbered list                                                                                                                                                         |
+| `↑` `↓`                   | In the panel: select a thread (it opens at its pin, the focus stays in the list). In the details: previous and next thread                                                         |
+| `Enter` / `Esc`           | In the panel: go into the thread. In a thread opened from the panel: back to the list (the thread stays open)                                                                      |
+| `←` `→`                   | They follow the panel's side. Toward the page: into the thread, or close the details. Away from the page: open the details, or from the thread (not while typing) back to the list |
 
 ## Development
 

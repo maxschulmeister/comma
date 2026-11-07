@@ -82,11 +82,11 @@ Baseline: Figma comments ([guide](https://help.figma.com/hc/en-us/articles/36003
 
 ### Panel
 
-Two modes. Each person chooses in the panel's view menu (sliders icon): "Panel Mode" (Overlay, Push) and "Show Details" (Panel, Dialog). The labels match the config values; the menu items have tooltips with what each one does. The choices are kept in localStorage; without one, the project settings `panel` (default `overlay`) and `details` (default `panel`) decide. View choices are personal (screen size, the task at hand), so a person makes them, not the config.
+Two modes and two sides. Each person chooses in the panel's view menu (sliders icon): "Panel Mode" (Overlay, Push), "Panel Side" (Left, Right) and "Show Details" (Panel, Dialog). A drag on the panel header also moves it: on release it goes to the side its middle is on (not on narrow screens). The labels match the config values; the menu items have tooltips with what each one does. The choices are kept in localStorage; without one, the project settings `panel` (default `overlay`) and `details` (default `panel`) decide. View choices are personal (screen size, the task at hand), so a person makes them, not the config.
 
 - `overlay` (default): the panel floats over the page, 8 px from the top, the bottom and the right, with rounded corners. The page keeps its width, but its right part is covered.
 - `push`: the page gets a right margin and reflows next to the panel. Nothing is covered, but the page is 360 px narrower: its media queries still see the full window, so it shows a state no real device shows.
-- Always on the right. A left side would need mirrored keys and layouts; the mode switch covers the need. The toolbar and notices stay left of the panel.
+- Left or right, in both modes. Push on the left gives the page a left margin. Toolbar, notices and threads stay out of the panel's side.
 - Floating, the panel must not hide what people work on: comment mode does not open it (push mode does), and a thread opens beside it, never under it. A thread whose pin is under the panel opens beside its item in the panel.
 
 - Each item: author, page (title and path), first lines, reply count, assignee, unread state, time.
@@ -96,9 +96,9 @@ Two modes. Each person chooses in the panel's view menu (sliders icon): "Panel M
 - Filters: this page or all pages, only my threads (I created, replied or was mentioned), assigned to me, show resolved. The filter button is next to the search field and shows when a filter is on.
 - Item states look different: hover is light, the open thread is darker with a bar on the left, the keyboard focus is an inset ring (it does not cover the next item).
 - Empty list: says why, and offers the way out: "Clear search", "Clear filters", "Show all pages" (with the count on other pages), "Show resolved", "Add comment".
-- `↑`/`↓` select a thread: it opens at its pin and the page scrolls to it; the focus stays in the list (selection follows focus, as in a mail list). `Enter` or `←` go into the thread. `→` opens its details. Tab does not select.
-- Each item has a button, as high as the item, that opens the thread with its details: a chevron when they open in the panel, an expand icon when they open in a dialog. Only the mouse reaches it (no extra Tab stop per item); the keyboard has `→`.
-- Keys follow the screen: the page is on the left, the panel on the right, the details are "in" an item. In the list `←` goes into the thread on the page (as `Enter`), `→` opens the details. In the thread, `→` goes back to its item, if no text is typed. In the details, `←` goes back (in the dialog it closes it), `↑` `↓` go to the previous and next thread. The same keys work in both details layouts.
+- `↑`/`↓` select a thread: it opens at its pin and the page scrolls to it; the focus stays in the list (selection follows focus, as in a mail list). `Enter` goes into the thread; `Esc` there comes back to the list, and the thread stays open (a thread opened from its pin closes with `Esc`). Tab does not select.
+- Each item has an info button (ⓘ), as high as the item, that opens the thread with its details. An icon without a direction: the same on both sides and in both details layouts; its tooltip names the key. Only the mouse reaches it (no extra Tab stop per item).
+- The arrows follow the panel's side. Toward the page (`←` with the panel on the right): into the thread, or close the details. Away from the page: open the details, or from the thread (if no text is typed) back to the list. The details close with ×, not a back arrow: "back" has no direction when the panel can be on either side.
 - A thread on another page: click navigates to that page and opens the thread.
 - Detached threads show with an "Element not found" label.
 - Screens narrower than 640 px: the panel covers the full screen. The toolbar hides while it is open. A thread with a pin opens at its pin, and the panel closes.
@@ -109,9 +109,9 @@ Two layouts (view menu, or the project default `details`): `panel` (default), a 
 
 - For hard bugs and changed pages. Most reviews do not need them, so they open only on request, from the thread's info line. They do not open when a thread opens.
 - Content: the element screenshot, then facts in groups: Comment (author, exact date, text), Element (type, text, selector), Page (title, URL, scroll position), Device (browser, system, window size and pixel ratio, theme, language, time zone).
-- They follow the open thread: a click on another pin shows its details. Previous and next (and `↑` `↓`) go through the panel list, with "3 of 12". `←` goes back. The focus stays in the details. The reply box does not take it.
+- They follow the open thread: a click on another pin shows its details. Previous and next (and `↑` `↓`) go through the panel list, with "3 of 12". The arrow toward the page or `Esc` closes them. The focus stays in the details. The reply box does not take it.
 - The thread popover stays open next to the details, so the screenshot and the live page show side by side.
-- Back (or `Esc`) shows the list again at the same scroll position, with the focus on the open thread's item. The list stays under the layer (inert), so it keeps its scroll position.
+- Closing shows the list again at the same scroll position, with the focus on the open thread's item. The list stays under the layer (inert), so it keeps its scroll position.
 - When the thread or the panel closes, the details close too.
 - Lightbox: the screenshot at the size it had on the page (pixels ÷ the pixel ratio of the author's screen, up to 2). Larger than the window: it fits first, a click shows the full size.
 - "Copy as bug report": Markdown with the facts, the screenshot and a link to the thread, for Jira or GitHub.
@@ -122,7 +122,7 @@ Two layouts (view menu, or the project default `details`): `panel` (default), a 
 
 Only where it shows where something comes from, fast and short; keyboard actions change at once.
 
-- The floating panel slides in from its edge: 8 px and opacity, 150 ms, strong ease-out (`--ease-out`). Not in push mode (the page jumps anyway) and not on narrow screens.
+- The floating panel slides in from its own edge: 8 px and opacity, 150 ms, strong ease-out (`--ease-out`). Not in push mode (the page jumps anyway), not on narrow screens, and not while it is dragged or lands on its side.
 - A status message comes up from the bottom: 400 ms `ease`.
 - No motion for the details (opened with `→`), previous / next, and ↑ ↓ selection: people do these many times in a row.
 - Reduced motion: no slides (see styles.css).
