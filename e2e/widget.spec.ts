@@ -300,10 +300,15 @@ test.describe("comment mode", () => {
     await addComment(page, page.getByTestId("title"), "Hello")
     await addComment(page, page.getByTestId("lead"), "Second")
     await endCommentMode(page)
+    // Escape gave the focus back to the pin. Firefox does it after the popover's close animation: wait for it.
+    const focused = () =>
+      page.evaluate(() => document.querySelector("comma-widget")?.shadowRoot?.activeElement?.getAttribute("data-slot"))
+    await expect.poll(focused).toBe("pin")
     // A thread selected with ↓ in the panel list: the focus stays in the list.
     await showPanel(page)
     const items = panel(page).locator("[data-slot=panel-item]")
     await items.first().focus()
+    await expect(items.first()).toBeFocused()
     await page.keyboard.press("ArrowDown")
     await expect(threadPopover(page)).toContainText("Hello")
     await page.keyboard.press("Shift+C")
