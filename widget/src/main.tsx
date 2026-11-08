@@ -84,6 +84,7 @@ function start({ __queue: queue, __script: script }: Loader) {
     if (name === "identify" && typeof args[0] === "string") void api.identify(args[0]).catch(() => {})
     else if (name === "signOut") api.signOut()
     else if (name === "token" && (typeof args[0] === "string" || args[0] === null)) followAppToken(args[0])
+    else if (name === "appSignedOut") followAppToken(false)
   }
   ;(window as unknown as { comma: typeof api }).comma = api
   for (const call of queue.splice(0)) run(call)

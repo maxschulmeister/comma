@@ -24,6 +24,37 @@ if (script && !("comma" in window)) {
   if (from) {
     const origin = new URL(from, location.href).origin
     let last: string | null | undefined
+    // `data-token-key`: where the app keeps its token (localStorage or sessionStorage). The app signs out by removing
+    // it, often with no request after it: comma signs out at once, also when it is gone at page load.
+    const key = script.dataset.tokenKey
+    if (key) {
+      const gone = () => {
+        last = undefined
+        queue.push(["appSignedOut", []])
+      }
+      const has = () => {
+        try {
+          return localStorage.getItem(key) !== null || sessionStorage.getItem(key) !== null
+        } catch {
+          return true // Storage is blocked: no way to know.
+        }
+      }
+      if (!has()) gone()
+      const storage = Storage.prototype
+      const { removeItem, clear } = storage
+      storage.removeItem = function (this: Storage, name: string) {
+        removeItem.call(this, name)
+        if (name === key && !has()) gone()
+      }
+      storage.clear = function (this: Storage) {
+        clear.call(this)
+        if (!has()) gone()
+      }
+      // Another tab of the app signed out.
+      addEventListener("storage", (event) => {
+        if ((event.key === key || event.key === null) && !has()) gone()
+      })
+    }
     const seen = (url: string | URL, auth: string | null) => {
       if (new URL(url, location.href).origin !== origin) return
       const token = /^Bearer\s+(\S+)$/i.exec(auth ?? "")?.[1] ?? null

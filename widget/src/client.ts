@@ -144,9 +144,15 @@ let signOutTimer: ReturnType<typeof setTimeout> | undefined
  * Signs in with the app's token: the first one on each page load (comma can still have a session of someone else),
  * and one that comes after requests without a token (another person may have signed in). Requests without a token for
  * 5 s: the app signed out. A token refresh also goes out without one, so comma waits.
+ * `false`: the app removed its stored token (`data-token-key`). It signed out: comma too, at once.
  */
-export function followAppToken(token: string | null) {
+export function followAppToken(token: string | null | false) {
   clearTimeout(signOutTimer)
+  if (token === false) {
+    tokenGap = true
+    if (getState().session) signOut()
+    return
+  }
   if (!token) {
     tokenGap = true
     signOutTimer = setTimeout(() => getState().session && signOut(), 5000)

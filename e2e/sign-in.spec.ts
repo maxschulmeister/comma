@@ -104,6 +104,41 @@ test("data-token-from: comma signs in with the app's own requests, and follows i
   await expect(account("Alice")).toBeVisible()
 })
 
+test("data-token-key: when the app removes its token, comma signs out at once, also in other tabs and at page load", async ({
+  page,
+  context,
+}) => {
+  const url = `${testPath("token-key")}?project=token-from&token-from=http://localhost:4900&token-key=app_token`
+  const account = toolbar(page).getByRole("button", { name: "Account: Ada" })
+  // The app signs in: it keeps its token, and sends it.
+  const signInApp = () =>
+    page.evaluate(() => {
+      localStorage.setItem("app_token", "x")
+      return fetch("/api/me", { headers: { authorization: "Bearer t-Ada" } })
+    })
+  await page.goto(url)
+  await signInApp()
+  await expect(account).toBeVisible()
+  // The app signs out: it removes its token and sends nothing more.
+  await page.evaluate(() => localStorage.removeItem("app_token"))
+  await expect(toolbar(page)).toBeHidden()
+
+  // In another tab.
+  await signInApp()
+  await expect(account).toBeVisible()
+  const other = await context.newPage()
+  await other.goto(url)
+  await other.evaluate(() => localStorage.removeItem("app_token"))
+  await expect(toolbar(page)).toBeHidden()
+
+  // At page load: the token is gone (here without removeItem), comma still has a session.
+  await signInApp()
+  await expect(account).toBeVisible()
+  await page.evaluate(() => delete localStorage.app_token)
+  await page.reload()
+  await expect(toolbar(page)).toBeHidden()
+})
+
 test("in the app, comma.identify signs people in without a sign-in screen", async ({ page }) => {
   await page.goto("/login?next=/app")
   await page.getByLabel("Name").fill("Linus")

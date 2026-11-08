@@ -111,19 +111,20 @@ Bun.serve({
     }
 
     // Test pages: any /t/<name> path serves the same page, so each test has its own page.
-    // `?project=<id>`, `?shortcut=<key>` and `?token-from=<origin>` change the script tag.
+    // `?project=<id>`, `?shortcut=<key>`, `?token-from=<origin>` and `?token-key=<key>` change the script tag.
     if (url.pathname.startsWith("/t/")) {
       const attr = (name: string) => url.searchParams.get(name)?.replace(/[^\w-]/g, "")
       const page = await Bun.file(resolve(pages, "fixtures/test.html")).text()
       const project = attr("project") ?? "example"
       const shortcut = attr("shortcut")
       const tokenFrom = url.searchParams.get("token-from")?.replace(/[^\w:/.-]/g, "")
+      const tokenKey = attr("token-key")
       return html(
         page.replace(
           'data-project="example"',
           `data-project="${project}"${shortcut === undefined ? "" : ` data-shortcut="${shortcut}"`}${
             tokenFrom === undefined ? "" : ` data-token-from="${tokenFrom}"`
-          }`,
+          }${tokenKey === undefined ? "" : ` data-token-key="${tokenKey}"`}`,
         ),
       )
     }

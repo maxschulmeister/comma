@@ -90,6 +90,7 @@ People sign in as guests with a name. To use the accounts of your app, see below
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `data-project`    | Required. The project id.                                                                                                                                       |
 | `data-shortcut`   | The key for comment mode, one letter. Default: `c`. `none`: no shortcut, for apps that use the letter themselves.                                               |
+| `data-token-key`  | With `data-token-from`: the storage key of your app's token. comma signs out when your app removes it.                                                          |
 | `data-token-from` | With `userUrl`: the address of your API (`https://api.acme.com`). comma signs in with the token of your app's own requests to it, with no app code (see below). |
 
 comma can run behind a proxy, also on the same origin as the site. Set `COMMA_URL` to its public address. If the proxy changes the `Host` header, it must send `X-Forwarded-Host`.
@@ -140,6 +141,7 @@ If you cannot change the app's code (for example, comma only on preview builds, 
 
 - comma reads the `Authorization: Bearer` header of the app's `fetch` and `XMLHttpRequest` calls to that address. It never changes a request, and sends the token only to the comma server, which checks it with `userUrl`.
 - It signs in with the first token on each page load, and again when a token comes after requests without one (another person may have signed in). Requests without a token for 5 s: comma signs out.
+- Many apps sign out with no request after it: they only remove the token from storage. Add `data-token-key` with the `localStorage` or `sessionStorage` key of the token. comma then signs out when the app removes it (also in another tab), and at page load when it is missing.
 - Put the tag before the app's scripts, without `defer`, so comma sees the first requests.
 - With `toolbar: "signed-in"`, comma shows nothing until the app signs in.
 
