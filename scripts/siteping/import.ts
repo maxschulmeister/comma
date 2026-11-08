@@ -175,8 +175,9 @@ export async function importSiteping(o: ImportOptions) {
   )
   const added = feedbacks.filter((f) => !knownThreads.has(idOf("thread", f.id)))
 
-  // The pins: one visit per page.
+  // The pins: one visit per page. A page that does not load (a preview that is gone): its threads are detached.
   const found = new Map<string, { anchor: Anchor | null; title: string }>()
+  const pagesNotLoaded: string[] = []
   const byPage = new Map<string, FeedbackRow[]>()
   for (const f of added) byPage.set(pageOf(f.url), [...(byPage.get(pageOf(f.url)) ?? []), f])
   for (const [page, list] of byPage) {
@@ -195,7 +196,10 @@ export async function importSiteping(o: ImportOptions) {
         },
       ]
     })
-    const result = await o.anchor(page, wanted)
+    const result = await o.anchor(page, wanted).catch(() => {
+      pagesNotLoaded.push(page)
+      return { title: "", anchors: new Map<string, Anchor>() }
+    })
     for (const f of list) found.set(f.id, { anchor: result.anchors.get(f.id) ?? null, title: result.title })
   }
 
@@ -208,6 +212,7 @@ export async function importSiteping(o: ImportOptions) {
     screenshots: 0,
     detachedIds: [] as string[],
     missingScreenshots: [] as string[],
+    pagesNotLoaded,
   }
 
   const people = new Map<string, string>()

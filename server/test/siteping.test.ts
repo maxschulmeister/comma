@@ -191,3 +191,21 @@ test("a feedback without a screenshot is imported without one", async () => {
   const report = await importInto(db)
   expect(report).toMatchObject({ threads: 1, screenshots: 0, missingScreenshots: ["f1"] })
 })
+
+test("a page that does not load (a preview that is gone): its feedback is imported, detached", async () => {
+  await feedback("f1", { message: "On the old preview", status: "resolved", at: 1_000 })
+  const { db } = await setup()
+  const report = await importSiteping({
+    from: siteping,
+    to: db,
+    sitepingProject: "website",
+    project: "open",
+    origin: OPEN,
+    screenshot: async () => PNG,
+    anchor: async () => {
+      throw new Error("net::ERR_NAME_NOT_RESOLVED")
+    },
+    now: () => 9_000,
+  })
+  expect(report).toMatchObject({ threads: 1, detached: 1, detachedIds: ["f1"], pagesNotLoaded: ["/"] })
+})
