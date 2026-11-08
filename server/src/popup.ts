@@ -169,6 +169,10 @@ export function popupRoutes({ projects, secret, session, slackSession, publicUrl
     })()
     if (!user) return failed(c)
     if (user["https://slack.com/team_id"] !== slack.team) {
+      // A setup problem shows here too: slack.team is not the workspace that people sign in with.
+      console.warn(
+        `comma: ${state.project.id}: Slack user of workspace ${user["https://slack.com/team_id"]}, not ${slack.team}`,
+      )
       return c.html(page("Sign in with your account of the team's Slack workspace."), 403)
     }
     const result = await slackSession(state.project, {
