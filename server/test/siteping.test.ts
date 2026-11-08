@@ -109,7 +109,7 @@ async function importInto(target: Db, anchored: (a: SitepingAnnotation) => boole
     origin: OPEN,
     screenshot: async (url) => (url.endsWith(".png") ? PNG : null),
     anchor: async (page, annotations) => ({
-      title: `Fihub ${page}`,
+      title: `Acme ${page}`,
       anchors: new Map(annotations.filter(anchored).map((a) => [a.feedbackId, ANCHOR] as const)),
     }),
     now: () => 9_000,
@@ -141,7 +141,7 @@ test("SitePing feedback becomes threads with the same text, authors, times, stat
   ])
   expect(bug.context).toMatchObject({
     url: `${OPEN}/`,
-    title: "Fihub /",
+    title: "Acme /",
     viewport: { width: 1789, height: 1194 },
     dpr: 2,
     browser: "Chrome 140",
@@ -190,4 +190,22 @@ test("a feedback without a screenshot is imported without one", async () => {
   const { db } = await setup()
   const report = await importInto(db)
   expect(report).toMatchObject({ threads: 1, screenshots: 0, missingScreenshots: ["f1"] })
+})
+
+test("a page that does not load (a preview that is gone): its feedback is imported, detached", async () => {
+  await feedback("f1", { message: "On the old preview", status: "resolved", at: 1_000 })
+  const { db } = await setup()
+  const report = await importSiteping({
+    from: siteping,
+    to: db,
+    sitepingProject: "website",
+    project: "open",
+    origin: OPEN,
+    screenshot: async () => PNG,
+    anchor: async () => {
+      throw new Error("net::ERR_NAME_NOT_RESOLVED")
+    },
+    now: () => 9_000,
+  })
+  expect(report).toMatchObject({ threads: 1, detached: 1, detachedIds: ["f1"], pagesNotLoaded: ["/"] })
 })

@@ -2,6 +2,8 @@
 
 Comments pinned to any website. One script tag. Your own service.
 
+![A comment thread on a heading of a website, and the panel with all comments of the site](docs/screenshot.png)
+
 - Press `C`, click an element, write a comment. Drag to comment on a region.
 - Threads with replies, reactions, mentions, images, screenshots of the page, assignees, resolve (with undo) and unread state.
 - Each new thread keeps a screenshot of its element (or region).
@@ -11,19 +13,37 @@ Comments pinned to any website. One script tag. Your own service.
 - A panel with all comments of the site. Search, filters, keyboard navigation.
 - Pins stay on their element when the page changes. If comma cannot find the element, the thread says "Element not found" and what it was on. It never moves to a wrong element.
 
-## Run it
+## Why comma
 
-Requires [Bun](https://bun.sh) 1.3 or later.
+- **One script tag.** Your sites do not need a backend, a database schema or a build step. One comma service holds the comments of all your sites.
+- **Your service, your data.** Run comma with Docker, or on AWS Lambda, Cloudflare Workers or Vercel. The comments stay in your own database: SQLite, Turso or another libSQL server.
+- **Your accounts.** People sign in with the accounts of your app, with Slack, or as guests.
+- **Small.** Under 145 kB gzip on the page. The editor, screenshots and emoji load when people use them.
 
-```sh
-bun install
-cp .env.example .env   # set COMMA_SECRET and EXAMPLE_APP_SECRET (openssl rand -hex 32)
-bun run build          # builds the widget
-bun run start          # comma on http://localhost:4000
-bun example/app.ts     # the example site on http://localhost:4100
-```
+Moving from SitePing? comma imports its comments (see [DEPLOY.md](DEPLOY.md#move-from-siteping)).
 
-`bun run dev` rebuilds the widget and restarts both servers when files change.
+## Quick start
+
+1. Deploy comma. [DEPLOY.md](DEPLOY.md) has the steps for Docker (the simplest), AWS Lambda, Cloudflare Workers and Vercel. A coding agent can follow it too.
+2. Add a project to `comma.config.ts`. `origins` are the sites that may use it.
+
+   ```ts
+   export default {
+     projects: [{ id: "acme", origins: ["https://www.acme.com", "http://localhost:3000"] }],
+   }
+   ```
+
+3. Add the script tag to the pages:
+
+   ```html
+   <script src="https://comma.example.com/c.js" data-project="acme" defer></script>
+   ```
+
+People sign in as guests with a name. To use the accounts of your app, see [Sign in with your app](#sign-in-with-your-app).
+
+To try comma on your computer first, see [Run it locally](#run-it-locally).
+
+## Settings
 
 ### Server settings
 
@@ -41,26 +61,6 @@ bun example/app.ts     # the example site on http://localhost:4100
 | `COMMA_S3_ENDPOINT`          | (AWS S3)          | Another S3 API: Cloudflare R2, MinIO.                                                                |
 | `COMMA_S3_ACCESS_KEY_ID`     | (the AWS role)    | With `s3`. On AWS Lambda, comma uses the function role.                                              |
 | `COMMA_S3_SECRET_ACCESS_KEY` | (the AWS role)    |                                                                                                      |
-
-To deploy, see [DEPLOY.md](DEPLOY.md).
-
-## Add comma to a site
-
-1. Add the project to `comma.config.ts`. `origins` are the sites that may use it.
-
-   ```ts
-   export default {
-     projects: [{ id: "acme", origins: ["https://www.acme.com", "http://localhost:3000"] }],
-   }
-   ```
-
-2. Add the script tag to the pages:
-
-   ```html
-   <script src="https://comma.example.com/c.js" data-project="acme" defer></script>
-   ```
-
-People sign in as guests with a name. To use the accounts of your app, see below.
 
 ### Project settings
 
@@ -86,10 +86,12 @@ People sign in as guests with a name. To use the accounts of your app, see below
 
 ### Script tag settings
 
-| Attribute       |                                                                                                                   |
-| --------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `data-project`  | Required. The project id.                                                                                         |
-| `data-shortcut` | The key for comment mode, one letter. Default: `c`. `none`: no shortcut, for apps that use the letter themselves. |
+| Attribute         |                                                                                                                                                                 |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data-project`    | Required. The project id.                                                                                                                                       |
+| `data-shortcut`   | The key for comment mode, one letter. Default: `c`. `none`: no shortcut, for apps that use the letter themselves.                                               |
+| `data-token-key`  | With `data-token-from`: the storage key of your app's token. comma signs out when your app removes it.                                                          |
+| `data-token-from` | With `userUrl`: the address of your API (`https://api.acme.com`). comma signs in with the token of your app's own requests to it, with no app code (see below). |
 
 comma can run behind a proxy, also on the same origin as the site. Set `COMMA_URL` to its public address. If the proxy changes the `Host` header, it must send `X-Forwarded-Host`.
 
@@ -128,6 +130,21 @@ window.comma.identify(accessToken)
 ```
 
 comma does not keep the access token. Use HTTPS for `userUrl`.
+
+#### Without app code: `data-token-from`
+
+If you cannot change the app's code (for example, comma only on preview builds, added to the HTML at build time), comma can take the token from the app's own requests:
+
+```html
+<script src="https://comma.example.com/c.js" data-project="acme" data-token-from="https://api.acme.com"></script>
+```
+
+- comma reads the `Authorization: Bearer` header of the app's `fetch` and `XMLHttpRequest` calls to that address. It never changes a request, and sends the token only to the comma server, which checks it with `userUrl`.
+- It signs in with the first token on each page load, and again when a token comes after requests without one (another person may have signed in). Requests without a token for 5 s: comma signs out.
+- Many apps sign out with no request after it: they only remove the token from storage. Add `data-token-key` with the `localStorage` or `sessionStorage` key of the token. comma then signs out when the app removes it (also in another tab), and at page load when it is missing.
+- Put the tag before the app's scripts, without `defer`, so comma sees the first requests.
+- With `toolbar: "signed-in"`, comma shows nothing until the app signs in.
+- The app decides who is signed in: comma's account menu shows the name, with no "Sign out". To use another account, sign out of the app and sign in with it.
 
 ### With a signed token: `appSecret`
 
@@ -270,6 +287,22 @@ Only people of that workspace can sign in. Their name, email and picture come fr
 
 ## Development
 
+### Run it locally
+
+Requires [Bun](https://bun.sh) 1.3 or later.
+
+```sh
+bun install
+cp .env.example .env   # set COMMA_SECRET and EXAMPLE_APP_SECRET (openssl rand -hex 32)
+bun run build          # builds the widget
+bun run start          # comma on http://localhost:4000
+bun example/app.ts     # the example site on http://localhost:4100
+```
+
+`bun run dev` rebuilds the widget and restarts both servers when files change.
+
+### Checks
+
 ```sh
 bun run test     # server tests (bun test)
 bun run e2e      # browser tests (Playwright: Chromium, Firefox, WebKit)
@@ -280,4 +313,8 @@ bun run check    # Biome, TypeScript, widget size
 - `widget/`: Preact in a Shadow DOM. UI from [shadcn/ui](https://ui.shadcn.com) (Base UI). Tiptap composer, loaded on demand.
 - `example/`: the example site and app, and test pages.
 
-See [PLAN.md](PLAN.md) for the design.
+Pull requests are welcome. CI runs the checks above on each pull request. To report a security problem, see [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)

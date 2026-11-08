@@ -9,7 +9,7 @@ import {
 } from "@phosphor-icons/react"
 import { cn } from "cn"
 import { useState } from "react"
-import { signOut } from "@/client"
+import { signInWithPopup, signOut } from "@/client"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -25,7 +25,7 @@ import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { NARROW, useMedia } from "@/lib/media"
 import { setState, useStore } from "@/store"
-import { Notices } from "./notices"
+import { Notices, notify } from "./notices"
 import { panelRowWidth } from "./panel"
 import { setCommentMode, togglePins } from "./shortcuts"
 import { SignInForm } from "./sign-in"
@@ -47,6 +47,14 @@ export function Toolbar() {
   const pinsVisible = useStore((s) => s.pinsVisible)
   const key = useStore((s) => s.shortcut?.toUpperCase())
   const me = useStore((s) => s.session?.user)
+  // Signed in with the app's own account (data-token-from): the app signs in and out, not comma.
+  const appAccount = useStore((s) => s.appAccount)
+  // One way to sign in, in a popup (Slack, or the app): the menu starts it at once, without the sign-in form.
+  const onlyPopup = useStore((s) => {
+    const info = s.projectInfo
+    if (!info || info.guests || info.popupSignIn === info.slack) return null
+    return info.slack ? "Slack" : (info.name ?? "your account")
+  })
   const unread = useStore((s) => s.threads.filter((t) => t.unread && t.status === "open").length)
   const [signInAnchor, setSignInAnchor] = useState<HTMLElement | null>(null)
   const [signInOpen, setSignInOpen] = useState(false)
@@ -146,18 +154,26 @@ export function Toolbar() {
                 {me.kind === "guest" && " (guest)"}
               </DropdownMenuLabel>
             </DropdownMenuGroup>
-            <DropdownMenuSeparator />
+            {!appAccount && <DropdownMenuSeparator />}
           </>
         )}
         {me ? (
-          <DropdownMenuItem onClick={signOut}>
-            <SignOutIcon />
-            Sign out
-          </DropdownMenuItem>
+          !appAccount && (
+            <DropdownMenuItem onClick={signOut}>
+              <SignOutIcon />
+              Sign out
+            </DropdownMenuItem>
+          )
         ) : (
-          <DropdownMenuItem onClick={() => setSignInOpen(true)}>
+          <DropdownMenuItem
+            onClick={() =>
+              onlyPopup
+                ? signInWithPopup(onlyPopup === "Slack" ? "slack" : "app").catch((e: Error) => notify(e.message))
+                : setSignInOpen(true)
+            }
+          >
             <SignInIcon />
-            Sign in
+            {onlyPopup ? `Sign in with ${onlyPopup}` : "Sign in"}
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>

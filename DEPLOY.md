@@ -46,6 +46,7 @@ All targets read the same env. See the table in [README.md](README.md#server-set
 
 - `<PROJECT>_SECRET`: one per project with app sign-in. The name is what `comma.config.ts` reads.
 - `<PROJECT>_SLACK_SECRET`: one per project with Slack sign-in. The Slack app also needs the redirect URL `$COMMA_URL/auth/slack/callback`.
+- On AWS Lambda, these secrets are one JSON object in `COMMA_PROJECT_SECRETS` (see [AWS Lambda](#aws-lambda)).
 - `CRON_SECRET`: Vercel only (cleanup).
 
 If a setting is missing or wrong, comma stops with a message that names the setting. Look at the logs.
@@ -156,11 +157,17 @@ Run it every day (cron) and copy the file off the server. Or ask the user if the
 
 Before you start: `aws sts get-caller-identity` works, and `zip` is installed. Make the Turso database (see [Before you start](#before-you-start)).
 
-1. For each `appSecret` and Slack client secret in `comma.config.ts`: add a `NoEcho` parameter and its env var in `template.yaml` (see the comments there).
+1. Secrets in `comma.config.ts` (`appSecret`, Slack client secret) go into the parameter `ProjectSecrets`, as one JSON object. The config reads them at start:
+
+   ```ts
+   const secrets = JSON.parse(process.env.COMMA_PROJECT_SECRETS ?? "{}")
+   export default { projects: [{ id: "acme", origins: ["https://www.acme.com"], appSecret: secrets.ACME_SECRET }] }
+   ```
+
 2. Write the parameters to a file outside the repo, readable only by the user (`chmod 600`). Leave out `PublicUrl` the first time.
 
    ```json
-   ["CommaDb=libsql://…", "CommaDbToken=…", "CommaSecret=…", "UseS3=true"]
+   ["CommaDb=libsql://…", "CommaDbToken=…", "CommaSecret=…", "UseS3=true", "ProjectSecrets={\"ACME_SECRET\":\"…\"}"]
    ```
 
 3. Deploy. `COMMA_CONFIG` is optional: a projects file outside the repo.

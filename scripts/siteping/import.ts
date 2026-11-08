@@ -7,7 +7,7 @@
 //
 //   SITEPING_DB=libsql://… SITEPING_DB_TOKEN=… COMMA_DB=… [COMMA_DB_TOKEN, COMMA_FILES=s3 and its settings] \
 //   [PREVIEW_AUTH=user:password] \
-//   bun scripts/siteping/import.ts --from website --project fihub-website --origin https://preview.fihub.ai
+//   bun scripts/siteping/import.ts --from website --project acme-site --origin https://preview.acme.com
 import { createHash } from "node:crypto"
 import { parseArgs } from "node:util"
 import { createClient } from "@libsql/client"
@@ -39,7 +39,7 @@ export type ImportOptions = {
   sitepingProject: string
   /** The comma project. */
   project: string
-  /** The site's origin, for example https://preview.fihub.ai. */
+  /** The site's origin, for example https://preview.acme.com. */
   origin: string
   screenshot: (url: string) => Promise<Uint8Array | null>
   /** Opens a page and finds the elements. `anchors`: by feedback id, only the ones it found. */
@@ -175,8 +175,9 @@ export async function importSiteping(o: ImportOptions) {
   )
   const added = feedbacks.filter((f) => !knownThreads.has(idOf("thread", f.id)))
 
-  // The pins: one visit per page.
+  // The pins: one visit per page. A page that does not load (a preview that is gone): its threads are detached.
   const found = new Map<string, { anchor: Anchor | null; title: string }>()
+  const pagesNotLoaded: string[] = []
   const byPage = new Map<string, FeedbackRow[]>()
   for (const f of added) byPage.set(pageOf(f.url), [...(byPage.get(pageOf(f.url)) ?? []), f])
   for (const [page, list] of byPage) {
@@ -195,7 +196,10 @@ export async function importSiteping(o: ImportOptions) {
         },
       ]
     })
-    const result = await o.anchor(page, wanted)
+    const result = await o.anchor(page, wanted).catch(() => {
+      pagesNotLoaded.push(page)
+      return { title: "", anchors: new Map<string, Anchor>() }
+    })
     for (const f of list) found.set(f.id, { anchor: result.anchors.get(f.id) ?? null, title: result.title })
   }
 
@@ -208,6 +212,7 @@ export async function importSiteping(o: ImportOptions) {
     screenshots: 0,
     detachedIds: [] as string[],
     missingScreenshots: [] as string[],
+    pagesNotLoaded,
   }
 
   const people = new Map<string, string>()

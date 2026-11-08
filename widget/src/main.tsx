@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client"
 import { App } from "./app"
 import {
   answerSignInRequests,
+  followAppToken,
   followOtherTabs,
   identify,
   loadProject,
@@ -20,7 +21,10 @@ import { preloadEditor } from "./ui/composer"
 import { loadPinsVisible, showCommentsWithPanel, startShortcuts } from "./ui/shortcuts"
 import { keepReview, loadReview, loadView } from "./ui/view"
 
-type Loader = { __queue: [string, unknown[]][]; __script: { src: string; project: string; shortcut?: string } }
+type Loader = {
+  __queue: [string, unknown[]][]
+  __script: { src: string; project: string; shortcut?: string; tokenFrom?: string }
+}
 
 // `data-shortcut` on the script tag: one letter, or "none". Default: C.
 const parseShortcut = (value?: string) =>
@@ -64,6 +68,7 @@ function start({ __queue: queue, __script: script }: Loader) {
     signInOpen: false,
     notice: null,
     shortcut: parseShortcut(script.shortcut),
+    appAccount: !!script.tokenFrom,
     detailsOpen: false,
   })
   setState({ session: loadSession(), ...loadReview() })
@@ -82,6 +87,8 @@ function start({ __queue: queue, __script: script }: Loader) {
   const run = ([name, args]: [string, unknown[]]) => {
     if (name === "identify" && typeof args[0] === "string") void api.identify(args[0]).catch(() => {})
     else if (name === "signOut") api.signOut()
+    else if (name === "token" && (typeof args[0] === "string" || args[0] === null)) followAppToken(args[0])
+    else if (name === "appSignedOut") followAppToken(false)
   }
   ;(window as unknown as { comma: typeof api }).comma = api
   for (const call of queue.splice(0)) run(call)

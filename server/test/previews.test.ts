@@ -8,7 +8,7 @@ describe("origin patterns", () => {
     const status = async (origin: string) =>
       (await request("POST", "/api/session/guest", { origin, body: { project: "previews", name: "Ada" } })).status
     expect(await status(PREVIEW_A)).toBe(200)
-    expect(await status("https://feature-fsd-1234.preview.test")).toBe(200)
+    expect(await status("https://feature-1234.preview.test")).toBe(200)
     expect(await status("https://preview.test")).toBe(403)
     expect(await status("https://a.b.preview.test")).toBe(403)
     expect(await status("http://feat-a.preview.test")).toBe(403)

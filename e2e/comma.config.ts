@@ -45,6 +45,14 @@ export default {
       appSecret: "e2e-app-secret",
       appUrl: "http://localhost:4900/app?project=through-app",
     },
+    // Sign-in with the app's own requests (`data-token-from`): the test page sends tokens to /api/me, like an app.
+    {
+      id: "token-from",
+      name: "Example",
+      origins: ["http://localhost:4900", "http://127.0.0.1:4900"],
+      userUrl: "http://localhost:4900/api/me",
+      toolbar: "signed-in",
+    },
     // Sign in with Slack only. The tests stop at Slack's sign-in page (a fake, see sign-in.spec.ts).
     {
       id: "slack",

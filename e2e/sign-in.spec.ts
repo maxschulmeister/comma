@@ -54,6 +54,96 @@ test("through the app: comma in the app signs people in on another site, also af
   await expect(toolbar(page).getByRole("button", { name: "Account: Ada" })).toBeVisible()
 })
 
+test("data-token-from: comma signs in with the app's own requests, and follows its sign-in and sign-out", async ({
+  page,
+}) => {
+  await page.clock.install()
+  await page.goto(`${testPath("token-from")}?project=token-from&token-from=http://localhost:4900`)
+  const account = (name: string) => toolbar(page).getByRole("button", { name: `Account: ${name}` })
+  // The app's requests: fetch and XMLHttpRequest, as an app with axios sends them.
+  const fetchMe = (token?: string, origin = "") =>
+    page.evaluate(
+      // Another origin answers without CORS: the request goes out, its answer fails.
+      ([token, origin]) =>
+        fetch(`${origin}/api/me`, { headers: token ? { authorization: `Bearer ${token}` } : {} }).catch(() => null),
+      [token, origin] as const,
+    )
+  const xhrMe = (token: string) =>
+    page.evaluate(
+      (token) =>
+        new Promise((done) => {
+          const xhr = new XMLHttpRequest()
+          xhr.open("GET", "/api/me")
+          xhr.setRequestHeader("Authorization", `Bearer ${token}`)
+          xhr.onloadend = done
+          xhr.send()
+        }),
+      token,
+    )
+  // Signed out in the app: comma shows nothing (toolbar: signed-in).
+  await expect(toolbar(page)).toBeHidden()
+  // A token to another address does not count.
+  await fetchMe("t-Eve", "http://127.0.0.1:4900")
+  await page.clock.runFor(1000)
+  await expect(toolbar(page)).toBeHidden()
+
+  await fetchMe("t-Alice")
+  await expect(account("Alice")).toBeVisible()
+  // The app decides who is signed in: comma's account menu has the name, and no sign-out.
+  await account("Alice").click()
+  await expect(page.getByRole("menu")).toContainText("Alice")
+  await expect(page.getByRole("menuitem", { name: "Sign out" })).toHaveCount(0)
+  await page.keyboard.press("Escape")
+  // The app signs out: its requests go out without the token.
+  await fetchMe()
+  await page.clock.runFor(6000)
+  await expect(toolbar(page)).toBeHidden()
+  // Another person signs in to the app.
+  await xhrMe("t-Bob")
+  await expect(account("Bob")).toBeVisible()
+
+  // A new page load: the first token counts, also if comma still has a session of someone else.
+  await page.reload()
+  await expect(account("Bob")).toBeVisible()
+  await fetchMe("t-Alice")
+  await expect(account("Alice")).toBeVisible()
+})
+
+test("data-token-key: when the app removes its token, comma signs out at once, also in other tabs and at page load", async ({
+  page,
+  context,
+}) => {
+  const url = `${testPath("token-key")}?project=token-from&token-from=http://localhost:4900&token-key=app_token`
+  const account = toolbar(page).getByRole("button", { name: "Account: Ada" })
+  // The app signs in: it keeps its token, and sends it.
+  const signInApp = () =>
+    page.evaluate(() => {
+      localStorage.setItem("app_token", "x")
+      return fetch("/api/me", { headers: { authorization: "Bearer t-Ada" } })
+    })
+  await page.goto(url)
+  await signInApp()
+  await expect(account).toBeVisible()
+  // The app signs out: it removes its token and sends nothing more.
+  await page.evaluate(() => localStorage.removeItem("app_token"))
+  await expect(toolbar(page)).toBeHidden()
+
+  // In another tab.
+  await signInApp()
+  await expect(account).toBeVisible()
+  const other = await context.newPage()
+  await other.goto(url)
+  await other.evaluate(() => localStorage.removeItem("app_token"))
+  await expect(toolbar(page)).toBeHidden()
+
+  // At page load: the token is gone (here without removeItem), comma still has a session.
+  await signInApp()
+  await expect(account).toBeVisible()
+  await page.evaluate(() => delete localStorage.app_token)
+  await page.reload()
+  await expect(toolbar(page)).toBeHidden()
+})
+
 test("in the app, comma.identify signs people in without a sign-in screen", async ({ page }) => {
   await page.goto("/login?next=/app")
   await page.getByLabel("Name").fill("Linus")
@@ -263,6 +353,12 @@ test("Sign in with Slack opens Slack's sign-in for the project's workspace in a 
   expect(slack?.searchParams.get("redirect_uri")).toBe(`${COMMA}/auth/slack/callback`)
   await popup.close()
   await expect(panel(page).getByRole("alert")).toHaveText("Sign-in was closed.")
+
+  // Slack is the only way to sign in: the account menu starts it at once, without the sign-in form.
+  await toolbar(page).getByRole("button", { name: "Account", exact: true }).click()
+  const fromMenu = page.waitForEvent("popup")
+  await page.getByRole("menuitem", { name: "Sign in with Slack" }).click()
+  await expect((await fromMenu).getByRole("heading", { name: "Slack sign-in" })).toBeVisible()
 })
 
 test("tabs follow each other: sign-out and sign-in in one tab change the others", async ({ context }) => {
