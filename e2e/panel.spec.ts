@@ -289,6 +289,34 @@ test("the panel takes the focus and gives it back", async ({ page }) => {
   await expect(items(page).filter({ hasText: "Older" })).toBeFocused()
 })
 
+test("a reply editor that loads late does not take the focus from the panel", async ({ page }) => {
+  const me = await guestSession("Slow editor")
+  const path = testPath("slow-editor")
+  await apiThread(me, path, "Older")
+  await signIn(page, me)
+  // The editor loads on demand. Hold it back, as on a slow network.
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route("**/w/chunks/editor-*.js", async (route) => {
+    await held
+    await route.continue()
+  })
+  await page.goto(path)
+  await pins(page).first().click()
+  await expect(threadPopover(page)).toBeVisible()
+  const button = toolbar(page).getByRole("button", { name: /^Comments/ })
+  await button.focus()
+  await page.keyboard.press("Enter")
+  const item = items(page).filter({ hasText: "Older" })
+  await expect(item).toBeFocused()
+
+  release()
+  await expect(threadPopover(page).locator(".ProseMirror")).toBeVisible()
+  await expect(item).toBeFocused()
+})
+
 test("an empty panel takes the focus itself", async ({ page }) => {
   await signIn(page, await guestSession("Empty focus"))
   await openTestPage(page, "focus-empty")
