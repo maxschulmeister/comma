@@ -1,4 +1,4 @@
-# comma: plan
+# comma: design
 
 Comments pinned to any website. Vercel-style comment UX. One script tag. Your own service.
 
@@ -6,7 +6,7 @@ Comments pinned to any website. Vercel-style comment UX. One script tag. Your ow
 
 [SitePing](https://github.com/NeosiaNexus/SitePing) has the right idea, but:
 
-- The UI is not good. We want Vercel comment UI and UX.
+- We want a comment UI and UX like Vercel's.
 - It is too large: 12 packages, ~41k lines of source.
 - Integration is hard: each site must mount an endpoint, add a database schema and run a CLI.
 - Pins drift. A rectangle is anchored to the smallest element that contains all of it. This is often `<section>`, `<main>` or `<body>`. The rectangle is stored as % of that container. When a new section is added inside the container, the pin moves.
