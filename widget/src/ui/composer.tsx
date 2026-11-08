@@ -232,6 +232,9 @@ export function Composer({
   // biome-ignore lint/correctness/useExhaustiveDependencies: the editor is created once per composer.
   useEffect(() => {
     let destroyed = false
+    // The editor loads on demand. It takes the focus only if the focus did not move on meanwhile (to the panel, the page).
+    const root = mountRef.current?.getRootNode() as ShadowRoot | undefined
+    const focusBefore = [document.activeElement, root?.activeElement]
     preloadEditor().then(
       ({ createEditor }) => {
         if (destroyed || !mountRef.current) return
@@ -268,7 +271,10 @@ export function Composer({
         setEmpty(editor.isEmpty)
         setReady(true)
         for (const upload of uploadsRef.current) if (!upload.ref && !upload.error) track(upload)
-        if (autoFocus) editor.commands.focus("end")
+        const active = root?.activeElement
+        const stayed = document.activeElement === focusBefore[0] && active === focusBefore[1]
+        const inPopover = !!active && !!mountRef.current.closest("[role=dialog]")?.contains(active)
+        if (autoFocus && (stayed || inPopover)) editor.commands.focus("end")
       },
       () => setError("Could not load the editor. Check your connection and try again."),
     )
