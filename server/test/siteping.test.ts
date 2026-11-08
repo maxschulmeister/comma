@@ -109,7 +109,7 @@ async function importInto(target: Db, anchored: (a: SitepingAnnotation) => boole
     origin: OPEN,
     screenshot: async (url) => (url.endsWith(".png") ? PNG : null),
     anchor: async (page, annotations) => ({
-      title: `Fihub ${page}`,
+      title: `Acme ${page}`,
       anchors: new Map(annotations.filter(anchored).map((a) => [a.feedbackId, ANCHOR] as const)),
     }),
     now: () => 9_000,
@@ -141,7 +141,7 @@ test("SitePing feedback becomes threads with the same text, authors, times, stat
   ])
   expect(bug.context).toMatchObject({
     url: `${OPEN}/`,
-    title: "Fihub /",
+    title: "Acme /",
     viewport: { width: 1789, height: 1194 },
     dpr: 2,
     browser: "Chrome 140",

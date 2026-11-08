@@ -7,7 +7,7 @@
 //
 //   SITEPING_DB=libsql://… SITEPING_DB_TOKEN=… COMMA_DB=… [COMMA_DB_TOKEN, COMMA_FILES=s3 and its settings] \
 //   [PREVIEW_AUTH=user:password] \
-//   bun scripts/siteping/import.ts --from website --project fihub-website --origin https://preview.fihub.ai
+//   bun scripts/siteping/import.ts --from website --project acme-site --origin https://preview.acme.com
 import { createHash } from "node:crypto"
 import { parseArgs } from "node:util"
 import { createClient } from "@libsql/client"
@@ -39,7 +39,7 @@ export type ImportOptions = {
   sitepingProject: string
   /** The comma project. */
   project: string
-  /** The site's origin, for example https://preview.fihub.ai. */
+  /** The site's origin, for example https://preview.acme.com. */
   origin: string
   screenshot: (url: string) => Promise<Uint8Array | null>
   /** Opens a page and finds the elements. `anchors`: by feedback id, only the ones it found. */
