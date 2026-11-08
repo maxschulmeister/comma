@@ -1,0 +1,18 @@
+node_modules
+dist
+*.sqlite
+*.sqlite-*
+test-results
+playwright-report
+.DS_Store
+*.local
+
+# Local secrets
+.env
+
+# Static widget files for Workers and Vercel (scripts/public.ts)
+/public
+
+# Left from AWS SAM deploys: build output, and parameters with secrets
+.aws-sam
+samconfig.toml

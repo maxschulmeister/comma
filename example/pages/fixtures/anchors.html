@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Anchor fixture</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; }
+      main { max-width: 900px; margin: 0 auto; padding: 24px; }
+      section { padding: 32px 0; border-bottom: 1px solid #ddd; }
+      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+      .card { border: 1px solid #ccc; padding: 16px; }
+      .hero-img { width: 100%; height: 120px; background: #eef; }
+    </style>
+  </head>
+  <body>
+    <header id=":r3:"><nav><a href="/">Home</a> <a href="/pricing">Pricing</a></nav></header>
+    <main>
+      <section data-fixture="intro">
+        <h1 data-fixture="title">Comments on any website</h1>
+        <p data-fixture="lead">Pin a comment to any element on the page and talk about it with your team.</p>
+        <div class="hero-img" data-fixture="hero" role="img" aria-label="Hero picture"></div>
+      </section>
+      <section id="pricing" data-fixture="pricing">
+        <h2 data-fixture="pricing-title">Pricing</h2>
+        <div class="cards">
+          <div class="card"><h3>Free</h3><p>For small teams.</p><button type="button" data-fixture="btn-free">Learn more</button></div>
+          <div class="card"><h3>Pro</h3><p>For growing teams.</p><button type="button" data-fixture="btn-pro">Learn more</button></div>
+          <div class="card"><h3>Enterprise</h3><p>For large teams.</p><button type="button" data-fixture="btn-ent">Learn more</button></div>
+        </div>
+      </section>
+      <section data-fixture="faq">
+        <h2>Questions</h2>
+        <p data-fixture="faq-1">Alpha answer about billing and invoices.</p>
+        <p data-fixture="faq-2">Beta answer about security and data storage.</p>
+        <div class="cards" data-fixture="twins">
+          <div class="card"><h3>Item</h3><button type="button" data-fixture="twin-1">Copy</button></div>
+          <div class="card"><h3>Item</h3><button type="button" data-fixture="twin-2">Copy</button></div>
+        </div>
+        <div class="cards" data-fixture="links">
+          <div class="card"><h3>Plan</h3><a href="/plans/a" data-fixture="open-a">Open</a></div>
+          <div class="card"><h3>Plan</h3><a href="/plans/b" data-fixture="open-b">Open</a></div>
+        </div>
+        <div class="cards" data-fixture="links3">
+          <div class="card"><h3>Doc</h3><a href="/docs/x" data-fixture="doc-x1">Read</a></div>
+          <div class="card"><h3>Doc</h3><a href="/docs/x" data-fixture="doc-x2">Read</a></div>
+          <div class="card"><h3>Doc</h3><a href="/docs/y" data-fixture="doc-y">Read</a></div>
+        </div>
+        <div><h4 data-fixture="intro-1">Intro</h4><p id="note" data-fixture="note">Shared note text here</p></div>
+        <div><h4 data-fixture="intro-2">Other</h4><p data-fixture="note-copy">Shared note text here</p></div>
+        <div data-fixture="faq-plans">
+          <h3 data-fixture="plan-a">Frequently asked questions about plan A</h3>
+          <p>Plan A is for teams that start out.</p>
+          <h3 data-fixture="plan-b">Frequently asked questions about plan B</h3>
+          <p>Plan B adds single sign-on and audit logs.</p>
+        </div>
+        <p><a href="/user?id=alice&amp;utm_source=mail" data-fixture="profile">View profile</a></p>
+        <img src="/pixel.png?sig=one" alt="The team at the office" data-fixture="photo" width="20" height="20">
+        <div class="cards" data-fixture="quote-cards">
+          <div class="card"><h3>Basic</h3><p data-fixture="quote-basic">Contact our sales team for a custom quote.</p></div>
+          <div class="card"><h3>Enterprise</h3><p data-fixture="quote-ent">Contact our sales team for a custom quote.</p></div>
+        </div>
+        <div class="cards" data-fixture="product-cards">
+          <div class="card"><h3>MacBook Pro 14-inch</h3><p data-fixture="delivery-14">Free delivery on all orders over $100.</p></div>
+          <div class="card"><h3>MacBook Pro 16-inch</h3><p data-fixture="delivery-16">Free delivery on all orders over $100.</p></div>
+        </div>
+        <div class="cards" data-fixture="flight-cards">
+          <div class="card"><h3 data-fixture="flight-lp">Flight from London to Paris today</h3><p data-fixture="cancel-lp">Free cancellation up to 24 hours before departure.</p></div>
+          <div class="card"><h3>Flight from Paris to London today</h3><p data-fixture="cancel-pl">Free cancellation up to 24 hours before departure.</p></div>
+        </div>
+        <div class="cards" data-fixture="slot-cards">
+          <div class="card"><h3>Desk lamp</h3><p id="slot-0" data-fixture="slot-0">Ships within two business days.</p></div>
+          <div class="card"><h3>Floor lamp</h3><p id="slot-1" data-fixture="slot-1">Ships within two business days.</p></div>
+        </div>
+        <div class="cards" data-fixture="lamp-cards">
+          <div class="card"><h3>Desk lamp</h3><p>Free delivery</p><button type="button" data-fixture="cart-desk">Add to cart</button></div>
+          <div class="card"><h3>Floor lamp</h3><p>Free delivery</p><button type="button" data-fixture="cart-floor">Add to cart</button></div>
+        </div>
+        <div class="cards" data-fixture="shop-cards">
+          <div class="card"><h3>Desk light</h3><div class="actions"><p>Free shipping</p><button type="button" data-fixture="buy-desk">Buy now</button></div></div>
+          <div class="card"><h3>Floor light</h3><div class="actions"><p>Free shipping</p><button type="button" data-fixture="buy-floor">Buy now</button></div></div>
+          <div class="card"><h3>Ceiling light</h3><div class="actions"><p>Shipping $5</p><button type="button" data-fixture="buy-ceiling">Buy now</button></div></div>
+        </div>
+        <div class="cards" data-fixture="label-cards">
+          <div class="card"><h3>Red chair</h3><p>In stock</p><button type="button"><span><span data-fixture="label-red">Add to bag</span></span></button></div>
+          <div class="card"><h3>Blue chair</h3><p>In stock</p><button type="button"><span><span data-fixture="label-blue">Add to bag</span></span></button></div>
+        </div>
+        <div class="cards" data-fixture="shirt-cards">
+          <div class="card"><img src="/img/shirt-red.png" alt="Classic T-shirt" width="20" height="20"><h3>Classic T-shirt</h3><a href="/p/shirt-red">Details</a><button type="button" data-fixture="shirt-red">Add to basket</button></div>
+          <div class="card"><img src="/img/shirt-blue.png" alt="Classic T-shirt" width="20" height="20"><h3>Classic T-shirt</h3><a href="/p/shirt-blue">Details</a><button type="button" data-fixture="shirt-blue">Add to basket</button></div>
+        </div>
+        <div class="cards" data-fixture="photo-cards">
+          <figure class="card"><picture><source srcset="/img/beach.avif 1x, /img/beach-2x.avif 2x" type="image/avif"><img src="/img/fallback.png" alt="Holiday" data-fixture="pic-beach" width="20" height="20"></picture><figcaption>Holiday</figcaption></figure>
+          <figure class="card"><picture><source srcset="/img/city.avif 1x, /img/city-2x.avif 2x" type="image/avif"><img src="/img/fallback.png" alt="Holiday" data-fixture="pic-city" width="20" height="20"></picture><figcaption>Holiday</figcaption></figure>
+          <figure class="card"><img src="/img/fallback.png" srcset="/img/lake.jpg?w=200 1x, /img/lake.jpg?w=400 2x" alt="Holiday" data-fixture="pic-lake" width="20" height="20"><figcaption>Holiday</figcaption></figure>
+        </div>
+        <div data-fixture="filter-list">
+          <div class="card"><img src="/img/mug-red.png" alt="Coffee mug" width="20" height="20"><h3>Coffee mug</h3><a href="/p/mug-red">Details</a><button type="button" data-fixture="mug-red">Put in cart</button></div>
+        </div>
+        <div data-fixture="icon-shop">
+          <div class="card"><img src="/img/lamp-a.png" alt="Lamp" width="20" height="20"><h3>Lamp</h3><a href="/p/lamp-a">Details</a><button type="button" data-fixture="icon-buy"><svg width="12" height="12" aria-hidden="true"><use href="#cart"></use></svg>Order lamp</button></div>
+        </div>
+        <div data-fixture="wrapped-shop">
+          <article class="card"><img src="/img/shirt-green.png" alt="Green shirt" width="20" height="20"><a href="/p/shirt-green">Green T-shirt</a><div class="actions"><button type="button" data-fixture="wrapped-buy"><svg width="12" height="12" aria-hidden="true"><use href="#cart"></use></svg><span><span data-fixture="wrapped-label">Pay for it</span></span></button></div></article>
+        </div>
+        <div data-fixture="wish-shop">
+          <article class="card"><img src="/img/cup-red.png" alt="Red cup" width="20" height="20"><a href="/p/cup-red">Cup</a><div class="actions"><button type="button" data-fixture="wish-buy">Buy the cup</button><button type="button" aria-label="Save"><img src="/icons/heart.svg" alt="" width="12" height="12"></button></div></article>
+        </div>
+        <div data-fixture="link-shop">
+          <div class="card"><a href="/p/vase-red"><img src="/img/vase-red.png" alt="Red vase" width="20" height="20"><span data-fixture="link-label">See this vase</span></a></div>
+        </div>
+        <div data-fixture="guide-shop">
+          <article class="card"><img src="/img/hat-red.png" alt="Red hat" width="20" height="20"><a href="/p/hat-red">Hat</a><div class="actions"><button type="button" data-fixture="guide-buy">Buy the hat</button><a href="/size-guide">Size guide</a></div></article>
+        </div>
+        <div class="cards" data-fixture="room-cards">
+          <div class="card"><img src="/img/room-sea.png" alt="Sea room" width="20" height="20"><a href="/r/sea">Sea room</a><div><p>Free cancellation</p><button type="button" data-fixture="sea-1">Reserve</button></div><div><p>Free cancellation</p><button type="button" data-fixture="sea-2">Reserve</button></div></div>
+          <div class="card"><img src="/img/room-garden.png" alt="Garden room" width="20" height="20"><a href="/r/garden">Garden room</a><div><p>Free cancellation</p><button type="button" data-fixture="garden-1">Reserve</button></div><div><p>Free cancellation</p><button type="button" data-fixture="garden-2">Reserve</button></div></div>
+        </div>
+        <div data-fixture="single-room">
+          <div class="card"><img src="/img/room-lake.png" alt="Lake room" width="20" height="20"><a href="/r/lake">Lake room</a><div><p>Pay later</p><button type="button" data-fixture="lake-1">Book</button></div><div><p>Pay later</p><button type="button" data-fixture="lake-2">Book</button></div></div>
+        </div>
+        <div data-fixture="long-room">
+          <div class="card"><img src="/img/room-hill.png" alt="Hill room" width="20" height="20"><a href="/r/hill">Hill room</a><p>Free cancellation</p><button type="button" data-fixture="hill-check">Check availability and prices</button></div>
+        </div>
+        <div data-fixture="policy-room">
+          <div class="card"><img src="/img/room-bay.png" alt="Bay room" width="20" height="20"><a href="/r/bay">Bay room</a><div><a href="/cancellation-policy">Policy</a><button type="button" data-fixture="bay-1">Hold</button></div><div><a href="/cancellation-policy">Policy</a><button type="button" data-fixture="bay-2">Hold</button></div></div>
+        </div>
+        <div data-fixture="rate-room">
+          <div class="card"><img src="/img/room-cliff.png" alt="Cliff room" width="20" height="20"><a href="/r/cliff">Cliff room</a><div><p>Non-refundable</p><button type="button" data-fixture="cliff-1">Take it</button></div><div><p>Refundable</p><a href="/cancellation-policy">Policy</a><button type="button" data-fixture="cliff-2">Take it</button></div></div>
+        </div>
+        <div data-fixture="picker">
+          <a href="/img/beach.jpg" class="preview"><img src="/img/beach.jpg" alt="Selected" width="20" height="20"></a>
+          <a href="/img/beach.jpg"><img src="/img/beach.jpg" alt="Beach" width="10" height="10"></a>
+          <a href="/img/lake.jpg"><img src="/img/lake.jpg" alt="Lake" width="10" height="10"></a>
+          <button type="button" data-fixture="use-pick">Use this one</button>
+        </div>
+        <div data-fixture="contact">
+          <div class="card"><h3>Ada Lee</h3><p>Order 1234</p><button type="button" id="delete-contact" data-fixture="delete-contact">Delete contact</button></div>
+        </div>
+        <div data-fixture="contact-icon">
+          <div class="card"><h3>Cy Park</h3><button type="button" aria-label="Remove contact"><img src="/icons/trash.svg" alt="" width="12" height="12" data-fixture="trash-icon"></button></div>
+        </div>
+        <div data-fixture="contact-link">
+          <div class="card"><h3>Eve Ross</h3><a href="/contacts/eve/edit"><img src="/icons/edit.svg" alt="Edit contact" width="12" height="12" data-fixture="edit-icon"></a></div>
+        </div>
+        <section data-fixture="room-pick">
+          <h3 id="room-title" data-fixture="room-title">Deluxe double room with sea view</h3>
+          <p>Two guests, balcony, breakfast included in the price.</p>
+        </section>
+        <picture data-fixture="gallery"><source srcset="/img/gallery-1.avif" type="image/avif"><img src="/img/fallback.png" alt="Gallery" data-fixture="gallery-img" width="20" height="20"></picture>
+        <img src="/image?url=photo-a.jpg&amp;w=640&amp;sig=one" alt="Office" data-fixture="proxied" width="20" height="20">
+        <h3 data-fixture="pricing-h3">Pricing</h3>
+        <p data-fixture="pricing-desc">Choose a plan</p>
+        <div data-comment-anchor="signup" data-fixture="signup"><button type="button">Sign up</button></div>
+      </section>
+    </main>
+  </body>
+</html>

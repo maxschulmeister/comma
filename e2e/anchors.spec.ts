@@ -1,0 +1,728 @@
+import { execFileSync } from "node:child_process"
+import { expect, type Page, test } from "@playwright/test"
+import type { Anchor } from "../widget/src/anchor"
+
+// The anchor module, built for the browser.
+const bundle = execFileSync("bun", ["build", "e2e/anchor-entry.ts", "--target=browser"], { encoding: "utf8" })
+
+type Api = {
+  createAnchor: (el: Element, at: { point: { x: number; y: number } } | { rect: DOMRectInit }) => Anchor
+  resolveAnchor: (anchor: Anchor, previous?: Element | null) => Element | null
+  anchorBox: (anchor: Anchor, el: Element) => { x: number; y: number; width: number; height: number }
+}
+declare global {
+  interface Window {
+    commaAnchor: Api
+    saved: Anchor
+    target: Element | null
+  }
+}
+
+async function open(page: Page) {
+  await page.goto("/fixtures/anchors")
+  await page.addScriptTag({ content: bundle })
+}
+
+// Creates an anchor on the element with `data-fixture=name`, at the given % of its box.
+async function pin(page: Page, name: string, x = 25, y = 50) {
+  return page.evaluate(
+    ([name, x, y]) => {
+      const el = document.querySelector(`[data-fixture="${name}"]`) as Element
+      const r = el.getBoundingClientRect()
+      window.target = el
+      window.saved = window.commaAnchor.createAnchor(el, {
+        point: { x: r.left + (r.width * x) / 100, y: r.top + (r.height * y) / 100 },
+      })
+      return window.saved
+    },
+    [name, x, y] as const,
+  )
+}
+
+// The `data-fixture` name of the element the anchor resolves to, or null.
+function resolved(page: Page, anchor?: Anchor) {
+  return page.evaluate((a) => {
+    const el = window.commaAnchor.resolveAnchor(a ?? window.saved)
+    return el ? (el.getAttribute("data-fixture") ?? el.outerHTML.slice(0, 80)) : null
+  }, anchor)
+}
+
+test("a pin stays on its element after a section is added above it", async ({ page }) => {
+  await open(page)
+  await pin(page, "pricing-title", 25, 50)
+  await page.evaluate(() => {
+    const s = document.createElement("section")
+    s.innerHTML = "<h2>News</h2><p>Something new.</p><h2>Pricing plans soon</h2>"
+    document.querySelector("main")?.prepend(s)
+  })
+  const result = await page.evaluate(() => {
+    const el = window.commaAnchor.resolveAnchor(window.saved)
+    const r = window.target?.getBoundingClientRect() as DOMRect
+    return {
+      same: el === window.target,
+      box: el && window.commaAnchor.anchorBox(window.saved, el),
+      expected: { x: r.left + r.width * 0.25, y: r.top + r.height * 0.5 },
+    }
+  })
+  expect(result.same).toBe(true)
+  expect(result.box?.x).toBeCloseTo(result.expected.x, 1)
+  expect(result.box?.y).toBeCloseTo(result.expected.y, 1)
+})
+
+test("a pin stays on its element after a reload and a viewport resize", async ({ page }) => {
+  await open(page)
+  const anchor = await pin(page, "btn-pro")
+  await page.setViewportSize({ width: 420, height: 800 })
+  await open(page)
+  expect(await resolved(page, anchor)).toBe("btn-pro")
+})
+
+test("a pin on a repeated element finds the right one by its context", async ({ page }) => {
+  await open(page)
+  const anchor = await pin(page, "btn-ent")
+  await page.evaluate(() => {
+    const card = document.createElement("div")
+    card.className = "card"
+    card.innerHTML = "<h3>Starter</h3><p>For one person.</p><button>Learn more</button>"
+    document.querySelector(".cards")?.prepend(card)
+  })
+  expect(await resolved(page, anchor)).toBe("btn-ent")
+})
+
+test("a pin is detached when its element is removed", async ({ page }) => {
+  await open(page)
+  await pin(page, "faq-1")
+  await page.evaluate(() => document.querySelector('[data-fixture="faq-1"]')?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+test("a pin is detached, not moved, when the selector matches a different element", async ({ page }) => {
+  await open(page)
+  await pin(page, "faq-1")
+  // The first paragraph now has other text. Its selector still matches it.
+  await page.evaluate(() => {
+    const p = document.querySelector('[data-fixture="faq-1"]') as HTMLElement
+    p.textContent = "Gamma answer about something completely different."
+    p.removeAttribute("data-fixture")
+  })
+  expect(await resolved(page)).toBeNull()
+})
+
+test("data-comment-anchor is the most stable anchor", async ({ page }) => {
+  await open(page)
+  await pin(page, "signup")
+  expect(await page.evaluate(() => window.saved.selectors.anchor)).toBe("signup")
+  await page.evaluate(() => {
+    const el = document.querySelector('[data-fixture="signup"]') as HTMLElement
+    el.innerHTML = "<button>Create account</button>"
+    document.querySelector("main")?.prepend(el)
+  })
+  expect(await resolved(page)).toBe("signup")
+})
+
+test("framework ids are not used in selectors", async ({ page }) => {
+  await open(page)
+  const anchor = await page.evaluate(() => {
+    const el = document.querySelector("header nav a") as Element
+    const r = el.getBoundingClientRect()
+    return window.commaAnchor.createAnchor(el, { point: { x: r.left + 1, y: r.top + 1 } })
+  })
+  expect(anchor.selectors.css).not.toContain(":r3:")
+  expect(anchor.selectors.id).toBeUndefined()
+})
+
+test("a region keeps its size relative to the element, also outside the element", async ({ page }) => {
+  await open(page)
+  const result = await page.evaluate(() => {
+    const el = document.querySelector('[data-fixture="hero"]') as HTMLElement
+    const r = el.getBoundingClientRect()
+    // Larger than the element: starts 10 px left of it and ends 10 px below it.
+    const rect = { x: r.left - 10, y: r.top + 10, width: r.width + 10, height: r.height }
+    const anchor = window.commaAnchor.createAnchor(el, { rect })
+    el.style.width = "50%"
+    const r2 = el.getBoundingClientRect()
+    return { anchor, box: window.commaAnchor.anchorBox(anchor, el), r2 }
+  })
+  expect(result.anchor.rect?.x).toBeLessThan(0)
+  expect((result.anchor.rect?.y ?? 0) + (result.anchor.rect?.height ?? 0)).toBeGreaterThan(100)
+  expect(result.box.width).toBeCloseTo(result.r2.width * ((result.anchor.rect?.width ?? 0) / 100), 1)
+  expect(result.box.x).toBeLessThan(result.r2.left)
+})
+
+test("a short text whose context changed is detached, not moved to a look-alike", async ({ page }) => {
+  await open(page)
+  await pin(page, "btn-ent")
+  // The Enterprise card goes away. Two other "Learn more" buttons stay.
+  await page.evaluate(() => document.querySelector('[data-fixture="btn-ent"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+test("a long text is found even when its neighbors change", async ({ page }) => {
+  await open(page)
+  await pin(page, "lead")
+  await page.evaluate(() => {
+    const title = document.querySelector('[data-fixture="title"]') as HTMLElement
+    title.textContent = "A new title"
+  })
+  expect(await resolved(page)).toBe("lead")
+})
+
+test("identical twins: the pin stays on its twin", async ({ page }) => {
+  await open(page)
+  const anchor = await pin(page, "twin-2")
+  await open(page)
+  expect(await resolved(page, anchor)).toBe("twin-2")
+})
+
+test("identical twins: when one goes away, the pin is detached, not moved to the other", async ({ page }) => {
+  await open(page)
+  await pin(page, "twin-1")
+  await page.evaluate(() => document.querySelector('[data-fixture="twin-1"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+test("look-alikes that differ in a link follow their link when they swap places", async ({ page }) => {
+  await open(page)
+  await pin(page, "open-b")
+  await page.evaluate(() => {
+    const cards = document.querySelector('[data-fixture="links"]') as HTMLElement
+    cards.prepend(cards.lastElementChild as Element)
+  })
+  expect(await resolved(page)).toBe("open-b")
+})
+
+test("a unique element that gets an identical copy is detached", async ({ page }) => {
+  await open(page)
+  await pin(page, "faq-2")
+  // An identical copy with the same neighbors: there is no way to tell which one is the original.
+  await page.evaluate(() => {
+    const section = document.querySelector('[data-fixture="faq"]') as HTMLElement
+    const copy = section.cloneNode(true) as HTMLElement
+    for (const el of copy.querySelectorAll("[data-fixture], [data-comment-anchor]")) {
+      el.removeAttribute("data-fixture")
+      el.removeAttribute("data-comment-anchor")
+    }
+    section.before(copy)
+  })
+  expect(await resolved(page)).toBeNull()
+})
+
+test("look-alikes where some share a link: a swap with the other link detaches", async ({ page }) => {
+  await open(page)
+  await pin(page, "doc-x1")
+  await page.evaluate(() => {
+    const cards = document.querySelector('[data-fixture="links3"]') as HTMLElement
+    cards.prepend(cards.lastElementChild as Element)
+  })
+  expect(await resolved(page)).not.toBe("doc-y")
+})
+
+test("a unique link that now points elsewhere is detached", async ({ page }) => {
+  await open(page)
+  const anchor = await page.evaluate(() => {
+    const el = document.querySelector('header a[href="/pricing"]') as Element
+    const r = el.getBoundingClientRect()
+    return window.commaAnchor.createAnchor(el, { point: { x: r.left + 1, y: r.top + 1 } })
+  })
+  await page.evaluate(() => document.querySelector('header a[href="/pricing"]')?.setAttribute("href", "/other"))
+  expect(await resolved(page, anchor)).toBeNull()
+})
+
+test("repeated text: a stable id and a look-alike with the old neighbors disagree, so it is detached", async ({
+  page,
+}) => {
+  await open(page)
+  await pin(page, "note")
+  await page.evaluate(() => {
+    ;(document.querySelector('[data-fixture="intro-1"]') as HTMLElement).textContent = "Changed"
+    ;(document.querySelector('[data-fixture="intro-2"]') as HTMLElement).textContent = "Intro"
+  })
+  expect(await resolved(page)).toBeNull()
+})
+
+test("a similar heading does not take the place of a removed one", async ({ page }) => {
+  await open(page)
+  await pin(page, "plan-a")
+  await page.evaluate(() => {
+    const a = document.querySelector('[data-fixture="plan-a"]') as HTMLElement
+    a.nextElementSibling?.remove()
+    a.remove()
+  })
+  expect(await resolved(page)).toBeNull()
+})
+
+test("an edited heading is still found", async ({ page }) => {
+  await open(page)
+  await pin(page, "title")
+  await page.evaluate(() => {
+    ;(document.querySelector('[data-fixture="title"]') as HTMLElement).textContent = "Comments on any website!"
+  })
+  expect(await resolved(page)).toBe("title")
+})
+
+test("an edited heading with a look-alike on the page is detached: the edit could be the other one", async ({
+  page,
+}) => {
+  await open(page)
+  await pin(page, "plan-a")
+  await page.evaluate(() => {
+    ;(document.querySelector('[data-fixture="plan-a"]') as HTMLElement).textContent =
+      "Frequently asked questions about plan A!"
+  })
+  expect(await resolved(page)).toBeNull()
+})
+
+test("a link to another target is another element; tracking parameters do not matter", async ({ page }) => {
+  await open(page)
+  await pin(page, "profile")
+  await page.evaluate(() =>
+    document.querySelector('[data-fixture="profile"]')?.setAttribute("href", "/user?id=alice&utm_source=web"),
+  )
+  expect(await resolved(page)).toBe("profile")
+  await page.evaluate(() => document.querySelector('[data-fixture="profile"]')?.setAttribute("href", "/user?id=bob"))
+  expect(await resolved(page)).toBeNull()
+})
+
+test("an image with a new signed URL is still found", async ({ page }) => {
+  await open(page)
+  await pin(page, "photo")
+  await page.evaluate(() => document.querySelector('[data-fixture="photo"]')?.setAttribute("src", "/pixel.png?sig=two"))
+  expect(await resolved(page)).toBe("photo")
+})
+
+test("text that repeats on the page needs its neighbors: a removed card does not move the pin", async ({ page }) => {
+  await open(page)
+  await pin(page, "quote-basic")
+  await page.evaluate(() => document.querySelector('[data-fixture="quote-basic"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+test("an image behind a proxy: another source is another image, a new size is not", async ({ page }) => {
+  await open(page)
+  await pin(page, "proxied")
+  const img = '[data-fixture="proxied"]'
+  await page.evaluate(
+    (s) => document.querySelector(s)?.setAttribute("src", "/image?url=photo-a.jpg&w=320&sig=two"),
+    img,
+  )
+  expect(await resolved(page)).toBe("proxied")
+  await page.evaluate(
+    (s) => document.querySelector(s)?.setAttribute("src", "/image?url=photo-b.jpg&w=640&sig=one"),
+    img,
+  )
+  expect(await resolved(page)).toBeNull()
+})
+
+test("on the open page, the same element stays when only its neighbors change", async ({ page }) => {
+  await open(page)
+  await pin(page, "pricing-h3")
+  await page.evaluate(() => {
+    ;(document.querySelector('[data-fixture="pricing-desc"]') as HTMLElement).textContent = "Plans for every team"
+  })
+  // After a reload the neighbors are new: a short text cannot be told apart, so it is detached.
+  expect(await resolved(page)).toBeNull()
+  // On the open page, the element found before is kept.
+  const kept = await page.evaluate(
+    () => window.commaAnchor.resolveAnchor(window.saved, window.target) === window.target,
+  )
+  expect(kept).toBe(true)
+})
+
+test("repeated text: similar neighbors are not enough (another product)", async ({ page }) => {
+  await open(page)
+  await pin(page, "delivery-14")
+  await page.evaluate(() => document.querySelector('[data-fixture="delivery-14"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+test("repeated text: neighbors with the same words in another order are other neighbors", async ({ page }) => {
+  await open(page)
+  await pin(page, "cancel-lp")
+  await page.evaluate(() => document.querySelector('[data-fixture="cancel-lp"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+test("repeated text on the open page: a reused row with another product is detached", async ({ page }) => {
+  await open(page)
+  await pin(page, "delivery-14")
+  // A list reuses the row for another product: the paragraph element stays, its heading changes.
+  const kept = await page.evaluate(() => {
+    const heading = window.target?.closest(".card")?.querySelector("h3")
+    if (heading) heading.textContent = "MacBook Air 13-inch"
+    return window.commaAnchor.resolveAnchor(window.saved, window.target)
+  })
+  expect(kept).toBeNull()
+})
+
+test("a heading with a look-alike on the page: another heading with the same words is not the same", async ({
+  page,
+}) => {
+  await open(page)
+  await pin(page, "flight-lp")
+  await page.evaluate(() => document.querySelector('[data-fixture="flight-lp"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+test("repeated text with a slot id: a slot reused for another product is detached", async ({ page }) => {
+  await open(page)
+  await pin(page, "slot-0")
+  await page.evaluate(() => {
+    const heading = document.querySelector('[data-fixture="slot-0"]')?.closest(".card")?.querySelector("h3")
+    if (heading) heading.textContent = "Ceiling lamp"
+  })
+  expect(await resolved(page)).toBeNull()
+})
+
+test("look-alikes in different cards: the card tells them apart when the cards change order", async ({ page }) => {
+  await open(page)
+  await pin(page, "cart-desk")
+  // The cards change order (sorting): the button at the old position is in the other card.
+  await page.evaluate(() => {
+    const cards = document.querySelector('[data-fixture="lamp-cards"]') as HTMLElement
+    cards.prepend(cards.lastElementChild as Element)
+  })
+  expect(await resolved(page)).toBe("cart-desk")
+  // Its card is gone: the other card's button is not it.
+  await page.evaluate(() => document.querySelector('[data-fixture="cart-desk"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+// Moves the first card to the end, then removes the card of `name`: the pin follows its card, then detaches.
+async function reorderThenRemove(page: Page, cards: string, name: string) {
+  await page.evaluate((cards) => {
+    const list = document.querySelector(`[data-fixture="${cards}"]`) as HTMLElement
+    list.append(list.firstElementChild as Element)
+  }, cards)
+  expect(await resolved(page)).toBe(name)
+  await page.evaluate((name) => document.querySelector(`[data-fixture="${name}"]`)?.closest(".card")?.remove(), name)
+  expect(await resolved(page)).toBeNull()
+}
+
+test("look-alikes in three cards: the card title tells them apart, not only the closest wrapper", async ({ page }) => {
+  await open(page)
+  await pin(page, "buy-desk")
+  await reorderThenRemove(page, "shop-cards", "buy-desk")
+})
+
+test("look-alikes with nested labels: the label inside a button is told apart by its card", async ({ page }) => {
+  await open(page)
+  await pin(page, "label-red")
+  await reorderThenRemove(page, "label-cards", "label-red")
+})
+
+test("look-alikes in cards with the same text: the card's links and images tell them apart", async ({ page }) => {
+  await open(page)
+  await pin(page, "shirt-red")
+  await reorderThenRemove(page, "shirt-cards", "shirt-red")
+})
+
+test("look-alike pictures: their responsive sources tell them apart", async ({ page }) => {
+  await open(page)
+  await pin(page, "pic-beach")
+  await reorderThenRemove(page, "photo-cards", "pic-beach")
+})
+
+test("a responsive image keeps its identity when only its size parameters change", async ({ page }) => {
+  await open(page)
+  await pin(page, "pic-lake")
+  await page.evaluate(() =>
+    document
+      .querySelector('[data-fixture="pic-lake"]')
+      ?.setAttribute("srcset", "/img/lake.jpg?w=300 1x, /img/lake.jpg?w=600 2x"),
+  )
+  expect(await resolved(page)).toBe("pic-lake")
+})
+
+test("a short label that was unique: another product in its card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "mug-red")
+  // Nothing changed: found.
+  expect(await resolved(page)).toBe("mug-red")
+  // A filter shows another product in the same DOM: same title and labels, other picture and link.
+  const kept = await page.evaluate(() => {
+    const card = window.target?.closest(".card")
+    card?.querySelector("img")?.setAttribute("src", "/img/mug-blue.png")
+    card?.querySelector("a")?.setAttribute("href", "/p/mug-blue")
+    return window.commaAnchor.resolveAnchor(window.saved, window.target)
+  })
+  expect(kept).toBeNull()
+  expect(await resolved(page)).toBeNull()
+})
+
+// The element found before stays (open page) and is found again (reload) — or neither, when `change` makes it another.
+async function afterChange(page: Page, change: () => void) {
+  return page.evaluate((code) => {
+    new Function(code)()
+    const kept = window.commaAnchor.resolveAnchor(window.saved, window.target) === window.target
+    const found = window.commaAnchor.resolveAnchor(window.saved)
+    return { kept, found: found?.getAttribute("data-fixture") ?? null }
+  }, `(${change.toString()})()`)
+}
+
+test("a short label with a shared icon: another product in its card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "icon-buy")
+  expect(await resolved(page)).toBe("icon-buy")
+  const after = await afterChange(page, () => {
+    const card = document.querySelector('[data-fixture="icon-buy"]')?.closest(".card")
+    card?.querySelector("img")?.setAttribute("src", "/img/lamp-b.png")
+    card?.querySelector("a")?.setAttribute("href", "/p/lamp-b")
+  })
+  expect(after).toEqual({ kept: false, found: null })
+})
+
+test("a picture: another source is another picture", async ({ page }) => {
+  await open(page)
+  await pin(page, "gallery-img")
+  expect(await resolved(page)).toBe("gallery-img")
+  const after = await afterChange(page, () => {
+    document.querySelector('[data-fixture="gallery"] source')?.setAttribute("srcset", "/img/gallery-2.avif")
+  })
+  expect(after).toEqual({ kept: false, found: null })
+})
+
+for (const name of ["wrapped-buy", "wrapped-label"]) {
+  test(`a control in an action wrapper (${name}): another product in its card is another element`, async ({ page }) => {
+    await open(page)
+    await pin(page, name)
+    expect(await resolved(page)).toBe(name)
+    const after = await afterChange(page, () => {
+      const card = document.querySelector('[data-fixture="wrapped-shop"] article')
+      card?.querySelector("img")?.setAttribute("src", "/img/shirt-black.png")
+      card?.querySelector("a")?.setAttribute("href", "/p/shirt-black")
+    })
+    expect(after).toEqual({ kept: false, found: null })
+  })
+}
+
+test("a button next to another button with an icon: another product in its card is another element", async ({
+  page,
+}) => {
+  await open(page)
+  await pin(page, "wish-buy")
+  expect(await resolved(page)).toBe("wish-buy")
+  const after = await afterChange(page, () => {
+    const card = document.querySelector('[data-fixture="wish-shop"] article')
+    card?.querySelector("img")?.setAttribute("src", "/img/cup-blue.png")
+    card?.querySelector("a")?.setAttribute("href", "/p/cup-blue")
+  })
+  expect(after).toEqual({ kept: false, found: null })
+})
+
+test("a label in a product link: another product link is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "link-label")
+  expect(await resolved(page)).toBe("link-label")
+  const after = await afterChange(page, () => {
+    const link = document.querySelector('[data-fixture="link-shop"] a')
+    link?.setAttribute("href", "/p/vase-blue")
+    link?.querySelector("img")?.setAttribute("src", "/img/vase-blue.png")
+  })
+  expect(after).toEqual({ kept: false, found: null })
+})
+
+test("a product card: a toggled icon in a button does not detach the comment", async ({ page }) => {
+  await open(page)
+  await pin(page, "wish-buy")
+  const after = await afterChange(page, () => {
+    document
+      .querySelector('[data-fixture="wish-shop"] button[aria-label="Save"] img')
+      ?.setAttribute("src", "/icons/heart-filled.svg")
+  })
+  expect(after).toEqual({ kept: true, found: "wish-buy" })
+})
+
+test("a button next to a shared link: another product in its card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "guide-buy")
+  expect(await resolved(page)).toBe("guide-buy")
+  const after = await afterChange(page, () => {
+    const card = document.querySelector('[data-fixture="guide-shop"] article')
+    card?.querySelector("img")?.setAttribute("src", "/img/hat-blue.png")
+    card?.querySelector("a")?.setAttribute("href", "/p/hat-blue")
+  })
+  expect(after).toEqual({ kept: false, found: null })
+})
+
+test("repeated controls in distinct cards: a sort never moves the pin to another card", async ({ page }) => {
+  await open(page)
+  await pin(page, "sea-1")
+  expect(await resolved(page)).toBe("sea-1")
+  await page.evaluate(() => {
+    const list = document.querySelector('[data-fixture="room-cards"]') as HTMLElement
+    list.append(list.firstElementChild as Element)
+  })
+  // Only the position tells the two buttons in the card apart, and it changed: detached is fine, the other card is not.
+  expect([null, "sea-1"]).toContain(await resolved(page))
+  await page.evaluate(() => document.querySelector('[data-fixture="sea-1"]')?.closest(".card")?.remove())
+  expect(await resolved(page)).toBeNull()
+})
+
+// Shows another product in the card of `name`: its first image and link change.
+function otherProduct(name: string) {
+  return `(() => {
+    const card = document.querySelector('[data-fixture="${name}"]').closest(".card")
+    card.querySelector("img").setAttribute("src", "/img/other.png")
+    card.querySelector("a").setAttribute("href", "/p/other")
+  })()`
+}
+
+async function afterCode(page: Page, code: string) {
+  return page.evaluate((code) => {
+    new Function(code)()
+    const kept = window.commaAnchor.resolveAnchor(window.saved, window.target) === window.target
+    const found = window.commaAnchor.resolveAnchor(window.saved)
+    return { kept, found: found?.getAttribute("data-fixture") ?? null }
+  }, code)
+}
+
+test("twins in one card: another product in the card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "lake-1")
+  expect(await resolved(page)).toBe("lake-1")
+  expect(await afterCode(page, otherProduct("lake-1"))).toEqual({ kept: false, found: null })
+})
+
+test("a control with a longer label: another product in its card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "hill-check")
+  expect(await resolved(page)).toBe("hill-check")
+  expect(await afterCode(page, otherProduct("hill-check"))).toEqual({ kept: false, found: null })
+})
+
+test("twins in one card with a shared link in each row: another product in the card is another element", async ({
+  page,
+}) => {
+  await open(page)
+  await pin(page, "bay-1")
+  expect(await resolved(page)).toBe("bay-1")
+  expect(await afterCode(page, otherProduct("bay-1"))).toEqual({ kept: false, found: null })
+})
+
+test("a stable id with changed text needs the same neighbors", async ({ page }) => {
+  await open(page)
+  await pin(page, "room-title")
+  // An edit of the title: the neighbors stay, so it is the same heading.
+  await page.evaluate(() => {
+    ;(document.querySelector("#room-title") as HTMLElement).textContent = "Deluxe double room with a sea view"
+  })
+  expect(await resolved(page)).toBe("room-title")
+  // Another room in the same element: other title and other neighbors.
+  await page.evaluate(() => {
+    ;(document.querySelector("#room-title") as HTMLElement).textContent = "Deluxe twin room with sea view"
+    ;(document.querySelector("#room-title + p") as HTMLElement).textContent =
+      "Three guests, garden terrace, no breakfast."
+  })
+  expect(await resolved(page)).toBeNull()
+})
+
+test("rate rows with a link in only one row: another product in the card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "cliff-1")
+  expect(await resolved(page)).toBe("cliff-1")
+  expect(await afterCode(page, otherProduct("cliff-1"))).toEqual({ kept: false, found: null })
+})
+
+test("a product card in a list: another product added to the list does not detach the comment", async ({ page }) => {
+  await open(page)
+  await pin(page, "shirt-red")
+  await page.evaluate(() => {
+    const list = document.querySelector('[data-fixture="shirt-cards"]') as HTMLElement
+    list.insertAdjacentHTML(
+      "beforeend",
+      '<div class="card"><img src="/img/shirt-green.png" alt="Polo" width="20" height="20"><h3>Polo</h3><a href="/p/polo">Details</a><button type="button">Add to basket</button></div>',
+    )
+  })
+  expect(await resolved(page)).toBe("shirt-red")
+})
+
+test("a picker: another selected item is another element, also when its old link stays in a thumbnail", async ({
+  page,
+}) => {
+  await open(page)
+  await pin(page, "use-pick")
+  expect(await resolved(page)).toBe("use-pick")
+  const after = await afterCode(
+    page,
+    `(() => {
+      const preview = document.querySelector('[data-fixture="picker"] .preview')
+      preview.setAttribute("href", "/img/lake.jpg")
+      preview.querySelector("img").setAttribute("src", "/img/lake.jpg")
+    })()`,
+  )
+  expect(after).toEqual({ kept: false, found: null })
+})
+
+test("a picker with many thumbnails: another selected item is another element, a sort is not", async ({ page }) => {
+  await open(page)
+  // Every item as the selected one: the evidence of each must count, not only a sample.
+  const wrong = await page.evaluate(() => {
+    const failures: string[] = []
+    for (let selected = 1; selected <= 40; selected++) {
+      document.querySelector('[data-fixture="big-picker"]')?.remove()
+      const thumbs = Array.from(
+        { length: 40 },
+        (_, i) => `<a href="/img/p-${i + 1}.jpg"><img src="/img/p-${i + 1}.jpg" alt="" width="4" height="4"></a>`,
+      ).join("")
+      document
+        .querySelector("main")
+        ?.insertAdjacentHTML(
+          "beforeend",
+          `<div data-fixture="big-picker"><a href="/img/p-${selected}.jpg" class="preview"><img src="/img/p-${selected}.jpg" alt="" width="8" height="8"></a><div class="thumbs">${thumbs}</div><button type="button">Use the selected one</button></div>`,
+        )
+      const picker = document.querySelector('[data-fixture="big-picker"]') as HTMLElement
+      const button = picker.querySelector("button") as HTMLElement
+      const r = button.getBoundingClientRect()
+      const anchor = window.commaAnchor.createAnchor(button, { point: { x: r.left + 1, y: r.top + 1 } })
+      // A sort keeps it.
+      const list = picker.querySelector(".thumbs") as HTMLElement
+      for (const thumb of Array.from(list.children)) list.prepend(thumb)
+      if (window.commaAnchor.resolveAnchor(anchor) !== button) failures.push(`sort ${selected}`)
+      // Another selected item detaches it.
+      const preview = picker.querySelector(".preview") as HTMLElement
+      const other = selected === 40 ? 1 : selected + 1
+      preview.setAttribute("href", `/img/p-${other}.jpg`)
+      preview.querySelector("img")?.setAttribute("src", `/img/p-${other}.jpg`)
+      if (window.commaAnchor.resolveAnchor(anchor, button) || window.commaAnchor.resolveAnchor(anchor)) {
+        failures.push(`select ${selected}`)
+      }
+    }
+    return failures
+  })
+  expect(wrong).toEqual([])
+})
+
+test("a control in a card without links or images: another record in the card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "delete-contact")
+  expect(await resolved(page)).toBe("delete-contact")
+  const name = `document.querySelector('[data-fixture="contact"] h3').textContent = "Ben Jones"`
+  expect(await afterCode(page, name)).toEqual({ kept: false, found: null })
+})
+
+test("a control in a card without links or images: another order number is another record", async ({ page }) => {
+  await open(page)
+  await pin(page, "delete-contact")
+  const order = `document.querySelector('[data-fixture="contact"] p').textContent = "Order 1235"`
+  expect(await afterCode(page, order)).toEqual({ kept: false, found: null })
+})
+
+test("an image in a control: another record in the card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "trash-icon")
+  expect(await resolved(page)).toBe("trash-icon")
+  const name = `document.querySelector('[data-fixture="contact-icon"] h3').textContent = "Dee Moss"`
+  expect(await afterCode(page, name)).toEqual({ kept: false, found: null })
+})
+
+test("an image in an action link: another record in the card is another element", async ({ page }) => {
+  await open(page)
+  await pin(page, "edit-icon")
+  expect(await resolved(page)).toBe("edit-icon")
+  const other = `(() => {
+    const card = document.querySelector('[data-fixture="contact-link"]')
+    card.querySelector("h3").textContent = "Dee Moss"
+    card.querySelector("a").setAttribute("href", "/contacts/dee/edit")
+  })()`
+  expect(await afterCode(page, other)).toEqual({ kept: false, found: null })
+})

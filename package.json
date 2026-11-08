@@ -1,0 +1,29 @@
+{
+  "name": "comma",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "widget",
+    "example"
+  ],
+  "scripts": {
+    "build": "bun run --cwd widget build",
+    "dev": "bun run --cwd widget build --watch & bun --watch server/src/index.ts & bun --watch example/app.ts",
+    "start": "bun server/src/index.ts",
+    "test": "bun test server",
+    "e2e": "bunx playwright test",
+    "typecheck": "bun run --cwd server typecheck && bun run --cwd widget typecheck",
+    "check": "bunx biome check . && bun run typecheck && bun run size",
+    "size": "bun run build && bun scripts/size.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.5",
+    "@libsql/client": "^0.18.0",
+    "@playwright/test": "^1.65.0",
+    "hono": "^4.13.16"
+  },
+  "patchedDependencies": {
+    "frimousse@0.4.0": "patches/frimousse@0.4.0.patch"
+  }
+}

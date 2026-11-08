@@ -1,0 +1,579 @@
+import { type BrowserContext, expect, type Page, request, test } from "@playwright/test"
+import { sign } from "hono/jwt"
+import {
+  addComment,
+  appSession,
+  COMMA,
+  guestSession,
+  newCommentPopover,
+  openTestPage,
+  panel,
+  pins,
+  SITE,
+  showPanel,
+  signIn,
+  testPath,
+  threadPopover,
+  toolbar,
+  typeComment,
+} from "./helpers"
+
+// The author adds a comment. Returns the page, in browse mode with the thread open.
+async function withComment(page: Page, name: string, author: string, text = "First comment") {
+  await signIn(page, await guestSession(author))
+  await openTestPage(page, name)
+  await addComment(page, page.getByTestId("lead"), text)
+  return threadPopover(page)
+}
+
+async function asOther(context: BrowserContext, name: string, session: Awaited<ReturnType<typeof guestSession>>) {
+  const other = await context.browser()?.newPage()
+  if (!other) throw new Error("no browser")
+  await signIn(other, session)
+  await other.goto(testPath(name))
+  await pins(other).first().click()
+  return other
+}
+
+test("replies and reactions", async ({ page, context }) => {
+  const thread = await withComment(page, "reply", "Ann")
+  const bob = await asOther(context, "reply", await guestSession("Bob"))
+  const bobThread = threadPopover(bob)
+  await typeComment(bob, bobThread, "A reply")
+  await bob.keyboard.press("ControlOrMeta+Enter")
+  await expect(bobThread.getByRole("article")).toHaveCount(2)
+
+  // Quick reaction on the first comment.
+  const first = bobThread.getByRole("article").first()
+  await first.hover()
+  await first.getByRole("button", { name: "Add reaction" }).click()
+  await bob.getByRole("button", { name: "React with 🎉" }).click()
+  const chip = first.getByRole("button", { name: /^🎉 1/ })
+  await expect(chip).toHaveAttribute("aria-pressed", "true")
+  await expect(bobThread).toBeVisible()
+
+  // Ann sees the reply and the reaction after the next update (window focus).
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await expect(thread.getByRole("article")).toHaveCount(2)
+  const annChip = thread
+    .getByRole("article")
+    .first()
+    .getByRole("button", { name: /^🎉 1: Bob/ })
+  await expect(annChip).toHaveAttribute("aria-pressed", "false")
+  await annChip.click()
+  await expect(thread.getByRole("article").first().getByRole("button", { name: /^🎉 2/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  )
+  await bob.close()
+})
+
+test("edit and delete own comments", async ({ page }) => {
+  const thread = await withComment(page, "edit", "Edith")
+  await typeComment(page, thread, "Second")
+  await page.keyboard.press("ControlOrMeta+Enter")
+  const second = thread.getByRole("article").nth(1)
+  await expect(second).toContainText("Second")
+
+  await second.hover()
+  await second.getByRole("button", { name: "Comment actions" }).click()
+  await page.getByRole("menuitem", { name: "Edit" }).click()
+  const editor = second.locator(".ProseMirror")
+  await expect(editor).toHaveText("Second")
+  await editor.click()
+  await page.keyboard.press("End")
+  await page.keyboard.type(" edited")
+  await page.keyboard.press("ControlOrMeta+Enter")
+  await expect(second).toContainText("Second edited")
+  await expect(second).toContainText("(edited)")
+
+  await second.hover()
+  await second.getByRole("button", { name: "Comment actions" }).click()
+  await page.getByRole("menuitem", { name: "Delete" }).click()
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click()
+  await expect(thread.getByRole("article")).toHaveCount(1)
+
+  // Deleting the first comment deletes the thread.
+  const first = thread.getByRole("article").first()
+  await first.hover()
+  await first.getByRole("button", { name: "Comment actions" }).click()
+  await page.getByRole("menuitem", { name: "Delete" }).click()
+  await expect(page.getByRole("alertdialog")).toContainText("Delete thread?")
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click()
+  await expect(thread).toBeHidden()
+  await expect(pins(page)).toHaveCount(0)
+})
+
+test("others cannot edit or delete my comment or thread", async ({ page, context }) => {
+  await withComment(page, "others", "Owner")
+  const other = await asOther(context, "others", await guestSession("Other"))
+  const thread = threadPopover(other)
+  await expect(thread.getByRole("article")).toHaveCount(1)
+  await expect(thread.getByRole("button", { name: "Comment actions" })).toHaveCount(0)
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await expect(other.getByRole("menuitem", { name: "Delete thread" })).toHaveCount(0)
+  await other.close()
+})
+
+test("an admin deletes any thread", async ({ page, context }) => {
+  await withComment(page, "admin", "Writer")
+  const admin = await asOther(context, "admin", await appSession("Admin", true))
+  await threadPopover(admin).getByRole("button", { name: "Thread actions" }).click()
+  await admin.getByRole("menuitem", { name: "Delete thread" }).click()
+  await admin.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click()
+  await expect(pins(admin)).toHaveCount(0)
+  await admin.close()
+})
+
+test("the preview of a pin does not come back when its thread closes", async ({ page }) => {
+  await withComment(page, "preview-back", "Previewer")
+  await page.keyboard.press("Escape")
+  await expect(threadPopover(page)).toBeHidden()
+  // Hover until the preview shows, then click: the thread opens.
+  const preview = page.locator("[data-slot=hover-card-content]")
+  await pins(page).first().hover()
+  await expect(preview).toBeVisible()
+  await pins(page).first().click()
+  await expect(threadPopover(page)).toBeVisible()
+  // The mouse goes away, and the thread closes.
+  await page.mouse.move(5, 5)
+  await page.keyboard.press("Escape")
+  await expect(threadPopover(page)).toBeHidden()
+  await page.waitForTimeout(500)
+  await expect(preview).toBeHidden()
+})
+
+test("the focus is not lost when a thread closes or goes away", async ({ page }) => {
+  // A comment made with the keyboard. Esc closes its thread: the focus goes to its pin.
+  await signIn(page, await guestSession("Focus keeper"))
+  await openTestPage(page, "focus-after")
+  await page.keyboard.press("c")
+  await expect(toolbar(page).getByRole("button", { name: "Comment mode" })).toHaveAttribute("aria-pressed", "true")
+  await page.getByRole("link", { name: "Home" }).focus()
+  await page.keyboard.press("Enter")
+  await typeComment(page, newCommentPopover(page), "Kept in focus")
+  await page.keyboard.press("ControlOrMeta+Enter")
+  await expect(threadPopover(page)).toContainText("Kept in focus")
+  await page.keyboard.press("Escape")
+  await expect(threadPopover(page)).toBeHidden()
+  await expect(pins(page).first()).toBeFocused()
+
+  // Resolve: the focus goes to Undo.
+  await page.keyboard.press("Enter")
+  await threadPopover(page).getByRole("button", { name: "Resolve" }).click()
+  const undo = page.getByRole("status").getByRole("button", { name: "Undo" })
+  await expect(undo).toBeFocused()
+  await page.keyboard.press("Enter")
+  await expect(threadPopover(page)).toContainText("Kept in focus")
+
+  // Delete the thread: the focus goes to the Comments button.
+  const first = threadPopover(page).getByRole("article").first()
+  await first.hover()
+  await first.getByRole("button", { name: "Comment actions" }).click()
+  await page.getByRole("menuitem", { name: "Delete" }).click()
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click()
+  await expect(pins(page)).toHaveCount(0)
+  await expect(toolbar(page).getByRole("button", { name: /^Comments/ })).toBeFocused()
+})
+
+test("resolve tells what happened and can be undone", async ({ page }) => {
+  const thread = await withComment(page, "resolve-undo", "Undoer")
+  await thread.getByRole("button", { name: "Resolve" }).click()
+  await expect(thread).toBeHidden()
+  await expect(pins(page)).toHaveCount(0)
+  const status = page.getByRole("status").filter({ hasText: "Thread resolved" })
+  await expect(status).toBeVisible()
+  await status.getByRole("button", { name: "Undo" }).click()
+  await expect(pins(page)).toHaveCount(1)
+  await expect(threadPopover(page)).toContainText("First comment")
+  await expect(threadPopover(page)).not.toContainText("Resolved")
+})
+
+test("a message shows beside the toolbar; with the panel open, at the other end of the panel's row", async ({
+  page,
+}) => {
+  const thread = await withComment(page, "notice-toolbar", "Noticer")
+  const comments = toolbar(page).getByRole("button", { name: /^Comments/ })
+  const before = await comments.boundingBox()
+  await thread.getByRole("button", { name: "Resolve" }).click()
+  const status = page.locator("[data-slot=notices]")
+  await expect(status.getByRole("button", { name: "Undo" })).toBeVisible()
+  const box = async () => {
+    const [message, bar] = [await status.boundingBox(), await toolbar(page).boundingBox()]
+    if (!message || !bar) throw new Error("no box")
+    return { message, bar, middle: (b: typeof bar) => b.y + b.height / 2 }
+  }
+  // The same row, left of the toolbar, as high as it. Its buttons stay in place.
+  const closed = await box()
+  expect(Math.round(closed.message.height)).toBe(Math.round(closed.bar.height))
+  expect(closed.message.x + closed.message.width).toBeLessThanOrEqual(closed.bar.x)
+  expect(Math.abs(closed.middle(closed.message) - closed.middle(closed.bar))).toBeLessThan(2)
+  await expect.poll(async () => (await comments.boundingBox())?.x).toBe(before?.x)
+  // Panel open: at the panel's other edge.
+  await showPanel(page)
+  const sidePanel = await panel(page).boundingBox()
+  const open = await box()
+  expect(open.message.x - (sidePanel?.x ?? 0)).toBeLessThan(24)
+  expect(Math.abs(open.middle(open.message) - open.middle(open.bar))).toBeLessThan(2)
+})
+
+test("on a phone, the message is a smaller pill above the toolbar", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 700 })
+  const thread = await withComment(page, "notice-phone", "Phone")
+  await thread.getByRole("button", { name: "Resolve" }).click()
+  const status = page.locator("[data-slot=notices]")
+  await expect(status.getByRole("button", { name: "Undo" })).toBeVisible()
+  const [message, bar] = [await status.boundingBox(), await toolbar(page).boundingBox()]
+  expect((message?.y ?? 0) + (message?.height ?? 0)).toBeLessThanOrEqual(bar?.y ?? 0)
+  expect(message?.height ?? 0).toBeLessThan((bar?.height ?? 0) - 4)
+})
+
+test("Undo goes after 8 s, and stays while the mouse is on it", async ({ page }) => {
+  await page.clock.install()
+  const thread = await withComment(page, "notice-time", "Timer")
+  await thread.getByRole("button", { name: "Resolve" }).click()
+  const status = page.locator("[data-slot=notices]")
+  await expect(status).toContainText("Thread resolved")
+  await status.getByRole("button", { name: "Undo" }).hover()
+  await page.clock.runFor(10_000)
+  await expect(status).toContainText("Thread resolved")
+  await page.mouse.move(1, 1)
+  await page.clock.runFor(10_000)
+  await expect(status.getByRole("button", { name: "Undo" })).toBeHidden()
+})
+
+test("resolve hides the pin, reopen from the panel shows it", async ({ page }) => {
+  const thread = await withComment(page, "resolve", "Res")
+  await thread.getByRole("button", { name: "Resolve" }).click()
+  await expect(thread).toBeHidden()
+  await expect(pins(page)).toHaveCount(0)
+  await expect(panel(page).getByRole("button", { name: /First comment/ })).toHaveCount(0)
+  await showPanel(page)
+
+  await panel(page).getByRole("button", { name: "Filter and sort" }).click()
+  await page.getByRole("menuitemcheckbox", { name: "Show resolved" }).click()
+  await page.keyboard.press("Escape")
+  await panel(page).locator("[data-slot=panel-item]", { hasText: "First comment" }).click()
+  await expect(thread).toContainText("Resolved by Res")
+  await thread.getByRole("button", { name: "Reopen" }).click()
+  await expect(thread).not.toContainText("Resolved")
+  await thread.getByRole("button", { name: "Close" }).click()
+  await expect(pins(page)).toHaveCount(1)
+})
+
+test("the author moves the pin with the keyboard", async ({ page }) => {
+  const thread = await withComment(page, "move-keys", "Keys")
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await page.getByRole("menuitem", { name: "Move" }).click()
+  await expect(page.getByRole("status").filter({ hasText: "Click the new place" })).toBeVisible()
+  await page.getByRole("link", { name: "Home" }).focus()
+  await page.keyboard.press("Enter")
+  await expect(threadPopover(page)).toBeVisible()
+  const link = await page.getByRole("link", { name: "Home" }).boundingBox()
+  await expect
+    .poll(async () =>
+      Math.abs(((await pins(page).first().boundingBox())?.x ?? 0) - ((link?.x ?? 0) + (link?.width ?? 0) / 2)),
+    )
+    .toBeLessThan(2)
+})
+
+// Holds requests that match until the returned function is called. "answer": the server answers at once, the
+// page gets the answer late. "request": the request reaches the server late.
+async function hold(page: Page, pattern: string, late: "request" | "answer" = "request") {
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route(pattern, async (route) => {
+    if (late === "request") {
+      await held
+      return route.continue()
+    }
+    const response = await route.fetch()
+    await held
+    await route.fulfill({ response })
+  })
+  return release
+}
+
+test("a move that fails says so, and the pin stays at its place", async ({ page }) => {
+  const thread = await withComment(page, "move-fails", "Mover")
+  const before = await pins(page).first().boundingBox()
+  await page.route("**/api/threads/*", (route) =>
+    route.request().method() === "PATCH" ? route.abort() : route.continue(),
+  )
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await page.getByRole("menuitem", { name: "Move" }).click()
+  await page.getByRole("link", { name: "Home" }).focus()
+  await page.keyboard.press("Enter")
+  await expect(page.getByRole("status").filter({ hasText: "Could not move" })).toBeVisible()
+  await expect.poll(async () => (await pins(page).first().boundingBox())?.x).toBe(before?.x)
+})
+
+test("when updates fail, a message says so, and Try again loads them", async ({ page }) => {
+  await withComment(page, "poll-fails", "Poller")
+  await page.route("**/api/threads", (route) => route.abort())
+  // A poll: the window gets the focus.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  const status = page.getByRole("status").filter({ hasText: "Cannot reach comma" })
+  await expect(status).toBeVisible()
+  // The comments stay.
+  await expect(pins(page)).toHaveCount(1)
+  await page.unroute("**/api/threads")
+  await status.getByRole("button", { name: "Try again" }).click()
+  await expect(status.getByText("Cannot reach comma")).toBeHidden()
+})
+
+// A thread with replies by the API, as another user.
+async function apiReplies(session: { token: string }, threadId: string, texts: string[]) {
+  const api = await request.newContext()
+  for (const text of texts) {
+    const res = await api.post(`${COMMA}/api/threads/${threadId}/comments`, {
+      headers: { origin: SITE, authorization: `Bearer ${session.token}` },
+      data: { body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] } },
+    })
+    expect(res.ok()).toBe(true)
+  }
+  await api.dispose()
+}
+
+test("a new reply does not move the list while I read older ones; a button shows it", async ({ page }) => {
+  const thread = await withComment(page, "new-reply-reading", "Reader")
+  const id = (await pins(page).first().getAttribute("data-thread")) ?? ""
+  const other = await guestSession("Replier")
+  await apiReplies(
+    other,
+    id,
+    Array.from({ length: 12 }, (_, i) => `Older reply ${i + 1}, long enough to take a line or two in the thread.`),
+  )
+  const poll = () => page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await poll()
+  await expect(thread).toContainText("Older reply 12")
+  const list = thread.locator("[data-slot=thread-comments]")
+  await list.evaluate((el) => el.scrollTo(0, 0))
+  await apiReplies(other, id, ["The newest reply"])
+  await poll()
+  const button = thread.getByRole("button", { name: "1 new reply" })
+  await expect(button).toBeVisible()
+  expect(await list.evaluate((el) => el.scrollTop)).toBe(0)
+  // Screen readers hear it.
+  await expect(thread.locator("[aria-live=polite]")).toHaveText("Replier replied")
+  await button.click()
+  await expect(button).toBeHidden()
+  await expect(thread.getByText("The newest reply")).toBeInViewport()
+  // Shown, so read.
+  await expect(pins(page).first()).not.toHaveAttribute("aria-label", /unread/)
+})
+
+test("a new reply shows at once when I am at the end, and is read", async ({ page }) => {
+  const thread = await withComment(page, "new-reply-end", "Watcher")
+  const id = (await pins(page).first().getAttribute("data-thread")) ?? ""
+  await apiReplies(await guestSession("Answerer"), id, ["Here is my answer"])
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await expect(thread.getByText("Here is my answer")).toBeInViewport()
+  await expect(thread.getByRole("button", { name: /new repl/ })).toHaveCount(0)
+  await expect(pins(page).first()).not.toHaveAttribute("aria-label", /unread/)
+})
+
+test("a poll during a slow reply does not lose the reply", async ({ page }) => {
+  const thread = await withComment(page, "slow-reply", "Slow")
+  const release = await hold(page, "**/api/threads/*/comments")
+  await typeComment(page, thread, "Slow reply")
+  await page.keyboard.press("ControlOrMeta+Enter")
+  // A poll finishes while the reply is still on its way.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await page.waitForResponse("**/api/threads")
+  release()
+  await expect(thread.getByRole("article")).toHaveCount(2)
+  await expect(thread.locator("[data-slot=composer] .ProseMirror")).not.toContainText("Slow reply")
+  await expect(thread.getByRole("alert")).toHaveCount(0)
+})
+
+test("an old answer does not hide a newer reply", async ({ page, context }) => {
+  await withComment(page, "old-answer", "First")
+  const other = await context.browser()?.newPage()
+  if (!other) throw new Error("no browser")
+  await signIn(other, await guestSession("Second"))
+  // Opening the thread marks it read. That answer comes late.
+  const release = await hold(other, "**/api/threads/*/read", "answer")
+  await other.goto(testPath("old-answer"))
+  await pins(other).first().click()
+  const thread = threadPopover(other)
+  await typeComment(other, thread, "Newer reply")
+  await other.keyboard.press("ControlOrMeta+Enter")
+  await expect(thread.getByRole("article")).toHaveCount(2)
+  release()
+  await other.waitForResponse("**/api/threads/*/read")
+  await other.waitForTimeout(200)
+  await expect(thread.getByRole("article")).toHaveCount(2)
+  await other.close()
+})
+
+test("a late answer does not bring back a deleted thread", async ({ page }) => {
+  const thread = await withComment(page, "late-delete", "Deleter")
+  const release = await hold(page, "**/api/comments/*/reactions/*", "answer")
+  const first = thread.getByRole("article").first()
+  await first.hover()
+  await first.getByRole("button", { name: "Add reaction" }).click()
+  await page.getByRole("button", { name: "React with 👍" }).click()
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await page.getByRole("menuitem", { name: "Delete thread" }).click()
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click()
+  await expect(pins(page)).toHaveCount(0)
+  release()
+  await page.waitForResponse("**/api/comments/*/reactions/*")
+  await page.waitForTimeout(200)
+  await expect(pins(page)).toHaveCount(0)
+})
+
+test("an old read answer does not undo Mark as unread", async ({ page, context }) => {
+  await withComment(page, "read-order", "Writer")
+  const other = await context.browser()?.newPage()
+  if (!other) throw new Error("no browser")
+  await signIn(other, await guestSession("Reader"))
+  // The first read change (opening marks it read) is answered late.
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let first = true
+  await other.route("**/api/threads/*/read", async (route) => {
+    const response = await route.fetch()
+    if (first) {
+      first = false
+      await held
+    }
+    await route.fulfill({ response })
+  })
+  await other.goto(testPath("read-order"))
+  await pins(other).first().click()
+  const thread = threadPopover(other)
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await other.getByRole("menuitem", { name: "Mark as unread" }).click()
+  await expect(pins(other).first()).toHaveAccessibleName(/unread/)
+  release()
+  await other.waitForTimeout(300)
+  await expect(pins(other).first()).toHaveAccessibleName(/unread/)
+  await other.close()
+})
+
+test("a poll does not undo Mark as unread that is on its way", async ({ page, context }) => {
+  await withComment(page, "read-poll", "Writer")
+  const other = await asOther(context, "read-poll", await guestSession("Reader"))
+  await expect(pins(other).first()).not.toHaveAccessibleName(/unread/)
+  // "Mark as unread" is held on its way to the server.
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await other.route("**/api/threads/*/read", async (route) => {
+    await held
+    await route.continue()
+  })
+  const thread = threadPopover(other)
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await other.getByRole("menuitem", { name: "Mark as unread" }).click()
+  await expect(pins(other).first()).toHaveAccessibleName(/unread/)
+  // Another change makes the next poll return new data, still with the old read state.
+  const first = threadPopover(page).getByRole("article").first()
+  await first.hover()
+  await first.getByRole("button", { name: "Add reaction" }).click()
+  await page.getByRole("button", { name: "React with 🎉" }).click()
+  await expect(first.getByRole("button", { name: /^🎉 1/ })).toBeVisible()
+  const polled = other.waitForResponse((r) => r.url().endsWith("/api/threads") && r.status() === 200)
+  await other.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await polled
+  await other.waitForTimeout(200)
+  await expect(pins(other).first()).toHaveAccessibleName(/unread/)
+  release()
+  await other.close()
+})
+
+test("an unsaved edit goes away when another user signs in", async ({ page }) => {
+  const thread = await withComment(page, "edit-identify", "Editor")
+  const first = thread.getByRole("article").first()
+  await first.hover()
+  await first.getByRole("button", { name: "Comment actions" }).click()
+  await page.getByRole("menuitem", { name: "Edit" }).click()
+  await first.locator(".ProseMirror").click()
+  await page.keyboard.type(" unsaved change")
+  const token = await sign(
+    { sub: "e2e:edit-other", name: "Someone else", exp: Math.floor(Date.now() / 1000) + 120 },
+    "e2e-app-secret",
+    "HS256",
+  )
+  await page.evaluate(
+    (t) => (window as unknown as { comma: { identify: (t: string) => void } }).comma.identify(t),
+    token,
+  )
+  await expect(
+    page.getByRole("toolbar", { name: "Comments" }).getByRole("button", { name: "Account: Someone else" }),
+  ).toBeVisible()
+  await expect(thread).not.toContainText("unsaved change")
+})
+
+test("copy link and mark as unread", async ({ page, context, browserName }) => {
+  test.skip(browserName !== "chromium", "Clipboard permissions are a Chromium feature in Playwright")
+  await context.grantPermissions(["clipboard-read", "clipboard-write"])
+  const thread = await withComment(page, "link", "Linker")
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await page.getByRole("menuitem", { name: "Copy link" }).click()
+  await expect(page.getByRole("status").filter({ hasText: "Link copied" })).toBeVisible()
+  const link = await page.evaluate(() => navigator.clipboard.readText())
+  expect(link).toMatch(new RegExp(`${testPath("link")}#comma=[\\w-]+$`))
+
+  await thread.getByRole("button", { name: "Thread actions" }).click()
+  await page.getByRole("menuitem", { name: "Mark as unread" }).click()
+  await expect(thread).toBeHidden()
+  await expect(pins(page).first()).toHaveAccessibleName(/unread/)
+  await expect(page.getByRole("button", { name: /^Comments, \d+ unread$/ })).toBeVisible()
+
+  // The link opens the thread.
+  const other = await context.newPage()
+  await other.goto(link)
+  await expect(threadPopover(other)).toContainText("First comment")
+  await other.close()
+})
+
+test("the thread names its element, shows where it was made, and outlines the element", async ({ page }) => {
+  const thread = await withComment(page, "context", "Viewer")
+  await expect(thread).toContainText("Paragraph: A paragraph that people comment on in tests")
+  const size = page.viewportSize()
+  await expect(thread).toContainText(`${size?.width}×${size?.height}`)
+  const outline = page.locator("[data-slot=anchor-outline]")
+  await expect(outline).toBeVisible()
+  const lead = await page.getByTestId("lead").boundingBox()
+  const box = await outline.boundingBox()
+  expect(Math.abs((box?.x ?? 0) - (lead?.x ?? 0))).toBeLessThan(2)
+  expect(Math.abs((box?.width ?? 0) - (lead?.width ?? 0))).toBeLessThan(2)
+  await page.keyboard.press("Escape")
+  await expect(outline).toHaveCount(0)
+})
+
+test("assign a thread; the assignee finds it with Assigned to me", async ({ page, context }) => {
+  const assignee = await appSession(`Bea ${test.info().testId}`)
+  const thread = await withComment(page, "assign", "Assigner")
+  await thread.getByRole("button", { name: "Assign" }).click()
+  const picker = page.getByRole("dialog", { name: "Assign" })
+  await picker.getByRole("searchbox", { name: "Search people" }).fill(assignee.user.name)
+  await picker.getByRole("button", { name: assignee.user.name }).click()
+  await expect(thread).toContainText(`Assigned to ${assignee.user.name}`)
+  await expect(page.getByRole("status").filter({ hasText: `Assigned to ${assignee.user.name}` })).toBeVisible()
+
+  const other = await context.browser()?.newPage()
+  if (!other) throw new Error("no browser")
+  await signIn(other, assignee)
+  await other.goto(testPath("assign"))
+  await other
+    .getByRole("toolbar", { name: "Comments" })
+    .getByRole("button", { name: /^Comments/ })
+    .click()
+  await panel(other).getByRole("button", { name: "Filter and sort" }).click()
+  await other.getByRole("menuitemcheckbox", { name: "Assigned to me" }).click()
+  await other.keyboard.press("Escape")
+  const items = panel(other).locator("[data-slot=panel-item]")
+  await expect(items).toHaveCount(1)
+  await expect(items).toContainText("First comment")
+  await expect(items).toContainText("Unread")
+  await other.close()
+})

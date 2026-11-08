@@ -1,0 +1,20 @@
+// Cloudflare Workers. See DEPLOY.md. Build first: `bun run build && bun scripts/public.ts --cloudflare`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "comma",
+  "main": "server/src/worker.ts",
+  "compatibility_date": "2026-01-01",
+  // Buffer, node:fs, and `process.env` filled from vars and secrets.
+  "compatibility_flags": ["nodejs_compat"],
+  // The widget files, with the headers in public/_headers. The Worker gets the other requests.
+  "assets": { "directory": "public" },
+  // Deletes images that no comment uses.
+  "triggers": { "crons": ["0 * * * *"] },
+  // Set your address. `custom_domain` needs the zone on this Cloudflare account.
+  // "routes": [{ "pattern": "comma.example.com", "custom_domain": true }],
+  "vars": {
+    // "COMMA_URL": "https://comma.example.com",
+    // "COMMA_DB": "libsql://<database>.turso.io",
+  }
+  // Secrets: `npx wrangler secret put COMMA_SECRET` (and COMMA_DB_TOKEN, project secrets, S3 keys).
+}

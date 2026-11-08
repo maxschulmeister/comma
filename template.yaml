@@ -1,0 +1,142 @@
+# comma on AWS Lambda. Deploy with `scripts/deploy-lambda.sh` (see DEPLOY.md): it makes this stack, then uploads the
+# code to the function. So the deploy needs only the AWS CLI: no SAM CLI, and no bucket for the code.
+AWSTemplateFormatVersion: "2010-09-09"
+Description: comma, comments pinned to websites
+
+Parameters:
+  PublicUrl:
+    Type: String
+    Default: ""
+    Description: The address of comma, for example https://comma.example.com. Empty on the first deploy.
+  CommaDb:
+    Type: String
+    Description: The Turso database URL (libsql://...).
+  CommaDbToken:
+    Type: String
+    NoEcho: true
+  CommaSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: Signs session tokens. openssl rand -hex 32
+  UseS3:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: Keep images in a private S3 bucket. "false" keeps them in the database.
+  # One parameter for each `appSecret` in comma.config.ts. Add its env var below.
+  # AcmeSecret:
+  #   Type: String
+  #   NoEcho: true
+
+Conditions:
+  WithS3: !Equals [!Ref UseS3, "true"]
+
+Resources:
+  Files:
+    Type: AWS::S3::Bucket
+    Condition: WithS3
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - !If
+          - WithS3
+          - PolicyName: files
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+                  Resource: !Sub "${Files.Arn}/*"
+                # A missing image is then 404, not 403.
+                - Effect: Allow
+                  Action: s3:ListBucket
+                  Resource: !GetAtt Files.Arn
+          - !Ref AWS::NoValue
+
+  Comma:
+    Type: AWS::Lambda::Function
+    Properties:
+      # A stand-in until deploy-lambda.sh uploads the code.
+      Code:
+        ZipFile: |
+          exports.handler = async () => ({ statusCode: 503, body: "comma is not deployed yet" })
+      Handler: index.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 512
+      Timeout: 15
+      Role: !GetAtt Role.Arn
+      Environment:
+        Variables:
+          COMMA_URL: !Ref PublicUrl
+          COMMA_DB: !Ref CommaDb
+          COMMA_DB_TOKEN: !Ref CommaDbToken
+          COMMA_SECRET: !Ref CommaSecret
+          COMMA_FILES: !If [WithS3, s3, db]
+          COMMA_S3_BUCKET: !If [WithS3, !Ref Files, ""]
+          # ACME_SECRET: !Ref AcmeSecret
+
+  Url:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref Comma
+      AuthType: NONE
+
+  # A public Function URL needs both: lambda:InvokeFunctionUrl, and since October 2025 lambda:InvokeFunction, only
+  # through the URL.
+  InvokeUrl:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Comma
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  InvokeThroughUrl:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Comma
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+  # Every hour: removes old sessions, rate limit counts, and images that no comment uses.
+  Cleanup:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: rate(1 hour)
+      Targets:
+        - Id: cleanup
+          Arn: !GetAtt Comma.Arn
+          Input: '{"cleanup": true}'
+
+  InvokeCleanup:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Comma
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt Cleanup.Arn
+
+Outputs:
+  Url:
+    Value: !GetAtt Url.FunctionUrl
+  FunctionName:
+    Value: !Ref Comma
