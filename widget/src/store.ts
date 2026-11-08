@@ -85,6 +85,8 @@ export type State = {
   detailsOpen: boolean
   /** The key for comment mode (with Shift: show or hide comments). null: no shortcut. */
   shortcut: string | null
+  /** The app decides who is signed in (`data-token-from`): comma has no sign-out of its own. */
+  appAccount: boolean
 }
 
 export type HiddenView = { panelOpen: boolean; threadId: string | null; details: boolean }

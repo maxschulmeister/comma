@@ -89,6 +89,11 @@ test("data-token-from: comma signs in with the app's own requests, and follows i
 
   await fetchMe("t-Alice")
   await expect(account("Alice")).toBeVisible()
+  // The app decides who is signed in: comma's account menu has the name, and no sign-out.
+  await account("Alice").click()
+  await expect(page.getByRole("menu")).toContainText("Alice")
+  await expect(page.getByRole("menuitem", { name: "Sign out" })).toHaveCount(0)
+  await page.keyboard.press("Escape")
   // The app signs out: its requests go out without the token.
   await fetchMe()
   await page.clock.runFor(6000)

@@ -14,7 +14,12 @@ if (script && !("comma" in window)) {
       identify: stub("identify"),
       signOut: stub("signOut"),
       __queue: queue,
-      __script: { src: script.src, project: script.dataset.project ?? "", shortcut: script.dataset.shortcut },
+      __script: {
+        src: script.src,
+        project: script.dataset.project ?? "",
+        shortcut: script.dataset.shortcut,
+        tokenFrom: script.dataset.tokenFrom,
+      },
     },
   })
 

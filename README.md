@@ -144,6 +144,7 @@ If you cannot change the app's code (for example, comma only on preview builds, 
 - Many apps sign out with no request after it: they only remove the token from storage. Add `data-token-key` with the `localStorage` or `sessionStorage` key of the token. comma then signs out when the app removes it (also in another tab), and at page load when it is missing.
 - Put the tag before the app's scripts, without `defer`, so comma sees the first requests.
 - With `toolbar: "signed-in"`, comma shows nothing until the app signs in.
+- The app decides who is signed in: comma's account menu shows the name, with no "Sign out". To use another account, sign out of the app and sign in with it.
 
 ### With a signed token: `appSecret`
 

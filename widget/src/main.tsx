@@ -21,7 +21,10 @@ import { preloadEditor } from "./ui/composer"
 import { loadPinsVisible, showCommentsWithPanel, startShortcuts } from "./ui/shortcuts"
 import { keepReview, loadReview, loadView } from "./ui/view"
 
-type Loader = { __queue: [string, unknown[]][]; __script: { src: string; project: string; shortcut?: string } }
+type Loader = {
+  __queue: [string, unknown[]][]
+  __script: { src: string; project: string; shortcut?: string; tokenFrom?: string }
+}
 
 // `data-shortcut` on the script tag: one letter, or "none". Default: C.
 const parseShortcut = (value?: string) =>
@@ -65,6 +68,7 @@ function start({ __queue: queue, __script: script }: Loader) {
     signInOpen: false,
     notice: null,
     shortcut: parseShortcut(script.shortcut),
+    appAccount: !!script.tokenFrom,
     detailsOpen: false,
   })
   setState({ session: loadSession(), ...loadReview() })

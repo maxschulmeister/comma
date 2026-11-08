@@ -47,6 +47,8 @@ export function Toolbar() {
   const pinsVisible = useStore((s) => s.pinsVisible)
   const key = useStore((s) => s.shortcut?.toUpperCase())
   const me = useStore((s) => s.session?.user)
+  // Signed in with the app's own account (data-token-from): the app signs in and out, not comma.
+  const appAccount = useStore((s) => s.appAccount)
   const unread = useStore((s) => s.threads.filter((t) => t.unread && t.status === "open").length)
   const [signInAnchor, setSignInAnchor] = useState<HTMLElement | null>(null)
   const [signInOpen, setSignInOpen] = useState(false)
@@ -146,14 +148,16 @@ export function Toolbar() {
                 {me.kind === "guest" && " (guest)"}
               </DropdownMenuLabel>
             </DropdownMenuGroup>
-            <DropdownMenuSeparator />
+            {!appAccount && <DropdownMenuSeparator />}
           </>
         )}
         {me ? (
-          <DropdownMenuItem onClick={signOut}>
-            <SignOutIcon />
-            Sign out
-          </DropdownMenuItem>
+          !appAccount && (
+            <DropdownMenuItem onClick={signOut}>
+              <SignOutIcon />
+              Sign out
+            </DropdownMenuItem>
+          )
         ) : (
           <DropdownMenuItem onClick={() => setSignInOpen(true)}>
             <SignInIcon />
