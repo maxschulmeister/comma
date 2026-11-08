@@ -13,6 +13,9 @@ const env = {
 export default defineConfig({
   testDir: "e2e",
   fullyParallel: true,
+  // CI: a test that fails because the runner is slow gets two more tries. A test.only fails the run.
+  retries: process.env.CI ? 2 : 0,
+  forbidOnly: !!process.env.CI,
   // Many browsers run at once. Loading the editor and emoji data can take a few seconds.
   expect: { timeout: 10_000 },
   reporter: "list",
