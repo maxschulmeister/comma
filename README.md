@@ -73,6 +73,7 @@ People sign in as guests with a name. To use the accounts of your app, see below
 | `appSecret` | Sign in with your app: your backend signs a token (see below).                                                                                                                                                   |
 | `userUrl`   | Sign in with your app: comma checks your app's own access token with your API (see below). Use `appSecret` or `userUrl`, not both.                                                                               |
 | `user`      | With `userUrl`: a function that reads the user from the answer. Default: the answer itself.                                                                                                                      |
+| `appUrl`    | Sign-in through your app, on sites outside it: a page of your app that runs comma with `identify()` (see below).                                                                                                 |
 | `signInUrl` | Popup sign-in on sites outside your app (see below).                                                                                                                                                             |
 | `slack`     | Sign in with Slack, for the people of one workspace (see below).                                                                                                                                                 |
 | `guests`    | `true`: people can sign in as guests with only a name. Anyone can use any name. Default: `true` without app sign-in, `false` with it. Guests show as "Guest" next to their name.                                 |
@@ -178,9 +179,28 @@ On the page, after the comma script tag:
 
 `window.comma.signOut()` signs the user out of comma. Call it when the user signs out of your app.
 
+### On other sites: through your app
+
+If your app runs comma with `comma.identify()`, the other sites of the project (a marketing site, preview deploys) can sign people in through it. Add `appUrl`, a page of your app with comma on it, and the other sites to `origins`:
+
+```ts
+{
+  id: "acme",
+  origins: ["https://app.acme.com", "https://www.acme.com", "https://*.preview.acme.com"],
+  scope: "origin",
+  userUrl: "https://api.acme.com/me", // or appSecret
+  user: (body) => ({ sub: body.id, name: body.full_name, email: body.email }),
+  appUrl: "https://app.acme.com/",
+}
+```
+
+"Sign in with Acme" opens the app in a popup. If people are not signed in to the app, the app's own login shows, of any kind. Then comma in the app hands the user over to the site that opened the popup, and the popup closes. Your app needs no extra page, and its token never leaves the app: comma in the app asks the comma server for a hand-over, which works for one minute, only on that site.
+
+The page must keep comma running through the app's login, or come back to a page with comma after it. A single-page app does this.
+
 ### On other sites: popup sign-in
 
-For sites outside your app (a marketing site, a preview deploy), comma can open your app's sign-in in a popup. Add `signInUrl`:
+For sites outside your app (a marketing site, a preview deploy), comma can also open a sign-in page of your app in a popup. Use it if your app does not run comma. Add `signInUrl`:
 
 ```ts
 {

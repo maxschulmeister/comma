@@ -37,6 +37,14 @@ export default {
       signInUrl: "http://localhost:4900/comma-sign-in",
       toolbar: "signed-in",
     },
+    // Sign-in through the app: the app page (/app) runs comma with identify(). Other sites open it in a popup.
+    {
+      id: "through-app",
+      name: "Example",
+      origins: ["http://localhost:4900", "http://127.0.0.1:4900"],
+      appSecret: "e2e-app-secret",
+      appUrl: "http://localhost:4900/app?project=through-app",
+    },
     // Sign in with Slack only. The tests stop at Slack's sign-in page (a fake, see sign-in.spec.ts).
     {
       id: "slack",

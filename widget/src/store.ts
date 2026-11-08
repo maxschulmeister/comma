@@ -23,6 +23,8 @@ export type DetailsMode = "panel" | "dialog"
 export type ProjectInfo = {
   name?: string
   popupSignIn: boolean
+  /** Sign-in through the app: the popup opens this page of the app, and comma there hands the user over. */
+  appUrl?: string
   slack: boolean
   guests: boolean
   toolbar: "always" | "signed-in"

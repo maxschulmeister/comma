@@ -1,6 +1,7 @@
 import { type Context, Hono } from "hono"
 import { createMiddleware } from "hono/factory"
 import { HTTPException } from "hono/http-exception"
+import { sign, verify } from "hono/jwt"
 import { z } from "zod"
 import {
   appUserClaims,
@@ -305,7 +306,8 @@ export function createApp(options: AppOptions) {
     return c.json({
       id: project.id,
       name: project.name,
-      popupSignIn: !!(project.signInUrl && project.appSignIn),
+      popupSignIn: !!((project.signInUrl || project.appUrl) && project.appSignIn),
+      ...(project.appUrl && { appUrl: project.appUrl }),
       slack: !!project.slack,
       guests: project.guests,
       toolbar: project.toolbar,
@@ -332,6 +334,25 @@ export function createApp(options: AppOptions) {
     return c.json(await sessionOf(await appUser(project, claims)))
   })
 
+  // Sign-in through the app (`appUrl`): comma in the app asks for a hand-over (below), the site that opened the
+  // popup claims it here. One minute, for that site only.
+  app.post("/api/session/claim", async (c) => {
+    const input = parse(z.object({ project: z.string(), handoff: z.string().max(2000) }), await json(c))
+    const project = projectFor(input.project, c)
+    if (!project.appUrl) throw new HTTPException(404, { message: "This project has no sign-in through the app" })
+    const claims = await verify(input.handoff, secret, "HS256").catch(() => null)
+    const user =
+      claims?.typ === "comma-handoff" &&
+      claims.prj === project.id &&
+      claims.origin === c.req.header("origin") &&
+      typeof claims.exp === "number" &&
+      typeof claims.sub === "string" &&
+      claims.exp * 1000 > now() &&
+      (await get<UserRow>(db, "select * from users where id = ? and project = ?", claims.sub, project.id))
+    if (!user) throw new HTTPException(401, { message: "Sign-in expired. Try again." })
+    return c.json(await sessionOf(user))
+  })
+
   const auth = createMiddleware<Env>(async (c, next) => {
     const header = c.req.header("authorization") ?? ""
     const session = header.startsWith("Bearer ") ? await verifySession(secret, header.slice(7)) : null
@@ -349,6 +370,22 @@ export function createApp(options: AppOptions) {
     await next()
   })
   app.use("/api/*", auth)
+
+  // comma in the app hands its signed-in user over to another site of the project (see /api/session/claim).
+  app.post("/api/session/handoff", async (c) => {
+    const { origin } = parse(z.object({ origin: z.string().max(200) }), await json(c))
+    const project = c.get("project")
+    const user = c.get("user")
+    if (!project.appUrl) throw new HTTPException(404, { message: "This project has no sign-in through the app" })
+    if (
+      c.req.header("origin") !== new URL(project.appUrl).origin ||
+      user.kind !== "app" ||
+      !allowsOrigin(project, origin)
+    )
+      throw new HTTPException(403, { message: "Not allowed" })
+    const exp = Math.floor(now() / 1000) + 60
+    return c.json({ handoff: await sign({ typ: "comma-handoff", sub: user.id, prj: project.id, origin, exp }, secret) })
+  })
 
   app.delete("/api/session", async (c) => {
     await run(db, "delete from sessions where id = ?", c.get("sessionId"))

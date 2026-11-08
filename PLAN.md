@@ -293,12 +293,13 @@ Rules:
 
 One rule: **your app signs a short token, comma trusts it.**
 
-| Where           | How                                                                                                                                                                                                                   |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Inside your app | The app backend signs a token. The frontend calls `comma.identify(token)`. No login screen.                                                                                                                           |
-| On another site | "Sign in" opens a popup → comma redirects to the app sign-in URL → the app (after its normal login) redirects back with a signed token → the popup sends a comma session to the widget with `postMessage` and closes. |
-| Slack           | "Sign in with Slack" opens a popup → Slack (OpenID Connect) → comma gets the user from Slack and checks the workspace → the popup sends a comma session to the widget. For sites without their own sign-in.           |
-| No account      | Guest: enter a name.                                                                                                                                                                                                  |
+| Where           | How                                                                                                                                                                                                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Inside your app | The app backend signs a token. The frontend calls `comma.identify(token)`. No login screen.                                                                                                                                                                                                                               |
+| On another site | "Sign in" opens a popup → comma redirects to the app sign-in URL → the app (after its normal login) redirects back with a signed token → the popup sends a comma session to the widget with `postMessage` and closes.                                                                                                     |
+| Through the app | `appUrl`: "Sign in" opens a page of the app that runs comma → the app's own login, if needed → comma in the app asks the server for a hand-over to the site that opened the popup (`postMessage`, only to that site's origin) → the site claims it for a session. No sign-in page in the app; its token stays in the app. |
+| Slack           | "Sign in with Slack" opens a popup → Slack (OpenID Connect) → comma gets the user from Slack and checks the workspace → the popup sends a comma session to the widget. For sites without their own sign-in.                                                                                                               |
+| No account      | Guest: enter a name.                                                                                                                                                                                                                                                                                                      |
 
 Details:
 
@@ -308,6 +309,7 @@ Details:
 - Each session is a row in `sessions`. Sign-out deletes it, so a copied token stops working.
 - Apps that cannot sign tokens: `userUrl`. comma sends the app's own access token to the app's "current user" endpoint. A `200` names the user. No backend change.
 - Slack: one workspace per project (`slack.team`). comma exchanges the code with the client secret and reads `openid.connect.userInfo` from Slack. No library: the flow has no ID token check, because the user info comes straight from Slack.
+- Hand-over (`appUrl`): the site posts `comma:sign-in` to the popup until it answers. comma in the app answers only its opener, and only when an app user is signed in. The server signs a hand-over (JWT: `sub`, project, the site's origin, 1 minute) only for comma on the app's origin, and only for a site of the project. The site claims it with its own `Origin`, for a new session.
 - `postMessage` and redirects go only to origins registered for the project.
 - In the app, the work is one endpoint that signs the token (~20–30 lines).
 

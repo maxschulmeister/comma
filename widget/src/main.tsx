@@ -1,7 +1,16 @@
 import { options } from "preact"
 import { createRoot } from "react-dom/client"
 import { App } from "./app"
-import { followOtherTabs, identify, loadProject, loadSession, refresh, signOut, startPolling } from "./client"
+import {
+  answerSignInRequests,
+  followOtherTabs,
+  identify,
+  loadProject,
+  loadSession,
+  refresh,
+  signOut,
+  startPolling,
+} from "./client"
 import { restoreDraft } from "./drafts"
 import { PortalContainer } from "./lib/portal"
 import { startTracking, watchPage } from "./live"
@@ -61,6 +70,7 @@ function start({ __queue: queue, __script: script }: Loader) {
   keepReview()
   showCommentsWithPanel()
   followOtherTabs()
+  answerSignInRequests()
   // `?comma`: a visitor wants to sign in (the toolbar can be hidden for visitors).
   if (getState().revealed && !getState().session) setState({ panelOpen: true })
 

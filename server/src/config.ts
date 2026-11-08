@@ -23,6 +23,11 @@ export const ProjectSchema = z
     // biome-ignore lint/suspicious/noExplicitAny: the shape of the app's answer is the app's.
     user: z.custom<(body: any) => unknown>((v) => typeof v === "function").optional(),
     signInUrl: z.url({ protocol: /^https?$/ }).optional(),
+    /**
+     * The app where people sign in. It runs comma with identify(). Other sites of the project sign in through it: a
+     * popup opens the app, and comma there hands the signed-in user over. No sign-in page in the app.
+     */
+    appUrl: z.url({ protocol: /^https?$/ }).optional(),
     /** Sign in with Slack, for the people of one workspace (`team`: its id, `T…`). */
     slack: z
       .object({
@@ -49,6 +54,12 @@ export const ProjectSchema = z
     panel: z.enum(["push", "overlay"]).default("overlay"),
   })
   .refine((p) => !(p.appSecret && p.userUrl), "Use appSecret or userUrl, not both")
+  .refine((p) => !p.appUrl || p.appSecret || p.userUrl, "appUrl needs app sign-in: set appSecret or userUrl")
+  .refine((p) => !(p.appUrl && p.signInUrl), "Use appUrl or signInUrl, not both")
+  .refine(
+    (p) => !p.appUrl || p.origins.some((o) => matches(o, new URL(p.appUrl as string).origin)),
+    "appUrl must be on one of the project's origins",
+  )
   .transform((p) => {
     const appSignIn = !!(p.appSecret || p.userUrl)
     return { ...p, appSignIn, guests: p.guests ?? !appSignIn }

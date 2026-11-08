@@ -90,11 +90,18 @@ Bun.serve({
       return Response.redirect(back.href, 302)
     }
 
+    // `?project=<id>` changes the script tag, as on the test pages.
     if (url.pathname === "/app") {
       const user = userOf(req)
-      if (!user) return Response.redirect(`${url.origin}/login?next=/app`, 302)
+      if (!user)
+        return Response.redirect(`${url.origin}/login?next=${encodeURIComponent(url.pathname + url.search)}`, 302)
       const page = await Bun.file(resolve(pages, "app.html")).text()
-      return html(page.replace("{{USER}}", user.replace(/[<>&"]/g, "")))
+      const project = url.searchParams.get("project")?.replace(/[^\w-]/g, "") ?? "example"
+      return html(
+        page
+          .replace("{{USER}}", user.replace(/[<>&"]/g, ""))
+          .replace('data-project="example"', `data-project="${project}"`),
+      )
     }
 
     // Test pages: any /t/<name> path serves the same page, so each test has its own page.

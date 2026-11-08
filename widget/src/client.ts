@@ -2,7 +2,7 @@
 import type { Anchor } from "./anchor"
 import { clearDrafts } from "./drafts"
 import type { PageContext } from "./lib/env"
-import { getState, type ProjectInfo, setState } from "./store"
+import { getState, type ProjectInfo, setState, subscribe } from "./store"
 import type { Comment, FileRef, Session, Thread, ThreadResult, User } from "./types"
 
 export class ApiError extends Error {
@@ -108,6 +108,8 @@ export async function loadProject() {
     projectInfo: {
       name: info.name,
       popupSignIn: info.popupSignIn,
+      // Only a web address: the popup opens it.
+      appUrl: typeof info.appUrl === "string" && /^https?:\/\//.test(info.appUrl) ? info.appUrl : undefined,
       slack: info.slack === true,
       guests: info.guests,
       toolbar: info.toolbar === "signed-in" ? "signed-in" : "always",
@@ -147,29 +149,49 @@ export function signOut() {
   }
 }
 
-// Opens the app sign-in (or Slack's) in a popup. The popup sends the session back with postMessage.
+/**
+ * Opens the app sign-in (or Slack's) in a popup. The popup sends the session back with postMessage.
+ * Through the app (`appUrl`): the popup opens the app, which runs comma. comma asks it for the user until comma there is
+ * signed in (also after the app's own login), and claims the hand-over it sends back (see answerSignInRequests).
+ */
 export function signInWithPopup(provider: "app" | "slack" = "app") {
-  const { server, project } = getState()
+  const { server, project, projectInfo } = getState()
+  const appUrl = provider === "app" ? projectInfo?.appUrl : undefined
   const path = provider === "slack" ? "/auth/slack/start" : "/auth/start"
-  const url = `${server}${path}?project=${encodeURIComponent(project)}&origin=${encodeURIComponent(location.origin)}`
+  const url =
+    appUrl ?? `${server}${path}?project=${encodeURIComponent(project)}&origin=${encodeURIComponent(location.origin)}`
+  const from = appUrl ? new URL(appUrl).origin : server
   const popup = window.open(url, "comma-sign-in", "popup,width=480,height=640")
   const attempt = ++authAttempt
   return new Promise<void>((resolve, reject) => {
-    const onMessage = (event: MessageEvent) => {
-      if (event.origin !== server || event.source !== popup) return
-      const data = event.data
-      if (data?.type !== "comma:session" || data.project !== project || typeof data.token !== "string") return
+    const finish = (session: Session) => {
       cleanup()
       // The popup also closes itself. Firefox blocks that after a few redirects, so close it here too.
       popup?.close()
-      if (attempt === authAttempt) saveSession({ token: data.token, user: data.user })
+      if (attempt === authAttempt) saveSession({ token: session.token, user: session.user })
       resolve()
+    }
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== from || event.source !== popup) return
+      const data = event.data
+      if (data?.project !== project) return
+      if (data.type === "comma:session" && typeof data.token === "string") finish(data)
+      else if (data.type === "comma:handoff" && typeof data.handoff === "string") {
+        cleanup()
+        request<Session>("POST", "/api/session/claim", { project, handoff: data.handoff }, false).then(
+          finish,
+          (error) => {
+            popup?.close()
+            reject(error)
+          },
+        )
+      }
     }
     const timer = setInterval(() => {
       if (popup?.closed) {
         cleanup()
         reject(new ApiError(0, "Sign-in was closed."))
-      }
+      } else if (appUrl) popup?.postMessage({ type: "comma:sign-in", project }, from)
     }, 500)
     const cleanup = () => {
       clearInterval(timer)
@@ -181,6 +203,31 @@ export function signInWithPopup(provider: "app" | "slack" = "app") {
       reject(new ApiError(0, "Allow popups for this site to sign in."))
     }
   })
+}
+
+/**
+ * In the app (`appUrl`): a site of the project opened this window to sign in. Once comma here is signed in with the
+ * app, it asks the server to hand the user over to that site, once. Only the site that opened the window gets it.
+ */
+export function answerSignInRequests() {
+  if (!window.opener) return
+  let site: { origin: string; window: MessageEventSource } | null = null
+  let answered = false
+  const answer = async () => {
+    const user = getState().session?.user
+    if (!site || answered || user?.kind !== "app") return
+    answered = true
+    const { origin, window: target } = site
+    const { handoff } = await request<{ handoff: string }>("POST", "/api/session/handoff", { origin })
+    target.postMessage({ type: "comma:handoff", project: getState().project, handoff }, { targetOrigin: origin })
+  }
+  window.addEventListener("message", (event) => {
+    if (event.source !== window.opener || event.data?.type !== "comma:sign-in") return
+    if (event.data.project !== getState().project) return
+    site ??= { origin: event.origin, window: window.opener }
+    answer().catch(() => {})
+  })
+  subscribe(() => void answer().catch(() => {}))
 }
 
 // --- Threads ---

@@ -28,6 +28,32 @@ test("on another site, people sign in with the app in a popup", async ({ page })
   await expect(toolbar(page).getByRole("button", { name: "Account", exact: true })).toBeVisible()
 })
 
+test("through the app: comma in the app signs people in on another site, also after the app's own login", async ({
+  page,
+}) => {
+  // 127.0.0.1 is another site than the app (localhost). Nobody is signed in to the app yet.
+  await page.goto(`http://127.0.0.1:4900${testPath("through-app")}?project=through-app`)
+  await toolbar(page)
+    .getByRole("button", { name: /^Comments/ })
+    .click()
+  const popupPromise = page.waitForEvent("popup")
+  await panel(page).getByRole("button", { name: "Sign in with Example" }).click()
+  const popup = await popupPromise
+  // The app's own login, then the app page with comma.
+  await popup.getByLabel("Name").fill("Ada")
+  await popup.getByRole("button", { name: "Sign in" }).click()
+  await expect(toolbar(page).getByRole("button", { name: "Account: Ada" })).toBeVisible()
+  await expect.poll(() => popup.isClosed()).toBe(true)
+
+  // Signed in to the app already: the popup closes at once.
+  await toolbar(page).getByRole("button", { name: "Account: Ada" }).click()
+  await page.getByRole("menuitem", { name: "Sign out" }).click()
+  const again = page.waitForEvent("popup")
+  await panel(page).getByRole("button", { name: "Sign in with Example" }).click()
+  await again
+  await expect(toolbar(page).getByRole("button", { name: "Account: Ada" })).toBeVisible()
+})
+
 test("in the app, comma.identify signs people in without a sign-in screen", async ({ page }) => {
   await page.goto("/login?next=/app")
   await page.getByLabel("Name").fill("Linus")
