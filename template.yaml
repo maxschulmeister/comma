@@ -24,10 +24,12 @@ Parameters:
     AllowedValues: ["true", "false"]
     Default: "true"
     Description: Keep images in a private S3 bucket. "false" keeps them in the database.
-  # One parameter for each `appSecret` in comma.config.ts. Add its env var below.
-  # AcmeSecret:
-  #   Type: String
-  #   NoEcho: true
+  # The secrets that comma.config.ts uses (appSecret, Slack client secret), as one JSON object, for example
+  # {"ACME_SECRET":"..."}. comma.config.ts reads them from process.env.COMMA_PROJECT_SECRETS.
+  ProjectSecrets:
+    Type: String
+    NoEcho: true
+    Default: "{}"
 
 Conditions:
   WithS3: !Equals [!Ref UseS3, "true"]
@@ -91,7 +93,7 @@ Resources:
           COMMA_SECRET: !Ref CommaSecret
           COMMA_FILES: !If [WithS3, s3, db]
           COMMA_S3_BUCKET: !If [WithS3, !Ref Files, ""]
-          # ACME_SECRET: !Ref AcmeSecret
+          COMMA_PROJECT_SECRETS: !Ref ProjectSecrets
 
   Url:
     Type: AWS::Lambda::Url
