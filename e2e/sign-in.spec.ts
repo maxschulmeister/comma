@@ -54,6 +54,56 @@ test("through the app: comma in the app signs people in on another site, also af
   await expect(toolbar(page).getByRole("button", { name: "Account: Ada" })).toBeVisible()
 })
 
+test("data-token-from: comma signs in with the app's own requests, and follows its sign-in and sign-out", async ({
+  page,
+}) => {
+  await page.clock.install()
+  await page.goto(`${testPath("token-from")}?project=token-from&token-from=http://localhost:4900`)
+  const account = (name: string) => toolbar(page).getByRole("button", { name: `Account: ${name}` })
+  // The app's requests: fetch and XMLHttpRequest, as an app with axios sends them.
+  const fetchMe = (token?: string, origin = "") =>
+    page.evaluate(
+      // Another origin answers without CORS: the request goes out, its answer fails.
+      ([token, origin]) =>
+        fetch(`${origin}/api/me`, { headers: token ? { authorization: `Bearer ${token}` } : {} }).catch(() => null),
+      [token, origin] as const,
+    )
+  const xhrMe = (token: string) =>
+    page.evaluate(
+      (token) =>
+        new Promise((done) => {
+          const xhr = new XMLHttpRequest()
+          xhr.open("GET", "/api/me")
+          xhr.setRequestHeader("Authorization", `Bearer ${token}`)
+          xhr.onloadend = done
+          xhr.send()
+        }),
+      token,
+    )
+  // Signed out in the app: comma shows nothing (toolbar: signed-in).
+  await expect(toolbar(page)).toBeHidden()
+  // A token to another address does not count.
+  await fetchMe("t-Eve", "http://127.0.0.1:4900")
+  await page.clock.runFor(1000)
+  await expect(toolbar(page)).toBeHidden()
+
+  await fetchMe("t-Alice")
+  await expect(account("Alice")).toBeVisible()
+  // The app signs out: its requests go out without the token.
+  await fetchMe()
+  await page.clock.runFor(6000)
+  await expect(toolbar(page)).toBeHidden()
+  // Another person signs in to the app.
+  await xhrMe("t-Bob")
+  await expect(account("Bob")).toBeVisible()
+
+  // A new page load: the first token counts, also if comma still has a session of someone else.
+  await page.reload()
+  await expect(account("Bob")).toBeVisible()
+  await fetchMe("t-Alice")
+  await expect(account("Alice")).toBeVisible()
+})
+
 test("in the app, comma.identify signs people in without a sign-in screen", async ({ page }) => {
   await page.goto("/login?next=/app")
   await page.getByLabel("Name").fill("Linus")

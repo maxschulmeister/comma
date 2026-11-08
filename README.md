@@ -86,10 +86,11 @@ People sign in as guests with a name. To use the accounts of your app, see below
 
 ### Script tag settings
 
-| Attribute       |                                                                                                                   |
-| --------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `data-project`  | Required. The project id.                                                                                         |
-| `data-shortcut` | The key for comment mode, one letter. Default: `c`. `none`: no shortcut, for apps that use the letter themselves. |
+| Attribute         |                                                                                                                                                                 |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data-project`    | Required. The project id.                                                                                                                                       |
+| `data-shortcut`   | The key for comment mode, one letter. Default: `c`. `none`: no shortcut, for apps that use the letter themselves.                                               |
+| `data-token-from` | With `userUrl`: the address of your API (`https://api.acme.com`). comma signs in with the token of your app's own requests to it, with no app code (see below). |
 
 comma can run behind a proxy, also on the same origin as the site. Set `COMMA_URL` to its public address. If the proxy changes the `Host` header, it must send `X-Forwarded-Host`.
 
@@ -128,6 +129,19 @@ window.comma.identify(accessToken)
 ```
 
 comma does not keep the access token. Use HTTPS for `userUrl`.
+
+#### Without app code: `data-token-from`
+
+If you cannot change the app's code (for example, comma only on preview builds, added to the HTML at build time), comma can take the token from the app's own requests:
+
+```html
+<script src="https://comma.example.com/c.js" data-project="acme" data-token-from="https://api.acme.com"></script>
+```
+
+- comma reads the `Authorization: Bearer` header of the app's `fetch` and `XMLHttpRequest` calls to that address. It never changes a request, and sends the token only to the comma server, which checks it with `userUrl`.
+- It signs in with the first token on each page load, and again when a token comes after requests without one (another person may have signed in). Requests without a token for 5 s: comma signs out.
+- Put the tag before the app's scripts, without `defer`, so comma sees the first requests.
+- With `toolbar: "signed-in"`, comma shows nothing until the app signs in.
 
 ### With a signed token: `appSecret`
 

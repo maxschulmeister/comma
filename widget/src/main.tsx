@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client"
 import { App } from "./app"
 import {
   answerSignInRequests,
+  followAppToken,
   followOtherTabs,
   identify,
   loadProject,
@@ -82,6 +83,7 @@ function start({ __queue: queue, __script: script }: Loader) {
   const run = ([name, args]: [string, unknown[]]) => {
     if (name === "identify" && typeof args[0] === "string") void api.identify(args[0]).catch(() => {})
     else if (name === "signOut") api.signOut()
+    else if (name === "token" && (typeof args[0] === "string" || args[0] === null)) followAppToken(args[0])
   }
   ;(window as unknown as { comma: typeof api }).comma = api
   for (const call of queue.splice(0)) run(call)

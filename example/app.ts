@@ -71,6 +71,12 @@ Bun.serve({
       })
     }
 
+    // The "current user" endpoint of an API, for `userUrl`: `Bearer t-<name>` is the user <name>.
+    if (url.pathname === "/api/me") {
+      const name = /^Bearer t-(\w+)$/.exec(req.headers.get("authorization") ?? "")?.[1]
+      return name ? Response.json({ sub: name, name }) : Response.json({ error: "Not signed in" }, { status: 401 })
+    }
+
     if (url.pathname === "/comma-token") {
       const user = userOf(req)
       if (!user || !secret) return Response.json({ error: "Not signed in" }, { status: 401 })
@@ -105,16 +111,19 @@ Bun.serve({
     }
 
     // Test pages: any /t/<name> path serves the same page, so each test has its own page.
-    // `?project=<id>` and `?shortcut=<key>` change the script tag.
+    // `?project=<id>`, `?shortcut=<key>` and `?token-from=<origin>` change the script tag.
     if (url.pathname.startsWith("/t/")) {
       const attr = (name: string) => url.searchParams.get(name)?.replace(/[^\w-]/g, "")
       const page = await Bun.file(resolve(pages, "fixtures/test.html")).text()
       const project = attr("project") ?? "example"
       const shortcut = attr("shortcut")
+      const tokenFrom = url.searchParams.get("token-from")?.replace(/[^\w:/.-]/g, "")
       return html(
         page.replace(
           'data-project="example"',
-          `data-project="${project}"${shortcut === undefined ? "" : ` data-shortcut="${shortcut}"`}`,
+          `data-project="${project}"${shortcut === undefined ? "" : ` data-shortcut="${shortcut}"`}${
+            tokenFrom === undefined ? "" : ` data-token-from="${tokenFrom}"`
+          }`,
         ),
       )
     }
