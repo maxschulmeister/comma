@@ -313,8 +313,6 @@ bun run check    # Biome, TypeScript, widget size
 - `widget/`: Preact in a Shadow DOM. UI from [shadcn/ui](https://ui.shadcn.com) (Base UI). Tiptap composer, loaded on demand.
 - `example/`: the example site and app, and test pages.
 
-See [docs/design.md](docs/design.md) for the design.
-
 Pull requests are welcome. CI runs the checks above on each pull request. To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## License
