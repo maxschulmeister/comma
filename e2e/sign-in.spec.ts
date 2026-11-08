@@ -353,6 +353,12 @@ test("Sign in with Slack opens Slack's sign-in for the project's workspace in a 
   expect(slack?.searchParams.get("redirect_uri")).toBe(`${COMMA}/auth/slack/callback`)
   await popup.close()
   await expect(panel(page).getByRole("alert")).toHaveText("Sign-in was closed.")
+
+  // Slack is the only way to sign in: the account menu starts it at once, without the sign-in form.
+  await toolbar(page).getByRole("button", { name: "Account", exact: true }).click()
+  const fromMenu = page.waitForEvent("popup")
+  await page.getByRole("menuitem", { name: "Sign in with Slack" }).click()
+  await expect((await fromMenu).getByRole("heading", { name: "Slack sign-in" })).toBeVisible()
 })
 
 test("tabs follow each other: sign-out and sign-in in one tab change the others", async ({ context }) => {
