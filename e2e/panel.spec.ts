@@ -283,7 +283,10 @@ test("the panel takes the focus and gives it back", async ({ page }) => {
 
   // With a thread open: its item.
   await pins(page).first().click()
-  await expect(threadPopover(page)).toBeVisible()
+  // The thread takes the focus as it opens, a moment after it shows, and Tiptap focuses once more in the next frame
+  // (Safari). Wait for both: on a slow machine they would take the focus back from the button.
+  await expect(threadPopover(page).locator(".ProseMirror")).toBeFocused()
+  await page.evaluate(() => new Promise(requestAnimationFrame))
   await button.focus()
   await page.keyboard.press("Enter")
   await expect(items(page).filter({ hasText: "Older" })).toBeFocused()
@@ -327,7 +330,8 @@ test("a reply editor that loads late does not take the focus from the panel", as
     await held
     await route.continue()
   })
-  await page.goto(path)
+  // The held editor can hold the page's load event (Firefox loads it early): do not wait for that.
+  await page.goto(path, { waitUntil: "domcontentloaded" })
   await pins(page).first().click()
   await expect(threadPopover(page)).toBeVisible()
   const button = toolbar(page).getByRole("button", { name: /^Comments/ })
