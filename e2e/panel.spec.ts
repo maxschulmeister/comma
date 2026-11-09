@@ -289,6 +289,30 @@ test("the panel takes the focus and gives it back", async ({ page }) => {
   await expect(items(page).filter({ hasText: "Older" })).toBeFocused()
 })
 
+test("a panel opened while the threads load gives the focus to the first item when they come", async ({ page }) => {
+  const me = await guestSession("Early opener")
+  const path = testPath("early-focus")
+  await apiThread(me, path, "Waiting")
+  await signIn(page, me)
+  // The threads load slowly, as on a slow network.
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route("**/api/threads", async (route) => {
+    if (route.request().method() === "GET") await held
+    await route.continue()
+  })
+  await page.goto(path)
+  const button = toolbar(page).getByRole("button", { name: /^Comments/ })
+  await button.focus()
+  await page.keyboard.press("Enter")
+  await expect(panel(page)).toBeFocused()
+
+  release()
+  await expect(items(page).first()).toBeFocused()
+})
+
 test("a reply editor that loads late does not take the focus from the panel", async ({ page }) => {
   const me = await guestSession("Slow editor")
   const path = testPath("slow-editor")
