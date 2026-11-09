@@ -545,13 +545,11 @@ async function elementScreenshot(anchor: Anchor, el: Element) {
   const box = anchor.rect ? anchorBox(anchor, el) : el.getBoundingClientRect()
   const space = SCREENSHOT_SPACE
   const upload = async () => {
-    const { screenshotPage } = await import("@/lib/screenshot")
-    const file = await screenshotPage({
-      x: box.x - space,
-      y: box.y - space,
-      width: box.width + 2 * space,
-      height: box.height + 2 * space,
-    })
+    const { screenshotBox } = await import("@/lib/screenshot")
+    const file = await screenshotBox(
+      { x: box.x - space, y: box.y - space, width: box.width + 2 * space, height: box.height + 2 * space },
+      el,
+    )
     return (await uploadFile(await shrinkImage(file))).id
   }
   try {
