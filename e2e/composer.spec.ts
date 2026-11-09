@@ -215,6 +215,22 @@ test("a new thread keeps a screenshot of its element, apart from the images", as
   expect(height).toBeLessThanOrEqual((box.height + 40) * scale)
 })
 
+test("the screenshot of an element does not wait for other parts of the page", async ({ page }) => {
+  // An image outside the element's part of the page that never loads. A copy of the whole page waits for it.
+  await page.route("**/never.png", () => {})
+  const popover = await startComment(page, "element-screenshot-part")
+  await page.evaluate(() => {
+    const img = document.createElement("img")
+    img.src = "/never.png"
+    document.body.append(img)
+  })
+  await typeComment(page, popover, "quick")
+  await page.keyboard.press("ControlOrMeta+Enter")
+  const thread = threadPopover(page)
+  await expect(thread).toContainText("quick")
+  await expect(thread.getByRole("button", { name: /, details$/ }).locator("img")).toHaveCount(1)
+})
+
 test("the screenshot shows the part of the page that is on screen, without the panel", async ({ page }) => {
   await openTestPage(page, "screenshot-scroll")
   // A red block above the page, then scroll so that its end is on screen.

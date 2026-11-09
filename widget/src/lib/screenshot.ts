@@ -7,6 +7,38 @@ import { HOST_TAG } from "./dom"
 
 const TRANSPARENT = new Set(["transparent", "rgba(0, 0, 0, 0)"])
 
+const notComma = (node: Node) => !(node instanceof Element && node.localName === HOST_TAG)
+
+/** A box of the page (viewport coordinates), copied from the smallest element around it, not from the whole page: on
+ * a long page, that takes seconds. Parts of the page that only overlap the box from elsewhere (a sticky header) do
+ * not show. */
+export async function screenshotBox(box: Box, near: Element): Promise<File> {
+  const part = around(near, box)
+  if (!part) return screenshotPage(box)
+  const rect = part.getBoundingClientRect()
+  const scale = Math.min(window.devicePixelRatio || 1, 2)
+  const drawn = await domToCanvas(part, { scale, backgroundColor: backgroundOf(part), filter: notComma })
+  return toFile(crop(drawn, { ...box, x: box.x - rect.x, y: box.y - rect.y }, rect, scale))
+}
+
+// The smallest element that contains the box, below <body>.
+function around(near: Element, box: Box) {
+  for (let el: Element | null = near; el && el !== document.body; el = el.parentElement) {
+    const r = el.getBoundingClientRect()
+    if (r.left <= box.x && r.top <= box.y && r.right >= box.x + box.width && r.bottom >= box.y + box.height) return el
+  }
+  return null
+}
+
+// The color that shows behind the element: its own, or the first of its parents.
+function backgroundOf(el: Element) {
+  for (let at: Element | null = el; at; at = at.parentElement) {
+    const color = getComputedStyle(at).backgroundColor
+    if (!TRANSPARENT.has(color)) return color
+  }
+  return "#fff"
+}
+
 /** The visible page, or only a box of it (viewport coordinates). */
 export async function screenshotPage(box?: Box): Promise<File> {
   const root = document.documentElement
@@ -27,9 +59,12 @@ export async function screenshotPage(box?: Box): Promise<File> {
     backgroundColor: background,
     // The scroll position: move the page up. A margin, not a transform, so `position: fixed` stays in place.
     style: { marginTop: `${-window.scrollY}px`, marginLeft: `${-window.scrollX}px` },
-    filter: (node) => !(node instanceof Element && node.localName === HOST_TAG),
+    filter: notComma,
   })
-  const canvas = box ? crop(page, { ...box, x: box.x - left }, view, scale) : page
+  return toFile(box ? crop(page, { ...box, x: box.x - left }, view, scale) : page)
+}
+
+async function toFile(canvas: HTMLCanvasElement) {
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"))
   if (!blob) throw new Error("Cannot make the image")
   return new File([blob], "screenshot.png", { type: "image/png" })

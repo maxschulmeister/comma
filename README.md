@@ -18,7 +18,7 @@ Comments pinned to any website. One script tag. Your own service.
 - **One script tag.** Your sites do not need a backend, a database schema or a build step. One comma service holds the comments of all your sites.
 - **Your service, your data.** Run comma with Docker, or on AWS Lambda, Cloudflare Workers or Vercel. The comments stay in your own database: SQLite, Turso or another libSQL server.
 - **Your accounts.** People sign in with the accounts of your app, with Slack, or as guests.
-- **Small.** Under 145 kB gzip on the page. The editor, screenshots and emoji load when people use them.
+- **Small.** Under 150 kB gzip on the page. The editor, screenshots and emoji load when people use them.
 
 Moving from SitePing? comma imports its comments (see [DEPLOY.md](DEPLOY.md#move-from-siteping)).
 
@@ -276,6 +276,7 @@ Only people of that workspace can sign in. Their name, email and picture come fr
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `C`                       | Comment mode on or off (the key in `data-shortcut`; the letter on the key, also on other keyboard layouts)                                                                         |
 | `↑` `↓`, then `Enter`     | In comment mode: pick an element and comment on it (`Tab` to a control works too). `Shift+Enter`: comment on its area                                                              |
+| `↑` `↓` on hover          | In comment mode, with the cursor on an element: `↑` outlines its parent, `↓` goes back down. Click or `Enter` comments on the outlined element                                     |
 | `Esc`                     | Close the popover, then leave comment mode                                                                                                                                         |
 | `Shift+C`                 | Show or hide comments                                                                                                                                                              |
 | `⌘Enter` (`Ctrl+Enter`)   | Send. `Enter`: new paragraph. `Shift+Enter`: line break                                                                                                                            |

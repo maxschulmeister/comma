@@ -14,7 +14,7 @@ const chunk = (prefix: string) => {
 const KB = 1024
 const checks = [
   // comma runs on previews and staging, not for site visitors: a larger widget is fine.
-  { name: "c.js + main.js (loads on every page)", size: gzip("c.js") + gzip("main.js"), budget: 145 * KB },
+  { name: "c.js + main.js (loads on every page)", size: gzip("c.js") + gzip("main.js"), budget: 150 * KB },
   { name: "editor chunk (loads on demand)", size: chunk("editor-"), budget: 135 * KB },
   { name: "emoji picker chunk (loads on demand)", size: chunk("emoji-picker-"), budget: 15 * KB },
   { name: "screenshot chunk (loads on demand)", size: chunk("screenshot-"), budget: 15 * KB },

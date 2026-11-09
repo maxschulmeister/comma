@@ -146,18 +146,20 @@ function usePushPage(active: boolean, side: PanelSide) {
 /**
  * Opened from the toolbar (or by Shift+C), the focus moves into the panel (see `closePanel` for the way back): to the
  * open thread's item, else the first one, else the panel. Not the search: there, the keys (Shift+C, ↑ ↓) would type.
- * Only the focus: no thread opens.
+ * Only the focus: no thread opens. Opened while the threads load, the panel has the focus until they come, then the item.
  * On narrow screens the panel covers the page, so the page is inert (no focus, no clicks) while it is open.
  */
 function useFocusManagement(ref: RefObject<HTMLElement | null>) {
+  const fromToolbar = useRef(false)
+  const loaded = useStore((s) => s.loaded)
   useEffect(() => {
     const aside = ref.current
     if (!aside) return
     const root = aside.getRootNode() as ShadowRoot
     const opener = root.activeElement instanceof HTMLElement ? root.activeElement : null
     if (opener?.closest("[data-slot=toolbar]")) {
-      const open = panelElements.get(getState().openThreadId ?? "")
-      ;(open ?? aside.querySelector<HTMLElement>("[data-slot=panel-item]") ?? aside).focus()
+      fromToolbar.current = true
+      focusInto(aside)
     }
     const media = matchMedia(NARROW)
     const wasInert = document.body.inert
@@ -171,6 +173,17 @@ function useFocusManagement(ref: RefObject<HTMLElement | null>) {
       document.body.inert = wasInert
     }
   }, [ref])
+  useEffect(() => {
+    const aside = ref.current
+    if (loaded && fromToolbar.current && aside && (aside.getRootNode() as ShadowRoot).activeElement === aside)
+      focusInto(aside)
+  }, [loaded, ref])
+}
+
+// The open thread's item, else the first one, else the panel.
+function focusInto(aside: HTMLElement) {
+  const open = panelElements.get(getState().openThreadId ?? "")
+  ;(open ?? aside.querySelector<HTMLElement>("[data-slot=panel-item]") ?? aside).focus()
 }
 
 /** Closes the panel. If the focus is in it, the focus goes back to the toolbar button. */

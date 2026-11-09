@@ -105,6 +105,55 @@ test.describe("comment mode", () => {
     expect(Math.abs((pin?.x ?? 0) - ((lead?.x ?? 0) + (lead?.width ?? 0) / 2))).toBeLessThan(2)
   })
 
+  test("hover: ↑ outlines the parent, ↓ goes back, a click comments on the outlined element", async ({ page }) => {
+    await signIn(page, await guestSession("Tree"))
+    await openTestPage(page, "tree")
+    await page.keyboard.press("c")
+    await expect(overlay(page)).toBeAttached()
+    const alpha = page.getByTestId("alpha")
+    const card = page.locator(".card").first()
+    const outline = overlay(page).locator("div.outline-offset-0")
+    const sameBox = async (target: typeof card) => {
+      const box = await target.boundingBox()
+      await expect
+        .poll(async () => {
+          const o = await outline.boundingBox()
+          return o && box && Math.max(Math.abs(o.x - box.x), Math.abs(o.width - box.width))
+        })
+        .toBeLessThan(1)
+    }
+    // A wrapper with the same box as the paragraph: ↑ and ↓ skip it, so each key shows a change.
+    await alpha.evaluate((p) => {
+      const wrap = document.createElement("div")
+      p.replaceWith(wrap)
+      wrap.append(p)
+    })
+    const box = await alpha.boundingBox()
+    const x = (box?.x ?? 0) + 10
+    const y = (box?.y ?? 0) + (box?.height ?? 0) / 2
+    await page.mouse.move(x, y)
+    await sameBox(alpha)
+    await page.keyboard.press("ArrowUp")
+    await sameBox(card)
+    await page.keyboard.press("ArrowDown")
+    await sameBox(alpha)
+    await page.keyboard.press("ArrowUp")
+    await page.keyboard.press("ArrowUp")
+    await sameBox(page.locator("#cards"))
+    await page.keyboard.press("ArrowDown")
+    await sameBox(card)
+    // A small move on the same element keeps the outlined parent.
+    await page.mouse.move(x + 2, y)
+    await sameBox(card)
+
+    const sent = page.waitForRequest((r) => r.method() === "POST" && r.url().endsWith("/api/threads"))
+    await page.mouse.click(x + 2, y)
+    await typeComment(page, newCommentPopover(page), "On the card")
+    await page.keyboard.press("ControlOrMeta+Enter")
+    // The card's text: not the paragraph, not the grid with both cards.
+    expect((await sent).postDataJSON().anchor.text).toBe("AlphaFirst card text.")
+  })
+
   test("with the keyboard: elements in the page's own sidebar work too", async ({ page }) => {
     await signIn(page, await guestSession("Sidebar"))
     await openTestPage(page, "sidebar")
