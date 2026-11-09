@@ -96,6 +96,16 @@ const describeElement = (el: Element) =>
     (el.textContent ?? "").trim() || el.getAttribute("alt") || el.getAttribute("aria-label") || "",
   )
 
+const boxOf = (el: Element): Box => {
+  const r = el.getBoundingClientRect()
+  return { x: r.left, y: r.top, width: r.width, height: r.height }
+}
+
+const sameBox = (a: Element, b: Element) => JSON.stringify(boxOf(a)) === JSON.stringify(boxOf(b))
+
+/** Hover: `under` is the element under the cursor. `el` is the outlined element: it or an ancestor (↑ ↓). */
+type Hover = { under: Element; el: Element }
+
 const center = (el: Element) => {
   const r = el.getBoundingClientRect()
   return { point: { x: r.left + r.width / 2, y: r.top + r.height / 2 } }
@@ -108,17 +118,23 @@ const fromWidgetUi = (event: Event) =>
 // Comment mode: hover outlines the element under the cursor, click pins a comment to it,
 // drag draws a region. On touch, a tap pins a comment and the page still scrolls.
 // Keyboard: ↑ and ↓ pick an element, or Tab to a control. Enter comments on it.
+// While the cursor is on an element, ↑ outlines its parent and ↓ goes back down. Click or Enter comments on it.
 export function CommentOverlay() {
   const moving = useStore((s) => s.moving)
   const [outline, setOutline] = useState<Box | null>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [picked, setPicked] = useState<Element | null>(null)
   const pickedRef = useRef<Element | null>(null)
+  const hoverRef = useRef<Hover | null>(null)
   useLayoutTick()
 
   const pick = (el: Element | null) => {
     pickedRef.current = el
     setPicked(el)
+  }
+  const hover = (h: Hover | null) => {
+    hoverRef.current = h
+    setOutline(h && boxOf(h.el))
   }
 
   // A layout effect: the keys work as soon as the overlay shows.
@@ -130,7 +146,26 @@ export function CommentOverlay() {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
       if (isTyping(event) || fromWidgetUi(event) || getState().draft?.open || getState().draftMove) return
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      const h = hoverRef.current
+      if (h && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+        event.preventDefault()
+        // From the element under the cursor up to the body.
+        const path: Element[] = []
+        for (let e: Element | null = h.under; e && e !== document.documentElement; e = e.parentElement) path.push(e)
+        let i = path.indexOf(h.el)
+        // The page moved the element out of the outlined one.
+        if (i < 0) return
+        // Wrappers with the same box show no change: ↑ and ↓ skip them.
+        if (event.key === "ArrowUp") while (path[i + 1] && sameBox(path[i], h.el)) i++
+        else if (i > 0) {
+          i--
+          while (i > 0 && sameBox(path[i - 1], path[i])) i--
+        }
+        const next = path[i]
+        if (!next || next === h.el) return
+        hoverRef.current = { ...h, el: next }
+        setOutline(boxOf(next))
+      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         const list = pickable()
         if (list.length === 0) return
         event.preventDefault()
@@ -148,14 +183,13 @@ export function CommentOverlay() {
       } else if (event.key === "Enter") {
         const active = document.activeElement
         const focused = active && active !== document.body && active.localName !== HOST_TAG ? active : null
-        const el = pickedRef.current ?? focused
+        const el = pickedRef.current ?? hoverRef.current?.el ?? focused
         if (!el) return
         event.preventDefault()
         pick(null)
         // Shift+Enter: a region around the whole element.
         if (event.shiftKey && !getState().moving) {
-          const r = el.getBoundingClientRect()
-          placeAt(el, { rect: { x: r.left, y: r.top, width: r.width, height: r.height } })
+          placeAt(el, { rect: boxOf(el) })
         } else placeAt(el, center(el))
       }
     }
@@ -164,13 +198,16 @@ export function CommentOverlay() {
   }, [])
 
   useEffect(() => {
-    const clear = () => setOutline(null)
+    const clear = () => {
+      hoverRef.current = null
+      setOutline(null)
+    }
     // Keyboard: the focused page element is the target (Enter comments on it).
     const onFocus = (event: FocusEvent) => {
       const el = event.target
       if (!(el instanceof Element) || el.localName === HOST_TAG || el === document.body) return
-      const r = el.getBoundingClientRect()
-      setOutline({ x: r.left, y: r.top, width: r.width, height: r.height })
+      hoverRef.current = null
+      setOutline(boxOf(el))
     }
     window.addEventListener("scroll", clear, { capture: true, passive: true })
     document.addEventListener("focusin", onFocus)
@@ -199,10 +236,11 @@ export function CommentOverlay() {
             return
           }
           const el = target(e.clientX, e.clientY)
-          const r = el.getBoundingClientRect()
-          setOutline({ x: r.left, y: r.top, width: r.width, height: r.height })
+          const h = hoverRef.current
+          // On the same element, the outlined parent stays, while it still holds the element (the page can change).
+          hover(h?.under === el && h.el.contains(el) ? h : { under: el, el })
         }}
-        onPointerLeave={() => setOutline(null)}
+        onPointerLeave={() => hover(null)}
         onPointerDown={(e) => {
           if (e.button !== 0 || e.pointerType !== "mouse") return
           e.currentTarget.setPointerCapture(e.pointerId)
@@ -216,7 +254,11 @@ export function CommentOverlay() {
           const rect = from && rectOf({ ...from, x2: e.clientX, y2: e.clientY })
           if (rect && (rect.width >= DRAG_MIN || rect.height >= DRAG_MIN)) {
             placeAt(target(rect.x + rect.width / 2, rect.y + rect.height / 2), { rect })
-          } else placeAt(target(e.clientX, e.clientY), { point: { x: e.clientX, y: e.clientY } })
+          } else {
+            const el = target(e.clientX, e.clientY)
+            const h = hoverRef.current
+            placeAt(h?.under === el && h.el.contains(el) ? h.el : el, { point: { x: e.clientX, y: e.clientY } })
+          }
         }}
         onPointerCancel={() => {
           start.current = null
