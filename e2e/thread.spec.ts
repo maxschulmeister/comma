@@ -600,3 +600,22 @@ test("tag a thread; others see its tags", async ({ page, context }) => {
   await expect(bobThread.getByRole("list", { name: "Tags" }).getByRole("listitem")).toHaveText(["Content"])
   await bob.close()
 })
+
+test("make a tag with a color; it goes on the thread", async ({ page }) => {
+  const thread = await withComment(page, "new-tag", "Maker")
+  await thread.getByRole("button", { name: "Tags" }).click()
+  const picker = page.getByRole("dialog", { name: "Tags" })
+  // Tags are for the whole project: each run and browser makes its own.
+  const name = `Perf ${Math.random().toString(36).slice(2, 8)}`
+  const search = picker.getByRole("searchbox", { name: "Search tags" })
+  await search.fill(name)
+  await picker.getByRole("radio", { name: "Teal" }).check()
+  await picker.getByRole("button", { name: `Create “${name}”` }).click()
+  await expect(picker.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true")
+  await expect(thread.getByRole("list", { name: "Tags" }).getByRole("listitem")).toHaveText([name])
+
+  // The name is taken now, in any case.
+  await search.fill(name.toUpperCase())
+  await expect(picker.getByRole("button", { name })).toBeVisible()
+  await expect(picker.getByRole("button", { name: /^Create/ })).toHaveCount(0)
+})

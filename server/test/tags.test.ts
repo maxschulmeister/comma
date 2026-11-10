@@ -68,6 +68,61 @@ describe("tags on threads", () => {
   })
 })
 
+describe("new tags", () => {
+  test("a guest makes a tag; it comes after the config's tags, in the order of names; anyone can use it", async () => {
+    const s = await setup()
+    const { author, thread } = await withThread(s)
+    const make = (name: string, color: string) =>
+      s.request("POST", "/api/tags", { token: author.token, body: { name, color } })
+    const perf = await make(" Perf ", "teal")
+    expect(perf.status).toBe(200)
+    expect(perf.json.tag).toEqual({ name: "Perf", color: "teal", createdBy: author.user.id })
+    await make("a11y", "gray")
+
+    const bob = await s.guest("Bob")
+    const tagged = await s.request("PUT", `/api/threads/${thread.id}/tags/perf`, { token: bob.token })
+    expect(tagged.json.thread.tags).toEqual(["Perf"])
+    expect(tagged.json.tags.slice(DEFAULT_TAGS.length)).toEqual([
+      { name: "a11y", color: "gray", createdBy: author.user.id },
+      { name: "Perf", color: "teal", createdBy: author.user.id },
+    ])
+    // Other projects do not have it.
+    const stranger = await s.guest("Stranger", "https://other.test", "other")
+    const other = await s.request("GET", "/api/threads", { token: stranger.token, origin: "https://other.test" })
+    expect(other.json.tags).toEqual(DEFAULT_TAGS)
+  })
+
+  test("a name that the project has, in any case, is taken", async () => {
+    const s = await setup()
+    const { token } = await s.guest("Ada")
+    const make = (name: string) => s.request("POST", "/api/tags", { token, body: { name, color: "blue" } })
+    expect((await make("bug")).status).toBe(409)
+    expect((await make("Perf")).status).toBe(200)
+    const taken = await make("PERF")
+    expect(taken.status).toBe(409)
+    expect(taken.json.error).toBe("A tag with this name exists")
+  })
+
+  test("a tag has a name and one of the colors", async () => {
+    const s = await setup()
+    const { token } = await s.guest("Ada")
+    const make = (body: unknown) => s.request("POST", "/api/tags", { token, body })
+    expect((await make({ name: "Perf", color: "crimson" })).status).toBe(400)
+    expect((await make({ name: "  ", color: "red" })).status).toBe(400)
+    expect((await make({ name: "x".repeat(33), color: "red" })).status).toBe(400)
+  })
+
+  test("new tags count as comments for the limit", async () => {
+    const project = { ...config.projects[0], limits: { commentsPerHour: 2 } }
+    const s = await setup({ config: { projects: [project] } })
+    const { token } = await s.guest("Ada")
+    const make = (name: string) => s.request("POST", "/api/tags", { token, body: { name, color: "red" } })
+    expect((await make("One")).status).toBe(200)
+    expect((await make("Two")).status).toBe(200)
+    expect((await make("Three")).status).toBe(429)
+  })
+})
+
 describe("project tags", () => {
   test("a project without tags in its config has the default tags; a new thread has no tags", async () => {
     const s = await setup()

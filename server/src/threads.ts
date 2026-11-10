@@ -1,7 +1,7 @@
 // Reads threads with their comments, reactions, files and read state, in the shape the widget uses.
 import { publicUser, type User, type UserRow } from "./auth"
 import { all, type Db, get, sql } from "./db"
-import { type Tag, type TagInput, tagKey } from "./tags"
+import { customTagsSql, projectTags, type TagInput, type TagRow, tagKey } from "./tags"
 
 type ThreadRow = {
   id: string
@@ -139,6 +139,7 @@ export async function loadThreads(db: Db, scope: Scope, me: UserRow, configTags:
         `select tt.thread_id, tt.key from thread_tags tt join threads t on t.id = tt.thread_id where ${where}`,
         ...args,
       ),
+      customTagsSql(scope.project),
     ],
     "read",
   )
@@ -156,7 +157,7 @@ export async function loadThreads(db: Db, scope: Scope, me: UserRow, configTags:
     ]),
   )
 
-  const tags: Tag[] = configTags.map((t) => ({ ...t, createdBy: null }))
+  const tags = projectTags(configTags, rows<TagRow>(8))
   // A thread's tags in the order of the project's tags. Tags that the project no longer has do not show.
   const tagOrder = new Map(tags.map((t, i) => [tagKey(t.name), i]))
   const tagsBy = new Map<string, number[]>()

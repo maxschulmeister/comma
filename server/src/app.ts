@@ -24,7 +24,7 @@ import type { FileStore } from "./files"
 import { MAX_IMAGE_BYTES, readImage } from "./images"
 import { popupRoutes } from "./popup"
 import { takeLimit } from "./rate-limit"
-import { tagKey } from "./tags"
+import { customTagsSql, projectTags, type TagRow, TagSchema, tagKey } from "./tags"
 import { getCommentRow, getThreadRow, isFirstComment, loadThreads, type Scope } from "./threads"
 import { widgetRoutes } from "./widget"
 
@@ -835,6 +835,41 @@ export function createApp(options: AppOptions) {
     return c.json({ ok: true })
   })
 
+  const hasTag = async (project: Project, key: string) =>
+    project.tags.some((t) => tagKey(t.name) === key) ||
+    !!(await get(db, "select 1 from tags where project = ? and key = ?", project.id, key))
+
+  // Anyone in the project makes tags, guests too. Names are unique in the project, in any case.
+  app.post("/api/tags", async (c) => {
+    const user = c.get("user")
+    const project = c.get("project")
+    const input = parse(TagSchema, await json(c))
+    const key = tagKey(input.name)
+    const taken = new HTTPException(409, { message: "A tag with this name exists" })
+    if (project.tags.some((t) => tagKey(t.name) === key)) throw taken
+    await limit(c)
+    const [inserted] = await db.batch(
+      [
+        sql(
+          `insert into tags (project, key, name, color, created_by, created_at) values (?, ?, ?, ?, ?, ?)
+           on conflict (project, key) do nothing`,
+          project.id,
+          key,
+          input.name,
+          input.color,
+          user.id,
+          now(),
+        ),
+        bump(project.id),
+      ],
+      "write",
+    )
+    if (inserted?.rowsAffected === 0) throw taken
+    const rows = (await db.execute(customTagsSql(project.id))).rows as unknown as TagRow[]
+    const tags = projectTags(project.tags, rows)
+    return c.json({ tag: { ...input, createdBy: user.id }, tags })
+  })
+
   // Anyone in the project adds and removes tags, like reactions: one tag at a time, so two people at the same time
   // do not undo each other's change.
   const tagThread = (add: boolean) =>
@@ -842,8 +877,7 @@ export function createApp(options: AppOptions) {
       const user = c.get("user")
       const row = await findThread(c, c.req.param("id") ?? "")
       const key = tagKey(decodeURIComponent(c.req.param("tag") ?? ""))
-      if (add && !c.get("project").tags.some((t) => tagKey(t.name) === key))
-        throw new HTTPException(400, { message: "Unknown tag" })
+      if (add && !(await hasTag(c.get("project"), key))) throw new HTTPException(400, { message: "Unknown tag" })
       await db.batch(
         [
           add

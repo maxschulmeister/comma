@@ -105,7 +105,18 @@ create table if not exists versions (
   version integer not null
 );
 
--- Tags on threads, by key (see tags.ts).
+-- Tags that people made. The tags of the project config are not here. key: the name in lowercase (see tags.ts).
+create table if not exists tags (
+  project text not null,
+  key text not null,
+  name text not null,
+  color text not null,
+  created_by text not null references users (id),
+  created_at integer not null,
+  primary key (project, key)
+);
+
+-- Tags on threads, by key.
 create table if not exists thread_tags (
   thread_id text not null references threads (id) on delete cascade,
   key text not null,

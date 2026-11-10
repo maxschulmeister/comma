@@ -3,7 +3,7 @@ import type { Anchor } from "./anchor"
 import { clearDrafts } from "./drafts"
 import type { PageContext } from "./lib/env"
 import { getState, type ProjectInfo, setState, subscribe } from "./store"
-import type { Comment, FileRef, Session, Tag, Thread, ThreadResult, User } from "./types"
+import type { Comment, FileRef, Session, Tag, TagColor, Thread, ThreadResult, User } from "./types"
 
 export class ApiError extends Error {
   status: number
@@ -435,6 +435,15 @@ export async function setStatus(thread: Thread, status: Thread["status"]) {
 
 export async function setAssignee(thread: Thread, assignee: string | null) {
   return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { assignee }))
+}
+
+/** Makes a tag for the project. */
+export async function createTag(name: string, color: TagColor) {
+  const res = await request<{ tag: Tag; tags: Tag[] }>("POST", "/api/tags", { name, color })
+  etag = null
+  changes++
+  setState({ tags: res.tags })
+  return res.tag
 }
 
 /** Adds the tag to the thread, or removes it. */
