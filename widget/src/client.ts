@@ -366,6 +366,16 @@ const readLatest = new Map<string, number>()
 const readInFlight = new Map<string, number>()
 let readCount = 0
 
+// Tag changes here (make, change, delete). An answer to a request from before one has an old list of tags.
+let tagChanges = 0
+
+/** A request that answers with a thread. If tags changed here while it ran, the list of tags stays as it is. */
+async function threadRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const before = tagChanges
+  const res = await request<T>(method, path, body)
+  return before === tagChanges ? res : { ...res, tags: getState().tags }
+}
+
 /** `readAnswer`: the number of the read change this answer is for. */
 function applyThread({ thread, users, tags }: ThreadResult, readAnswer?: number) {
   etag = null
@@ -405,19 +415,19 @@ export async function createThread(input: {
   context: PageContext
   screenshot?: string
 }) {
-  return applyThread(await request<ThreadResult>("POST", "/api/threads", input))
+  return applyThread(await threadRequest<ThreadResult>("POST", "/api/threads", input))
 }
 
 export async function reply(threadId: string, body: unknown, files: string[]) {
-  return applyThread(await request<ThreadResult>("POST", `/api/threads/${threadId}/comments`, { body, files }))
+  return applyThread(await threadRequest<ThreadResult>("POST", `/api/threads/${threadId}/comments`, { body, files }))
 }
 
 export async function editComment(comment: Comment, body: unknown) {
-  return applyThread(await request<ThreadResult>("PATCH", `/api/comments/${comment.id}`, { body }))
+  return applyThread(await threadRequest<ThreadResult>("PATCH", `/api/comments/${comment.id}`, { body }))
 }
 
 export async function deleteComment(comment: Comment) {
-  const res = await request<{ threadDeleted: true } | ({ threadDeleted: false } & ThreadResult)>(
+  const res = await threadRequest<{ threadDeleted: true } | ({ threadDeleted: false } & ThreadResult)>(
     "DELETE",
     `/api/comments/${comment.id}`,
   )
@@ -431,11 +441,11 @@ export async function deleteThread(thread: Thread) {
 }
 
 export async function setStatus(thread: Thread, status: Thread["status"]) {
-  return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { status }))
+  return applyThread(await threadRequest<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { status }))
 }
 
 export async function setAssignee(thread: Thread, assignee: string | null) {
-  return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { assignee }))
+  return applyThread(await threadRequest<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { assignee }))
 }
 
 /**
@@ -452,6 +462,7 @@ export async function createTag(name: string, color: TagColor) {
   const res = await request<{ tag: Tag; tags: Tag[] }>("POST", "/api/tags", { name, color })
   etag = null
   changes++
+  tagChanges++
   setState({ tags: res.tags })
   return res.tag
 }
@@ -468,6 +479,7 @@ export async function changeTag(tag: Tag, change: { name: string; color: TagColo
   const rename = (names: string[]) => names.flatMap((name) => (!was(name) ? [name] : next ? [next] : []))
   etag = null
   changes++
+  tagChanges++
   setState((s) => ({
     tags: res.tags,
     threads: s.threads.map((t) => (t.tags.some(was) ? { ...t, tags: rename(t.tags) } : t)),
@@ -478,7 +490,7 @@ export async function changeTag(tag: Tag, change: { name: string; color: TagColo
 /** Adds the tag to the thread, or removes it. */
 export async function setThreadTag(thread: Thread, name: string, on: boolean) {
   const path = `/api/threads/${thread.id}/tags/${encodeURIComponent(name)}`
-  return applyThread(await request<ThreadResult>(on ? "PUT" : "DELETE", path))
+  return applyThread(await threadRequest<ThreadResult>(on ? "PUT" : "DELETE", path))
 }
 
 export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
@@ -487,7 +499,7 @@ export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
   changes++
   setState((s) => ({ threads: s.threads.map((t) => (t.id === thread.id ? { ...t, page, anchor } : t)) }))
   try {
-    return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { page, anchor }))
+    return applyThread(await threadRequest<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { page, anchor }))
   } catch (error) {
     if (isCurrent(session)) applyThread({ thread, users: {}, tags: getState().tags })
     throw error
@@ -505,7 +517,7 @@ export async function setRead(thread: Thread, read: boolean) {
   setUnread(!read)
   try {
     // An older read change (open = read, then "Mark as unread") must not undo the newer one.
-    return applyThread(await request<ThreadResult>("POST", `/api/threads/${thread.id}/read`, { read }), number)
+    return applyThread(await threadRequest<ThreadResult>("POST", `/api/threads/${thread.id}/read`, { read }), number)
   } catch (error) {
     if (readLatest.get(thread.id) === number && isCurrent(session)) {
       etag = null
@@ -521,7 +533,7 @@ export async function toggleReaction(comment: Comment, emoji: string) {
   const me = getState().session?.user.id
   const mine = comment.reactions.some((r) => r.emoji === emoji && me && r.userIds.includes(me))
   const path = `/api/comments/${comment.id}/reactions/${encodeURIComponent(emoji)}`
-  return applyThread(await request<ThreadResult>(mine ? "DELETE" : "PUT", path))
+  return applyThread(await threadRequest<ThreadResult>(mine ? "DELETE" : "PUT", path))
 }
 
 /** The person allows a coding agent to work on the comments as them, or not (see /llms.txt on the server). */

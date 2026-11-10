@@ -646,3 +646,33 @@ test("the creator changes and deletes a tag; the config's tags have no edit butt
   await expect(thread.getByRole("list", { name: "Tags" })).toHaveCount(0)
   await expect(picker.getByRole("button", { name: `New ${id}`, exact: true })).toHaveCount(0)
 })
+
+test("a late answer does not bring back an old list of tags", async ({ page }) => {
+  const thread = await withComment(page, "late-tags", "Racer")
+  await thread.getByRole("button", { name: "Tags" }).click()
+  const picker = page.getByRole("dialog", { name: "Tags" })
+  // The server adds Bug at once, but its answer, with the tags of that time, comes after the new tag.
+  let release = () => {}
+  const late = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let answered = () => {}
+  const lateAnswered = new Promise<void>((resolve) => {
+    answered = resolve
+  })
+  await page.route("**/api/threads/*/tags/Bug", async (route) => {
+    const response = await route.fetch()
+    await late
+    await route.fulfill({ response })
+    answered()
+  })
+  await picker.getByRole("button", { name: "Bug", exact: true }).click()
+  const name = `Late ${Math.random().toString(36).slice(2, 8)}`
+  await picker.getByRole("searchbox", { name: "Search tags" }).fill(name)
+  await page.keyboard.press("Enter")
+  await expect(picker.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true")
+  release()
+  await lateAnswered
+  await page.waitForTimeout(100)
+  await expect(picker.getByRole("button", { name, exact: true })).toBeVisible()
+})
