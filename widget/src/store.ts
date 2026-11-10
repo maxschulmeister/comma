@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
 import type { Anchor } from "./anchor"
+import type { FilterRule } from "./lib/filters"
 import type { Session, Tag, Thread, User } from "./types"
 
 /** A new thread that is not sent yet. `open`: the composer shows. Else only its pin. */
@@ -34,11 +35,10 @@ export type ProjectInfo = {
 
 export type Filters = {
   scope: "page" | "all"
+  status: "open" | "resolved" | "all"
   mine: boolean
-  assigned: boolean
-  resolved: boolean
-  /** Threads with any of these tags. Empty: all threads. */
-  tags: string[]
+  /** The chips below the search: "Tag is Bug". A thread matches all of them. */
+  rules: FilterRule[]
   sort: "date" | "unread"
   query: string
 }

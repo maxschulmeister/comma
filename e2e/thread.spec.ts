@@ -251,7 +251,7 @@ test("resolve hides the pin, reopen from the panel shows it", async ({ page }) =
   await showPanel(page)
 
   await panel(page).getByRole("button", { name: "Filter and sort" }).click()
-  await page.getByRole("menuitemcheckbox", { name: "Show resolved" }).click()
+  await page.getByRole("menuitemradio", { name: "Open and resolved" }).click()
   await page.keyboard.press("Escape")
   await panel(page).locator("[data-slot=panel-item]", { hasText: "First comment" }).click()
   await expect(thread).toContainText("Resolved by Res")
@@ -550,7 +550,7 @@ test("the thread names its element, shows where it was made, and outlines the el
   await expect(outline).toHaveCount(0)
 })
 
-test("assign a thread; the assignee finds it with Assigned to me", async ({ page, context }) => {
+test("assign a thread; the assignee finds it with the Assignee filter", async ({ page, context }) => {
   const assignee = await appSession(`Bea ${test.info().testId}`)
   const thread = await withComment(page, "assign", "Assigner")
   await thread.getByRole("button", { name: "Assign" }).click()
@@ -569,7 +569,8 @@ test("assign a thread; the assignee finds it with Assigned to me", async ({ page
     .getByRole("button", { name: /^Comments/ })
     .click()
   await panel(other).getByRole("button", { name: "Filter and sort" }).click()
-  await other.getByRole("menuitemcheckbox", { name: "Assigned to me" }).click()
+  await other.getByRole("menuitem", { name: "Assignee" }).click()
+  await other.getByRole("dialog", { name: "Assignee" }).getByRole("button", { name: assignee.user.name }).click()
   await other.keyboard.press("Escape")
   const items = panel(other).locator("[data-slot=panel-item]")
   await expect(items).toHaveCount(1)
