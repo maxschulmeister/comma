@@ -140,6 +140,7 @@ const UpdateThread = z.union([
   z.object({ page: Page, anchor: AnchorSchema }),
   z.object({ assignee: z.string().max(100).nullable() }),
 ])
+const TagChange = z.object({ name: TagSchema.shape.name.optional(), color: TagSchema.shape.color.optional() })
 const CreateComment = z.object({ body: z.unknown(), files: FileIds })
 const UpdateComment = z.object({ body: z.unknown() })
 const Read = z.object({ read: z.boolean() })
@@ -835,9 +836,15 @@ export function createApp(options: AppOptions) {
     return c.json({ ok: true })
   })
 
-  const hasTag = async (project: Project, key: string) =>
-    project.tags.some((t) => tagKey(t.name) === key) ||
-    !!(await get(db, "select 1 from tags where project = ? and key = ?", project.id, key))
+  const inConfig = (project: Project, key: string) => project.tags.some((t) => tagKey(t.name) === key)
+  const customTag = (project: Project, key: string) =>
+    get<TagRow>(db, "select name, color, created_by from tags where project = ? and key = ?", project.id, key)
+  const hasTag = async (project: Project, key: string) => inConfig(project, key) || !!(await customTag(project, key))
+  const allTags = async (project: Project) =>
+    projectTags(project.tags, (await db.execute(customTagsSql(project.id))).rows as unknown as TagRow[])
+  const tagTaken = () => new HTTPException(409, { message: "A tag with this name exists" })
+  // The tags of the threads of the project.
+  const inProject = "thread_id in (select id from threads where project = ?)"
 
   // Anyone in the project makes tags, guests too. Names are unique in the project, in any case.
   app.post("/api/tags", async (c) => {
@@ -845,8 +852,7 @@ export function createApp(options: AppOptions) {
     const project = c.get("project")
     const input = parse(TagSchema, await json(c))
     const key = tagKey(input.name)
-    const taken = new HTTPException(409, { message: "A tag with this name exists" })
-    if (project.tags.some((t) => tagKey(t.name) === key)) throw taken
+    if (inConfig(project, key)) throw tagTaken()
     await limit(c)
     const [inserted] = await db.batch(
       [
@@ -864,10 +870,68 @@ export function createApp(options: AppOptions) {
       ],
       "write",
     )
-    if (inserted?.rowsAffected === 0) throw taken
-    const rows = (await db.execute(customTagsSql(project.id))).rows as unknown as TagRow[]
-    const tags = projectTags(project.tags, rows)
-    return c.json({ tag: { ...input, createdBy: user.id }, tags })
+    if (inserted?.rowsAffected === 0) throw tagTaken()
+    return c.json({ tag: { ...input, createdBy: user.id }, tags: await allTags(project) })
+  })
+
+  // A tag that people made: its creator or an admin changes it. The config's tags change only in the config.
+  const ownTag = async (c: Ctx) => {
+    const user = c.get("user")
+    const project = c.get("project")
+    const key = tagKey(c.req.param("tag") ?? "")
+    if (inConfig(project, key)) throw new HTTPException(403, { message: "Change this tag in the project config" })
+    const row = await customTag(project, key)
+    if (!row) throw new HTTPException(404, { message: "Tag not found" })
+    if (row.created_by !== user.id && user.is_admin !== 1)
+      throw new HTTPException(403, { message: "Only the person who made this tag or an admin can change it" })
+    return { key, row }
+  }
+
+  app.patch("/api/tags/:tag", async (c) => {
+    const project = c.get("project")
+    const { key, row } = await ownTag(c)
+    const input = parse(TagChange, await json(c))
+    const tag = { name: input.name ?? row.name, color: input.color ?? row.color, createdBy: row.created_by }
+    const next = tagKey(tag.name)
+    const renamed = next !== key
+    if (renamed && (await hasTag(project, next))) throw tagTaken()
+    await db.batch(
+      [
+        sql(
+          "update tags set key = ?, name = ?, color = ? where project = ? and key = ?",
+          next,
+          tag.name,
+          tag.color,
+          project.id,
+          key,
+        ),
+        // Threads keep the tag. A thread can have the new key already, from a tag that the config had before.
+        ...(renamed
+          ? [
+              sql(`update or ignore thread_tags set key = ? where key = ? and ${inProject}`, next, key, project.id),
+              sql(`delete from thread_tags where key = ? and ${inProject}`, key, project.id),
+            ]
+          : []),
+        bump(project.id),
+      ],
+      "write",
+    )
+    return c.json({ tag, tags: await allTags(project) })
+  })
+
+  // The tag goes off all threads.
+  app.delete("/api/tags/:tag", async (c) => {
+    const project = c.get("project")
+    const { key } = await ownTag(c)
+    await db.batch(
+      [
+        sql(`delete from thread_tags where key = ? and ${inProject}`, key, project.id),
+        sql("delete from tags where project = ? and key = ?", project.id, key),
+        bump(project.id),
+      ],
+      "write",
+    )
+    return c.json({ tags: await allTags(project) })
   })
 
   // Anyone in the project adds and removes tags, like reactions: one tag at a time, so two people at the same time
@@ -876,7 +940,7 @@ export function createApp(options: AppOptions) {
     createMiddleware<Env>(async (c) => {
       const user = c.get("user")
       const row = await findThread(c, c.req.param("id") ?? "")
-      const key = tagKey(decodeURIComponent(c.req.param("tag") ?? ""))
+      const key = tagKey(c.req.param("tag") ?? "")
       if (add && !(await hasTag(c.get("project"), key))) throw new HTTPException(400, { message: "Unknown tag" })
       await db.batch(
         [

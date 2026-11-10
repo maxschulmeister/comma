@@ -92,6 +92,16 @@ describe("new tags", () => {
     expect(other.json.tags).toEqual(DEFAULT_TAGS)
   })
 
+  test("a name with % works in the URL", async () => {
+    const s = await setup()
+    const { author, thread } = await withThread(s)
+    await s.request("POST", "/api/tags", { token: author.token, body: { name: "100% done", color: "green" } })
+    const path = `/api/threads/${thread.id}/tags/${encodeURIComponent("100% done")}`
+    const res = await s.request("PUT", path, { token: author.token })
+    expect(res.status).toBe(200)
+    expect(res.json.thread.tags).toEqual(["100% done"])
+  })
+
   test("a name that the project has, in any case, is taken", async () => {
     const s = await setup()
     const { token } = await s.guest("Ada")
@@ -120,6 +130,58 @@ describe("new tags", () => {
     expect((await make("One")).status).toBe(200)
     expect((await make("Two")).status).toBe(200)
     expect((await make("Three")).status).toBe(429)
+  })
+})
+
+describe("change and delete tags", () => {
+  async function withTaggedThread() {
+    const s = await setup()
+    const { author, thread } = await withThread(s)
+    await s.request("POST", "/api/tags", { token: author.token, body: { name: "Perf", color: "teal" } })
+    await s.request("PUT", `/api/threads/${thread.id}/tags/Perf`, { token: author.token })
+    await s.request("PUT", `/api/threads/${thread.id}/tags/Bug`, { token: author.token })
+    const tagsOf = async () =>
+      (await s.request("GET", "/api/threads", { token: author.token })).json.threads[0].tags as string[]
+    return { s, author, thread, tagsOf }
+  }
+
+  test("the creator renames a tag and changes its color; threads keep it", async () => {
+    const { s, author, tagsOf } = await withTaggedThread()
+    const change = (tag: string, body: unknown) => s.request("PATCH", `/api/tags/${tag}`, { token: author.token, body })
+    const renamed = await change("perf", { name: "Speed", color: "blue" })
+    expect(renamed.status).toBe(200)
+    expect(renamed.json.tags.at(-1)).toEqual({ name: "Speed", color: "blue", createdBy: author.user.id })
+    expect(await tagsOf()).toEqual(["Bug", "Speed"])
+    // Only the case: the same tag.
+    expect((await change("Speed", { name: "speed" })).status).toBe(200)
+    expect(await tagsOf()).toEqual(["Bug", "speed"])
+    expect((await change("speed", { name: "BUG" })).status).toBe(409)
+    expect((await change("Nothing", { color: "red" })).status).toBe(404)
+  })
+
+  test("the creator deletes a tag: it goes off all threads", async () => {
+    const { s, author, tagsOf } = await withTaggedThread()
+    const res = await s.request("DELETE", "/api/tags/Perf", { token: author.token })
+    expect(res.status).toBe(200)
+    expect(res.json.tags).toEqual(DEFAULT_TAGS)
+    expect(await tagsOf()).toEqual(["Bug"])
+    // A new tag with the same name does not come back on the thread.
+    await s.request("POST", "/api/tags", { token: author.token, body: { name: "Perf", color: "teal" } })
+    expect(await tagsOf()).toEqual(["Bug"])
+  })
+
+  test("only the creator or an admin changes a tag; nobody changes the config's tags here", async () => {
+    const { s, tagsOf } = await withTaggedThread()
+    const bob = await s.guest("Bob")
+    expect((await s.request("PATCH", "/api/tags/Perf", { token: bob.token, body: { color: "red" } })).status).toBe(403)
+    expect((await s.request("DELETE", "/api/tags/Perf", { token: bob.token })).status).toBe(403)
+    const admin = await s.appUser({ sub: "admin", name: "Admin", admin: true })
+    expect((await s.request("DELETE", "/api/tags/Bug", { token: admin.token })).status).toBe(403)
+    expect((await s.request("PATCH", "/api/tags/Bug", { token: admin.token, body: { color: "blue" } })).status).toBe(
+      403,
+    )
+    expect((await s.request("DELETE", "/api/tags/Perf", { token: admin.token })).status).toBe(200)
+    expect(await tagsOf()).toEqual(["Bug"])
   })
 })
 

@@ -446,6 +446,26 @@ export async function createTag(name: string, color: TagColor) {
   return res.tag
 }
 
+/**
+ * Changes the name or color of a tag that I made (or any tag that people made, for admins), or deletes it (`null`).
+ * The threads and the panel filter change here at once: the server changes them for all threads.
+ */
+export async function changeTag(tag: Tag, change: { name: string; color: TagColor } | null) {
+  const path = `/api/tags/${encodeURIComponent(tag.name)}`
+  // A change answers with the changed tag. A delete has none.
+  const res = await request<{ tag?: Tag; tags: Tag[] }>(change ? "PATCH" : "DELETE", path, change ?? undefined)
+  const next = res.tag?.name ?? null
+  const was = (name: string) => name.toLowerCase() === tag.name.toLowerCase()
+  const rename = (names: string[]) => names.flatMap((name) => (!was(name) ? [name] : next ? [next] : []))
+  etag = null
+  changes++
+  setState((s) => ({
+    tags: res.tags,
+    threads: s.threads.map((t) => (t.tags.some(was) ? { ...t, tags: rename(t.tags) } : t)),
+    filters: { ...s.filters, tags: rename(s.filters.tags) },
+  }))
+}
+
 /** Adds the tag to the thread, or removes it. */
 export async function setThreadTag(thread: Thread, name: string, on: boolean) {
   const path = `/api/threads/${thread.id}/tags/${encodeURIComponent(name)}`
