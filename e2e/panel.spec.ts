@@ -194,6 +194,34 @@ test("items show their tags; a filter shows threads with any of the chosen tags;
   await expect(items(page)).toContainText("Say it shorter")
 })
 
+test("a tag that someone deletes goes out of my filter", async ({ page }) => {
+  const me = await guestSession("Filterer")
+  const path = testPath("tag-gone")
+  const name = `Temp ${Math.random().toString(36).slice(2, 8)}`
+  const api = await request.newContext()
+  const headers = { origin: SITE, authorization: `Bearer ${me.token}` }
+  expect((await api.post(`${COMMA}/api/tags`, { headers, data: { name, color: "teal" } })).ok()).toBe(true)
+  const tagged = await apiThread(me, path, "Tagged")
+  await apiThread(me, path, "Not tagged")
+  await apiTag(me, tagged, encodeURIComponent(name))
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  await panel(page)
+    .getByRole("button", { name: /^Filter and sort/ })
+    .click()
+  await page.getByRole("menuitemcheckbox", { name }).click()
+  await page.keyboard.press("Escape")
+  await expect(items(page)).toHaveCount(1)
+
+  // Deleted in another tab or by an admin. The next update (window focus) brings the news.
+  expect((await api.delete(`${COMMA}/api/tags/${encodeURIComponent(name)}`, { headers })).ok()).toBe(true)
+  await api.dispose()
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await expect(items(page)).toHaveCount(2)
+  await expect(panel(page).getByRole("button", { name: "Filter and sort" })).toBeVisible()
+})
+
 test("unread first keeps its order while I read: ↓ goes on to the next unread thread", async ({ page }) => {
   const other = await guestSession("Other")
   const me = await guestSession("Reader")

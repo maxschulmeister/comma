@@ -7,59 +7,43 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { sameName } from "@/lib/format"
 import { useStore } from "@/store"
 import type { Tag, TagColor, Thread } from "@/types"
 import { notify } from "./notices"
 
-// Full class names, so Tailwind finds them. Text on its tint: 4.5:1 or more.
-const PILL: Record<TagColor, string> = {
-  gray: "bg-neutral-100 text-neutral-700",
-  red: "bg-red-100 text-red-800",
-  orange: "bg-orange-100 text-orange-800",
-  amber: "bg-amber-100 text-amber-800",
-  green: "bg-green-100 text-green-800",
-  teal: "bg-teal-100 text-teal-800",
-  blue: "bg-blue-100 text-blue-800",
-  violet: "bg-violet-100 text-violet-800",
-  pink: "bg-pink-100 text-pink-800",
+// In the order of the swatches. Gray last: a new tag gets a color that few tags have (see TagButton).
+// Full class names, so Tailwind finds them. Pill text on its tint: 4.5:1 or more.
+const STYLES: Record<TagColor, { pill: string; dot: string }> = {
+  red: { pill: "bg-red-100 text-red-800", dot: "bg-red-500" },
+  orange: { pill: "bg-orange-100 text-orange-800", dot: "bg-orange-500" },
+  amber: { pill: "bg-amber-100 text-amber-800", dot: "bg-amber-500" },
+  green: { pill: "bg-green-100 text-green-800", dot: "bg-green-500" },
+  teal: { pill: "bg-teal-100 text-teal-800", dot: "bg-teal-500" },
+  blue: { pill: "bg-blue-100 text-blue-800", dot: "bg-blue-500" },
+  violet: { pill: "bg-violet-100 text-violet-800", dot: "bg-violet-500" },
+  pink: { pill: "bg-pink-100 text-pink-800", dot: "bg-pink-500" },
+  gray: { pill: "bg-neutral-100 text-neutral-700", dot: "bg-neutral-500" },
 }
-
-export const DOT: Record<TagColor, string> = {
-  gray: "bg-neutral-500",
-  red: "bg-red-500",
-  orange: "bg-orange-500",
-  amber: "bg-amber-500",
-  green: "bg-green-500",
-  teal: "bg-teal-500",
-  blue: "bg-blue-500",
-  violet: "bg-violet-500",
-  pink: "bg-pink-500",
-}
-
-// The order of the swatches. Gray last: a new tag gets a color that few tags have (see TagButton).
-const COLORS: TagColor[] = ["red", "orange", "amber", "green", "teal", "blue", "violet", "pink", "gray"]
+const COLORS = Object.keys(STYLES) as TagColor[]
+export const tagDot = (color: TagColor) => STYLES[color].dot
 const colorName = (color: TagColor) => color[0].toUpperCase() + color.slice(1)
 
 // The same as the server's limit.
 const MAX_NAME = 32
-
-export const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
 /** The color of a tag of the project. Gray if the project does not have it. */
 function useTagColor(name: string): TagColor {
   return useStore((s) => s.tags.find((t) => sameName(t.name, name))?.color ?? "gray")
 }
 
-export function TagPill({ name, className }: { name: string; className?: string }) {
+export function TagPill({ name }: { name: string }) {
   const color = useTagColor(name)
   return (
+    // A block, not flex: the ellipsis of a long name shows.
     <span
       data-slot="tag"
-      className={cn(
-        "inline-flex h-5 max-w-40 items-center truncate rounded-full px-2 font-medium text-xs",
-        PILL[color],
-        className,
-      )}
+      className={cn("inline-block h-5 max-w-40 truncate rounded-full px-2 font-medium text-xs/5", STYLES[color].pill)}
     >
       {name}
     </span>
@@ -95,7 +79,7 @@ function ColorPicker({ value, onChange }: { value: TagColor; onChange: (color: T
           onChange={() => onChange(c)}
           className={cn(
             "size-4 cursor-pointer appearance-none rounded-full outline-none ring-offset-2 ring-offset-popover checked:ring-2 checked:ring-foreground focus-visible:ring-2 focus-visible:ring-ring",
-            DOT[c],
+            tagDot(c),
           )}
         />
       ))}
@@ -111,11 +95,11 @@ export function TagButton({ thread }: { thread: Thread }) {
   const [color, setColor] = useState<TagColor | null>(null)
   const [editing, setEditing] = useState<Tag | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
-  const name = query.trim()
-  const q = name.toLowerCase()
+  const typed = query.trim()
+  const q = typed.toLowerCase()
   const shown = tags.filter((t) => t.name.toLowerCase().includes(q))
   const has = (name: string) => thread.tags.some((n) => sameName(n, name))
-  const canCreate = name.length > 0 && name.length <= MAX_NAME && !tags.some((t) => sameName(t.name, name))
+  const canCreate = typed.length > 0 && typed.length <= MAX_NAME && !tags.some((t) => sameName(t.name, typed))
   // The tags that people made: their creator and admins change them. The config's tags change in the config.
   const canEdit = (tag: Tag) => !!tag.createdBy && (tag.createdBy === me?.id || !!me?.isAdmin)
   // Unless the person chooses: the color that the fewest tags have.
@@ -127,7 +111,7 @@ export function TagButton({ thread }: { thread: Thread }) {
 
   const create = async () => {
     try {
-      const tag = await createTag(name, newColor)
+      const tag = await createTag(typed, newColor)
       setQuery("")
       setColor(null)
       searchRef.current?.focus()
@@ -178,7 +162,7 @@ export function TagButton({ thread }: { thread: Thread }) {
                 onKeyDown={(e) => {
                   if (e.key !== "Enter") return
                   e.preventDefault()
-                  const match = shown.find((t) => sameName(t.name, name)) ?? shown[0]
+                  const match = shown.find((t) => sameName(t.name, typed)) ?? shown[0]
                   if (match) void toggle(match.name)
                   else if (canCreate) void create()
                 }}
@@ -196,7 +180,7 @@ export function TagButton({ thread }: { thread: Thread }) {
                     )}
                     onClick={() => void toggle(tag.name)}
                   >
-                    <span aria-hidden className={cn("size-2.5 shrink-0 rounded-full", DOT[tag.color])} />
+                    <span aria-hidden className={cn("size-2.5 shrink-0 rounded-full", tagDot(tag.color))} />
                     <span className="flex-1 truncate">{tag.name}</span>
                     {has(tag.name) && <CheckIcon className="shrink-0" />}
                   </button>
@@ -220,7 +204,7 @@ export function TagButton({ thread }: { thread: Thread }) {
               <div className="flex flex-col gap-1 border-t pt-1">
                 <ColorPicker value={newColor} onChange={setColor} />
                 <Button variant="ghost" size="sm" className="justify-start" onClick={() => void create()}>
-                  <span className="truncate">Create “{name}”</span>
+                  <span className="truncate">Create “{typed}”</span>
                 </Button>
               </div>
             )}

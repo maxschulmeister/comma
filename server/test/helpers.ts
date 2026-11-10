@@ -122,6 +122,14 @@ export function appToken_(claims: Json, secret = "acme-secret") {
   return sign({ exp: Math.floor(Date.now() / 1000) + 120, ...claims }, secret, "HS256")
 }
 
+/** A guest makes a thread on /pricing. */
+export async function withThread(s: Awaited<ReturnType<typeof setup>>, body: unknown = text("First")) {
+  const author = await s.guest("Author")
+  const res = await s.request("POST", "/api/threads", { token: author.token, body: { page: "/pricing", anchor, body } })
+  if (res.status !== 200) throw new Error(`thread failed: ${res.status} ${res.text}`)
+  return { author, thread: res.json.thread }
+}
+
 export const text = (s: string) => ({
   type: "doc",
   content: [{ type: "paragraph", content: [{ type: "text", text: s }] }],

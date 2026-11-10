@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { anchor, config, setup, text } from "./helpers"
+import { config, setup, withThread } from "./helpers"
 
 const DEFAULT_TAGS = [
   { name: "Bug", color: "red", createdBy: null },
@@ -9,16 +9,6 @@ const DEFAULT_TAGS = [
   { name: "Question", color: "amber", createdBy: null },
   { name: "Idea", color: "green", createdBy: null },
 ]
-
-async function withThread(s: Awaited<ReturnType<typeof setup>>) {
-  const author = await s.guest("Author")
-  const res = await s.request("POST", "/api/threads", {
-    token: author.token,
-    body: { page: "/pricing", anchor, body: text("First") },
-  })
-  expect(res.status).toBe(200)
-  return { author, thread: res.json.thread }
-}
 
 describe("tags on threads", () => {
   test("anyone adds and removes tags; case does not matter; others see the change", async () => {
@@ -62,6 +52,8 @@ describe("tags on threads", () => {
     const s = await setup()
     const { author, thread } = await withThread(s)
     await s.request("PUT", `/api/threads/${thread.id}/tags/Bug`, { token: author.token })
+    // Remote databases may not keep foreign keys: the app deletes the rows itself.
+    await s.db.execute("pragma foreign_keys = off")
     expect((await s.request("DELETE", `/api/threads/${thread.id}`, { token: author.token })).status).toBe(200)
     const rows = await s.db.execute("select * from thread_tags")
     expect(rows.rows).toHaveLength(0)

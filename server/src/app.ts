@@ -24,7 +24,7 @@ import type { FileStore } from "./files"
 import { MAX_IMAGE_BYTES, readImage } from "./images"
 import { popupRoutes } from "./popup"
 import { takeLimit } from "./rate-limit"
-import { customTagsSql, projectTags, type TagRow, TagSchema, tagKey } from "./tags"
+import { CUSTOM_TAGS, projectTags, type TagRow, TagSchema, tagKey } from "./tags"
 import { getCommentRow, getThreadRow, isFirstComment, loadThreads, type Scope } from "./threads"
 import { widgetRoutes } from "./widget"
 
@@ -140,7 +140,7 @@ const UpdateThread = z.union([
   z.object({ page: Page, anchor: AnchorSchema }),
   z.object({ assignee: z.string().max(100).nullable() }),
 ])
-const TagChange = z.object({ name: TagSchema.shape.name.optional(), color: TagSchema.shape.color.optional() })
+const TagChange = TagSchema.partial()
 const CreateComment = z.object({ body: z.unknown(), files: FileIds })
 const UpdateComment = z.object({ body: z.unknown() })
 const Read = z.object({ read: z.boolean() })
@@ -837,11 +837,10 @@ export function createApp(options: AppOptions) {
   })
 
   const inConfig = (project: Project, key: string) => project.tags.some((t) => tagKey(t.name) === key)
-  const customTag = (project: Project, key: string) =>
-    get<TagRow>(db, "select name, color, created_by from tags where project = ? and key = ?", project.id, key)
+  const customTag = (project: Project, key: string) => get<TagRow>(db, `${CUSTOM_TAGS} and key = ?`, project.id, key)
   const hasTag = async (project: Project, key: string) => inConfig(project, key) || !!(await customTag(project, key))
   const allTags = async (project: Project) =>
-    projectTags(project.tags, (await db.execute(customTagsSql(project.id))).rows as unknown as TagRow[])
+    projectTags(project.tags, await all<TagRow>(db, `${CUSTOM_TAGS} order by key`, project.id))
   const tagTaken = () => new HTTPException(409, { message: "A tag with this name exists" })
   // The tags of the threads of the project.
   const inProject = "thread_id in (select id from threads where project = ?)"

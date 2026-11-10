@@ -28,7 +28,7 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Kbd } from "@/components/ui/kbd"
 import { shortText } from "@/lib/describe"
-import { plural, timeAgo } from "@/lib/format"
+import { plural, sameName, timeAgo } from "@/lib/format"
 import { NARROW, reducedMotion, useMedia } from "@/lib/media"
 import { pageBox, resolvedElement, useResolved } from "@/live"
 import { type Filters, getState, type PanelSide, type State, setState, useStore } from "@/store"
@@ -37,7 +37,7 @@ import { closeDetails, openDetails } from "./details-state"
 import { focusOpenThread, openThread, panelElements, setPanelElement } from "./pins"
 import { setCommentMode } from "./shortcuts"
 import { SignInForm } from "./sign-in"
-import { DOT, sameName, TagPill } from "./tags"
+import { TagPill, tagDot } from "./tags"
 import { threadLink } from "./thread"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
@@ -531,7 +531,7 @@ function PanelContent() {
                           })
                         }
                       >
-                        <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[tag.color])} />
+                        <span aria-hidden className={cn("size-2 shrink-0 rounded-full", tagDot(tag.color))} />
                         <span className="truncate">{tag.name}</span>
                       </DropdownMenuCheckboxItem>
                     ))}

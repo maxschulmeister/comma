@@ -1,7 +1,7 @@
 // Reads threads with their comments, reactions, files and read state, in the shape the widget uses.
 import { publicUser, type User, type UserRow } from "./auth"
 import { all, type Db, get, sql } from "./db"
-import { customTagsSql, projectTags, type TagInput, type TagRow, tagKey } from "./tags"
+import { CUSTOM_TAGS, projectTags, type TagInput, type TagRow, tagKey } from "./tags"
 
 type ThreadRow = {
   id: string
@@ -139,7 +139,7 @@ export async function loadThreads(db: Db, scope: Scope, me: UserRow, configTags:
         `select tt.thread_id, tt.key from thread_tags tt join threads t on t.id = tt.thread_id where ${where}`,
         ...args,
       ),
-      customTagsSql(scope.project),
+      sql(`${CUSTOM_TAGS} order by key`, scope.project),
     ],
     "read",
   )

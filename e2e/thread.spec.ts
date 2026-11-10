@@ -638,9 +638,9 @@ test("the creator changes and deletes a tag; the config's tags have no edit butt
   await picker.getByRole("radio", { name: "Blue" }).check()
   await picker.getByRole("button", { name: "Save" }).click()
   await expect(pills).toHaveText([`New ${id}`])
-  await expect(pills.locator("[data-slot=tag]")).toHaveClass(/bg-blue-100/)
 
   await picker.getByRole("button", { name: `Edit New ${id}` }).click()
+  await expect(picker.getByRole("radio", { name: "Blue" })).toBeChecked()
   await picker.getByRole("button", { name: "Delete", exact: true }).click()
   await picker.getByRole("button", { name: "Delete tag" }).click()
   await expect(thread.getByRole("list", { name: "Tags" })).toHaveCount(0)

@@ -2,7 +2,8 @@
 import type { Anchor } from "./anchor"
 import { clearDrafts } from "./drafts"
 import type { PageContext } from "./lib/env"
-import { getState, type ProjectInfo, setState, subscribe } from "./store"
+import { sameName } from "./lib/format"
+import { getState, type ProjectInfo, type State, setState, subscribe } from "./store"
 import type { Comment, FileRef, Session, Tag, TagColor, Thread, ThreadResult, User } from "./types"
 
 export class ApiError extends Error {
@@ -289,7 +290,7 @@ export function refresh(): Promise<void> {
         setState({
           threads,
           users: data.users,
-          tags: data.tags,
+          ...withTags(getState(), data.tags),
           loaded: true,
           loadFailed: false,
           session: session && { ...session, user: data.me },
@@ -380,7 +381,7 @@ function applyThread({ thread, users, tags }: ThreadResult, readAnswer?: number)
     return {
       threads: current ? s.threads.map((t) => (t.id === thread.id ? next : t)) : [...s.threads, next],
       users: { ...s.users, ...users },
-      tags,
+      ...withTags(s, tags),
     }
   })
   return thread
@@ -437,6 +438,15 @@ export async function setAssignee(thread: Thread, assignee: string | null) {
   return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { assignee }))
 }
 
+/**
+ * The tags of the project, from the server. The panel filter keeps only the names that the project still has: another
+ * person can rename or delete a tag.
+ */
+function withTags(s: State, tags: Tag[]): Partial<State> {
+  const kept = s.filters.tags.filter((f) => tags.some((t) => sameName(t.name, f)))
+  return kept.length === s.filters.tags.length ? { tags } : { tags, filters: { ...s.filters, tags: kept } }
+}
+
 /** Makes a tag for the project. */
 export async function createTag(name: string, color: TagColor) {
   const res = await request<{ tag: Tag; tags: Tag[] }>("POST", "/api/tags", { name, color })
@@ -452,10 +462,9 @@ export async function createTag(name: string, color: TagColor) {
  */
 export async function changeTag(tag: Tag, change: { name: string; color: TagColor } | null) {
   const path = `/api/tags/${encodeURIComponent(tag.name)}`
-  // A change answers with the changed tag. A delete has none.
-  const res = await request<{ tag?: Tag; tags: Tag[] }>(change ? "PATCH" : "DELETE", path, change ?? undefined)
-  const next = res.tag?.name ?? null
-  const was = (name: string) => name.toLowerCase() === tag.name.toLowerCase()
+  const res = await request<{ tags: Tag[] }>(change ? "PATCH" : "DELETE", path, change ?? undefined)
+  const next = change?.name
+  const was = (name: string) => sameName(name, tag.name)
   const rename = (names: string[]) => names.flatMap((name) => (!was(name) ? [name] : next ? [next] : []))
   etag = null
   changes++

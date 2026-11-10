@@ -1,7 +1,6 @@
 // Tags on threads ("Bug", "Content"). The project config names some (or comma's defaults). People make more.
 // A tag is its name: case does not matter, so "bug" and "Bug" are one tag.
 import { z } from "zod"
-import { sql } from "./db"
 
 /** The widget maps each color to Tailwind colors (see widget/src/ui/tags.tsx). */
 export const TAG_COLORS = ["gray", "red", "orange", "amber", "green", "teal", "blue", "violet", "pink"] as const
@@ -35,9 +34,8 @@ export const tagKey = (name: string) => name.trim().toLowerCase()
 
 export type TagRow = { name: string; color: TagInput["color"]; created_by: string }
 
-/** The tags that people made in the project, in the order of their names. */
-export const customTagsSql = (project: string) =>
-  sql("select name, color, created_by from tags where project = ? order by key", project)
+/** The tags that people made in a project (`?`). */
+export const CUSTOM_TAGS = "select name, color, created_by from tags where project = ?"
 
 /**
  * All tags of the project: the config's first, then the ones that people made. A tag that the config has too (added

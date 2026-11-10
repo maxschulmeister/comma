@@ -1,14 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createClient } from "@libsql/client"
 import { migrate } from "../src/db"
-import { anchor, OPEN, OTHER, setup, text } from "./helpers"
-
-async function withThread(s: Awaited<ReturnType<typeof setup>>, body = text("First")) {
-  const author = await s.guest("Author")
-  const res = await s.request("POST", "/api/threads", { token: author.token, body: { page: "/pricing", anchor, body } })
-  expect(res.status).toBe(200)
-  return { author, thread: res.json.thread }
-}
+import { anchor, OPEN, OTHER, setup, text, withThread } from "./helpers"
 
 describe("threads and comments", () => {
   test("a user creates a thread, another user replies, both see it", async () => {
