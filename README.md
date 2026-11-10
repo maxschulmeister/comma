@@ -12,6 +12,7 @@ Comments pinned to any website. One script tag. Your own service.
 - Unsent comments stay on their pin, also after a reload.
 - A panel with all comments of the site. Search, filters, keyboard navigation.
 - Pins stay on their element when the page changes. If comma cannot find the element, the thread says "Element not found" and what it was on. It never moves to a wrong element.
+- Coding agents fix the comments, with no setup: tell your agent "fix the open comma comments" (see [Fix comments with a coding agent](#fix-comments-with-a-coding-agent)).
 
 ## Why comma
 
@@ -269,6 +270,18 @@ Each comma server needs its own Slack app. Slack sends people back only to addre
    ```
 
 Only people of that workspace can sign in. Their name, email and picture come from Slack.
+
+## Fix comments with a coding agent
+
+A coding agent (Claude Code, Codex, Cursor, pi…) works on the comments in your repo. It needs no setup, no MCP server and no API key.
+
+1. Tell the agent: "Fix the open comma comments". Add a page or a site if you like: "… on /pricing", "… on staging".
+2. The agent finds the script tag in your repo and reads `/llms.txt` on your comma server. Then it opens a link in your browser.
+3. The link opens your site, where you see the comments. comma asks: "Allow your agent?" Check that the code is the same as the code that the agent shows, then click **Allow**. If the comments are on more than one site, you choose the site first.
+4. The agent reads the open comments: the page, the element, its CSS selector, the screenshot and the replies. It changes the code, and can reply in the thread as you.
+5. You check the change on the site and resolve the thread.
+
+The agent acts as you, on the site where you allowed it. It can read comments and reply. It cannot resolve, edit or delete. Its access ends after 24 hours, or when you sign out. With `scope: "origin"`, it sees only the comments of that site.
 
 ## Keyboard
 
