@@ -226,6 +226,8 @@ describe("agent threads", () => {
       body: { body: text("And use the brand color"), files: [image] },
     })
     await t.request("PATCH", `/api/threads/${thread.id}`, { token: ada.token, body: { assignee: bob.user.id } })
+    await t.request("PUT", `/api/threads/${thread.id}/tags/Content`, { token: ada.token })
+    await t.request("PUT", `/api/threads/${thread.id}/tags/Bug`, { token: ada.token })
     const old = await t.request("POST", "/api/threads", {
       token: ada.token,
       body: { page: "/", anchor, body: text("Done long ago") },
@@ -260,6 +262,7 @@ describe("agent threads", () => {
         "- Window: 1440 × 900 at 2×, Chrome on macOS, dark theme",
         `- Screenshot: http://comma.test/files/${shot}`,
         "- Assigned to: Bob",
+        "- Tags: Bug, Content",
         `- Link: https://acme.test/pricing#comma=${thread.id}`,
         "",
         "Ada, 2026-05-02 14:03 UTC:",
