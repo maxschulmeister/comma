@@ -214,6 +214,18 @@ describe("project tags", () => {
     ).toEqual([])
   })
 
+  test("a tag of the config hides a tag that people made with the same name", async () => {
+    const s = await setup()
+    const { token } = await s.guest("Ada")
+    await s.request("POST", "/api/tags", { token, body: { name: "perf", color: "teal" } })
+    // The admin adds it to the config later. Same database, new config.
+    const tags = [{ name: "Perf", color: "red" as const }]
+    const later = await setup({ db: s.db, config: { projects: [{ ...config.projects[0], tags }] } })
+    expect((await later.request("GET", "/api/threads", { token })).json.tags).toEqual([
+      { name: "Perf", color: "red", createdBy: null },
+    ])
+  })
+
   test("the config accepts only the tag colors and one tag for each name", async () => {
     const project = config.projects[0]
     const crimson = { ...project, tags: [{ name: "Perf", color: "crimson" }] }

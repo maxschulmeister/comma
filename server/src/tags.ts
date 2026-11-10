@@ -3,7 +3,7 @@
 import { z } from "zod"
 import { sql } from "./db"
 
-/** The widget maps each color to Tailwind colors for the light and dark theme. */
+/** The widget maps each color to Tailwind colors (see widget/src/ui/tags.tsx). */
 export const TAG_COLORS = ["gray", "red", "orange", "amber", "green", "teal", "blue", "violet", "pink"] as const
 
 export const TagSchema = z.object({
@@ -39,8 +39,16 @@ export type TagRow = { name: string; color: TagInput["color"]; created_by: strin
 export const customTagsSql = (project: string) =>
   sql("select name, color, created_by from tags where project = ? order by key", project)
 
-/** All tags of the project: the config's first, then the ones that people made. */
-export const projectTags = (configTags: TagInput[], rows: TagRow[]): Tag[] => [
-  ...configTags.map((t) => ({ ...t, createdBy: null })),
-  ...rows.map((r) => ({ name: r.name, color: r.color, createdBy: r.created_by })),
-]
+/**
+ * All tags of the project: the config's first, then the ones that people made. A tag that the config has too (added
+ * to the config later) is the config's.
+ */
+export function projectTags(configTags: TagInput[], rows: TagRow[]): Tag[] {
+  const inConfig = new Set(configTags.map((t) => tagKey(t.name)))
+  return [
+    ...configTags.map((t) => ({ ...t, createdBy: null })),
+    ...rows
+      .filter((r) => !inConfig.has(tagKey(r.name)))
+      .map((r) => ({ name: r.name, color: r.color, createdBy: r.created_by })),
+  ]
+}
