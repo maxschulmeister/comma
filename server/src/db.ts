@@ -104,6 +104,21 @@ create table if not exists versions (
   project text primary key,
   version integer not null
 );
+
+-- A coding agent asks to connect (see agent.ts). A person allows it in the widget: then user_id is set.
+create table if not exists agent_connects (
+  -- Shown to the person and the agent, so the person can see that the request is from their agent.
+  code text primary key,
+  -- Only the agent knows it. It gets the token with it.
+  secret text not null unique,
+  project text not null,
+  -- The host that the agent asked for. When the person allows: the host where they allowed.
+  site text,
+  user_id text references users (id),
+  session_id text,
+  created_at integer not null,
+  expires_at integer not null
+);
 `
 
 /** Makes the tables. Files also get WAL and foreign keys. Remote databases may not keep pragmas, so the app

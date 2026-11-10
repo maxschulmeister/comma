@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { anchor, appToken_, OPEN, setup, text } from "./helpers"
+import { anchor, appToken_, OPEN, PNG, setup, text, upload } from "./helpers"
 
 const mention = (id: string, label: string, before = "Hi ") => ({
   type: "doc",
@@ -167,23 +167,6 @@ describe("ETag", () => {
     expect(res.status).toBe(200)
   })
 })
-
-// A 2×3 PNG.
-const PNG = Uint8Array.from(
-  atob("iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAYAAAC56t6BAAAAEklEQVR42mP8z8DwnwEIGHEIAD0KBf+0cY5MAAAAAElFTkSuQmCC"),
-  (c) => c.charCodeAt(0),
-)
-
-async function upload(
-  s: Awaited<ReturnType<typeof setup>>,
-  token: string,
-  bytes: Uint8Array<ArrayBuffer> = PNG,
-  name = "a.png",
-) {
-  const form = new FormData()
-  form.set("file", new File([bytes], name, { type: "image/png" }))
-  return s.request("POST", "/api/files", { token, body: form })
-}
 
 describe("files", () => {
   test("an uploaded image is attached to a comment and served", async () => {

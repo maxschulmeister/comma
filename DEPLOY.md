@@ -180,7 +180,7 @@ Before you start: `aws sts get-caller-identity` works, and `zip` is installed. M
    It prints the Function URL. Later deploys keep the parameters that are not given: `STACK=… AWS_REGION=… scripts/deploy-lambda.sh`.
 
 4. Set `PublicUrl` to the Function URL or the custom domain: `… scripts/deploy-lambda.sh --parameter-overrides PublicUrl=https://…`. Only Slack sign-in needs it.
-5. Custom domain: Function URLs do not take one. Put CloudFront in front, with an ACM certificate in `us-east-1`. Forward all headers except `Host`, and do not cache `/api/*`. Or use the Function URL as the address.
+5. Custom domain: Function URLs do not take one. Put CloudFront in front, with an ACM certificate in `us-east-1`. Forward all headers except `Host`, and do not cache `/api/*`, `/agent/*` and `/connect/*`. Or use the Function URL as the address.
 6. Run the [checks](#checks). Logs: `aws logs tail /aws/lambda/<function name> --follow` (the stack output `FunctionName`).
 
 Notes:

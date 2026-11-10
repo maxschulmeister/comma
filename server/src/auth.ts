@@ -54,6 +54,8 @@ export async function startSession(db: Db, secret: string, user: UserRow, now: n
 export async function verifySession(secret: string, token: string) {
   try {
     const payload = await verify(token, secret, "HS256")
+    // Other tokens of comma have a type (agent, hand-over). They are not sessions.
+    if (payload.typ !== undefined) return null
     if (typeof payload.sub !== "string" || typeof payload.sid !== "string" || typeof payload.prj !== "string")
       return null
     return { userId: payload.sub, sessionId: payload.sid, project: payload.prj }

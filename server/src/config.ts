@@ -87,5 +87,8 @@ function matches(pattern: string, origin: string) {
 export const allowsOrigin = (project: Project, origin: string) => project.origins.some((o) => matches(o, origin))
 
 /** True if the host (`www.acme.com`) is a site of the project, with any scheme. */
-export const allowsHost = (project: Project, host: string) =>
-  project.origins.some((o) => matches(o, `${o.split("://")[0]}://${host}`))
+export const allowsHost = (project: Project, host: string) => !!originOf(project, host)
+
+/** The origin of a host of the project: `www.acme.com` → `https://www.acme.com`. undefined: not a site of it. */
+export const originOf = (project: Project, host: string) =>
+  project.origins.map((o) => `${o.split("://")[0]}://${host}`).find((o, i) => matches(project.origins[i] as string, o))
