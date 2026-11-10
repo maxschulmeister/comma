@@ -50,6 +50,8 @@ export type State = {
   revealed: boolean
   /** Thread in the URL hash (#comma=<id>) that opens after sign-in and load. */
   pendingLink: string | null
+  /** A coding agent asks to connect (#comma-connect=<code>): the person allows it or not (see agent-connect.tsx). */
+  agentCode: string | null
   session: Session | null
   loaded: boolean
   /** The last load of the threads did not reach comma. */

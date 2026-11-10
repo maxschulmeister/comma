@@ -3,6 +3,7 @@ import { createMiddleware } from "hono/factory"
 import { HTTPException } from "hono/http-exception"
 import { sign, verify } from "hono/jwt"
 import { z } from "zod"
+import { connectLink, connectPage, llmsTxt, newCode, textBody, threadsMarkdown } from "./agent"
 import {
   appUserClaims,
   type Claims,
@@ -10,13 +11,14 @@ import {
   getSessionUser,
   newId,
   publicUser,
+  randomToken,
   startSession,
   type UserRow,
   upsertAppUser,
   verifySession,
 } from "./auth"
-import { parseBody } from "./body"
-import { allowsHost, allowsOrigin, type Config, ConfigSchema, type Project } from "./config"
+import { MAX_BODY_BYTES, parseBody } from "./body"
+import { allowsHost, allowsOrigin, type Config, ConfigSchema, originOf, type Project } from "./config"
 import { all, type Db, get, run, sql } from "./db"
 import type { FileStore } from "./files"
 import { MAX_IMAGE_BYTES, readImage } from "./images"
@@ -49,6 +51,21 @@ const MAX_FILES = 5
 const UNUSED_FILE_MS = 24 * HOUR_MS
 // Images that no comment uses yet, per project. New guests cannot get around it.
 const MAX_UNUSED_BYTES = 200 * 1024 * 1024
+// A coding agent: the person allows it within 10 minutes. Its token works for a day.
+const CONNECT_MS = 10 * 60 * 1000
+const AGENT_TOKEN_SECONDS = 24 * 60 * 60
+// Anyone can ask to connect: a limit for each project, like new guests.
+const CONNECTS_PER_HOUR = 60
+
+type ConnectRow = {
+  code: string
+  secret: string
+  project: string
+  site: string | null
+  user_id: string | null
+  session_id: string | null
+  expires_at: number
+}
 
 const Point = z.object({ x: z.number().finite(), y: z.number().finite() })
 const AnchorSchema = z
@@ -81,6 +98,8 @@ const AnchorSchema = z
     viewport: z.number().int().min(0).max(100_000),
   })
   .refine((a) => !!a.point !== !!a.rect, "An anchor has a point or a rect")
+/** Where a comment is on the page. */
+export type Anchor = z.infer<typeof AnchorSchema>
 const Page = z
   .string()
   .max(2000)
@@ -103,6 +122,9 @@ const PageContext = z.object({
     .optional(),
 })
 
+/** Where a comment was made. */
+export type PageContext = z.infer<typeof PageContext>
+
 const CreateThread = z.object({
   page: Page,
   anchor: AnchorSchema,
@@ -120,6 +142,15 @@ const UpdateThread = z.union([
 const CreateComment = z.object({ body: z.unknown(), files: FileIds })
 const UpdateComment = z.object({ body: z.unknown() })
 const Read = z.object({ read: z.boolean() })
+// The token of a coding agent (see /agent/token).
+const AgentClaims = z.object({
+  typ: z.literal("comma-agent"),
+  sub: z.string(),
+  sid: z.string(),
+  prj: z.string(),
+  site: z.string(),
+  exp: z.number(),
+})
 const Emoji = z
   .string()
   .max(32)
@@ -353,20 +384,29 @@ export function createApp(options: AppOptions) {
     return c.json(await sessionOf(user))
   })
 
-  const auth = createMiddleware<Env>(async (c, next) => {
-    const header = c.req.header("authorization") ?? ""
-    const session = header.startsWith("Bearer ") ? await verifySession(secret, header.slice(7)) : null
+  // A request of a signed-in person: from the widget (auth), or from an agent that acts as them (agentAuth).
+  // `siteOf`: the host of the site, for a valid session.
+  const enter = async (
+    c: Ctx,
+    session: { userId: string; sessionId: string; project: string } | null,
+    siteOf: (project: Project) => string,
+    message: string,
+  ) => {
     const user = session && (await getSessionUser(db, session, now()))
     const project = session && projects.get(session.project)
-    if (!session || !user || !project || user.project !== project.id) {
-      throw new HTTPException(401, { message: "Sign in again" })
-    }
-    const site = checkOrigin(c, project)
+    if (!session || !user || !project || user.project !== project.id) throw new HTTPException(401, { message })
+    const site = siteOf(project)
     c.set("sessionId", session.sessionId)
     c.set("user", user)
     c.set("project", project)
     c.set("site", site)
     c.set("scope", { project: project.id, site: project.scope === "origin" ? site : null })
+  }
+
+  const auth = createMiddleware<Env>(async (c, next) => {
+    const header = c.req.header("authorization") ?? ""
+    const session = header.startsWith("Bearer ") ? await verifySession(secret, header.slice(7)) : null
+    await enter(c, session, (project) => checkOrigin(c, project), "Sign in again")
     await next()
   })
   app.use("/api/*", auth)
@@ -385,6 +425,28 @@ export function createApp(options: AppOptions) {
       throw new HTTPException(403, { message: "Not allowed" })
     const exp = Math.floor(now() / 1000) + 60
     return c.json({ handoff: await sign({ typ: "comma-handoff", sub: user.id, prj: project.id, origin, exp }, secret) })
+  })
+
+  // The person answers a coding agent's request to connect (see /agent/connect).
+  app.post("/api/agent/connect", async (c) => {
+    const input = parse(z.object({ code: z.string().max(20), allow: z.boolean() }), await json(c))
+    const user = c.get("user")
+    // One statement: of two answers at the same time, only one changes the request.
+    const open = "code = ? and project = ? and user_id is null and expires_at > ?"
+    const args = [input.code, user.project, now()]
+    const changed = input.allow
+      ? await run(
+          db,
+          `update agent_connects set user_id = ?, session_id = ?, site = ? where ${open}`,
+          user.id,
+          c.get("sessionId"),
+          c.get("site"),
+          ...args,
+        )
+      : await run(db, `delete from agent_connects where ${open}`, ...args)
+    if (changed === 0)
+      throw new HTTPException(404, { message: "This request expired. Ask the agent to connect again." })
+    return c.json({ ok: true })
   })
 
   app.delete("/api/session", async (c) => {
@@ -457,6 +519,26 @@ export function createApp(options: AppOptions) {
     ...files.map((fileId) => sql("update files set comment_id = ? where id = ? and comment_id is null", id, fileId)),
   ]
 
+  // A reply: the comment, a new revision of the thread, and the thread read for its author.
+  const addReply = async (
+    user: UserRow,
+    threadId: string,
+    parsed: Extract<ReturnType<typeof parseBody>, { body: unknown }>,
+    files: string[],
+  ) => {
+    const id = newId()
+    await db.batch(
+      [
+        ...(await insertComment(user, id, threadId, parsed, files)),
+        touch(threadId),
+        ...markRead(user.id, threadId),
+        bump(user.project),
+      ],
+      "write",
+    )
+    return id
+  }
+
   const thread = async (c: Ctx, id: string) => {
     const result = await loadThreads(db, c.get("scope"), c.get("user"), id)
     return { thread: result.threads[0], users: result.users }
@@ -473,6 +555,160 @@ export function createApp(options: AppOptions) {
     if (!row) throw new HTTPException(404, { message: "Comment not found" })
     return row
   }
+
+  // The address of comma, behind a proxy too.
+  const serverUrl = (c: Context, path = "/") => new URL(path, options.publicUrl ?? c.req.url)
+
+  // Instructions for coding agents. Agents that find comma in the repo look at its address first.
+  const agentDocs = (c: Context) => {
+    c.header("content-type", "text/markdown; charset=utf-8")
+    return c.body(llmsTxt(serverUrl(c).origin))
+  }
+  app.get("/llms.txt", agentDocs)
+  app.get("/", agentDocs)
+
+  // A coding agent asks to connect. The person opens `url` and allows it in the widget (see /api/agent/connect).
+  app.post("/agent/connect", async (c) => {
+    const input = parse(z.object({ project: z.string().max(64), site: z.string().max(2000).optional() }), await json(c))
+    const project = projects.get(input.project)
+    if (!project) throw new HTTPException(404, { message: "Unknown project" })
+    // A host or a URL: `staging.acme.com`, `https://staging.acme.com/pricing`.
+    const site =
+      input.site === undefined
+        ? null
+        : (URL.parse(input.site.includes("://") ? input.site : `https://${input.site}`)?.host ?? "")
+    if (site !== null && !allowsHost(project, site)) {
+      throw new HTTPException(400, { message: "This site is not a site of the project" })
+    }
+    if (!(await limitOk(`connects:${project.id}`, CONNECTS_PER_HOUR)))
+      throw new HTTPException(429, { message: "Too many requests to connect. Try again later." })
+    const code = newCode()
+    const pollSecret = randomToken(32)
+    const expiresAt = now() + CONNECT_MS
+    await run(
+      db,
+      "insert into agent_connects (code, secret, project, site, created_at, expires_at) values (?, ?, ?, ?, ?, ?)",
+      code,
+      pollSecret,
+      project.id,
+      site,
+      now(),
+      expiresAt,
+    )
+    return c.json({ code, url: serverUrl(c, `/connect/${code}`).href, secret: pollSecret, expiresAt })
+  })
+
+  // The person opens this page from the agent. It sends them to the site with the open comments (or the site that
+  // the agent named), where the widget asks them to allow the agent. With more sites, they choose one.
+  app.get("/connect/:code", async (c) => {
+    c.header("cache-control", "no-store")
+    c.header("referrer-policy", "no-referrer")
+    const row = await get<ConnectRow>(
+      db,
+      "select * from agent_connects where code = ? and user_id is null and expires_at > ?",
+      c.req.param("code"),
+      now(),
+    )
+    const project = row && projects.get(row.project)
+    if (!row || !project) return c.html(connectPage(null, []), 404)
+    // The sites with open comments, the most active first, and the page of the newest open comment of each.
+    const rows = await all<{ site: string; open: number; page: string }>(
+      db,
+      `select t.site, count(*) as open,
+         (select n.page from threads n where n.project = t.project and n.site = t.site and n.status = 'open'
+          order by n.created_at desc, n.rowid desc limit 1) as page
+       from threads t where t.project = ? and t.status = 'open' and t.site is not null
+       group by t.site order by max(t.updated_at) desc`,
+      project.id,
+    )
+    const named = row.site ? originOf(project, row.site) : undefined
+    if (named) {
+      const page = rows.find((r) => r.site === row.site)?.page ?? "/"
+      return c.redirect(connectLink(named, page, row.code), 302)
+    }
+    const withComments = rows.flatMap((r) => {
+      const origin = originOf(project, r.site)
+      return origin ? [{ host: r.site, href: connectLink(origin, r.page, row.code), open: r.open }] : []
+    })
+    // No open comments yet: the sites of the project that have one address.
+    const sites = withComments.length
+      ? withComments
+      : project.origins
+          .filter((o) => !o.includes("*"))
+          .map((o) => ({ host: new URL(o).host, href: connectLink(o, "/", row.code), open: 0 }))
+    if (sites.length === 1) return c.redirect(sites[0].href, 302)
+    return c.html(connectPage(row.code, sites))
+  })
+
+  // The agent asks for its token until the person answers.
+  app.post("/agent/token", async (c) => {
+    const input = parse(z.object({ secret: z.string().max(100) }), await json(c))
+    const row = await get<ConnectRow>(
+      db,
+      "select * from agent_connects where secret = ? and expires_at > ?",
+      input.secret,
+      now(),
+    )
+    const gone = new HTTPException(410, { message: "The request expired or the person said no. Connect again." })
+    if (!row) throw gone
+    if (!row.user_id || !row.session_id) return c.json({ status: "pending" }, 202)
+    // One token for each request.
+    if ((await run(db, "delete from agent_connects where code = ?", row.code)) === 0) throw gone
+    const user = await getSessionUser(db, { userId: row.user_id, sessionId: row.session_id }, now())
+    if (!user) throw gone
+    const exp = Math.floor(now() / 1000) + AGENT_TOKEN_SECONDS
+    const token = await sign(
+      { typ: "comma-agent", sub: user.id, sid: row.session_id, prj: row.project, site: row.site, exp },
+      secret,
+      "HS256",
+    )
+    return c.json({ token, site: row.site, user: publicUser(user), expiresAt: exp * 1000 })
+  })
+
+  // The agent acts as the person who allowed it, until the token expires or the person signs out.
+  const agentAuth = createMiddleware<Env>(async (c, next) => {
+    const header = c.req.header("authorization") ?? ""
+    // `exp: false`: the check below uses the app's clock.
+    const payload = header.startsWith("Bearer ")
+      ? await verify(header.slice(7), secret, { alg: "HS256", exp: false }).catch(() => null)
+      : null
+    const claims = AgentClaims.safeParse(payload).data
+    const message = "Connect again (see /llms.txt)"
+    if (!claims || claims.exp * 1000 <= now()) throw new HTTPException(401, { message })
+    await enter(c, { userId: claims.sub, sessionId: claims.sid, project: claims.prj }, () => claims.site, message)
+    await next()
+  })
+  // Also matches /agent/threads.
+  app.use("/agent/threads/*", agentAuth)
+
+  app.get("/agent/threads", async (c) => {
+    const project = c.get("project")
+    const { threads, users } = await loadThreads(db, c.get("scope"), c.get("user"))
+    c.header("content-type", "text/markdown; charset=utf-8")
+    c.header("cache-control", "no-store")
+    return c.body(
+      threadsMarkdown({
+        threads: threads.filter((t) => t.status === "open"),
+        users,
+        me: c.get("user").name,
+        project,
+        origin: originOf(project, c.get("site")) ?? `https://${c.get("site")}`,
+        server: serverUrl(c).origin,
+      }),
+    )
+  })
+
+  // Plain text, like `curl --data-binary "Fixed in a1b2c3"`. Posted as the person.
+  app.post("/agent/threads/:id/reply", async (c) => {
+    const user = c.get("user")
+    const row = await findThread(c, c.req.param("id"))
+    const text = await c.req.text()
+    // Before the paragraphs: a large body makes many objects.
+    if (text.length > MAX_BODY_BYTES) throw new HTTPException(400, { message: "The comment is too long" })
+    const parsed = bodyOf(textBody(text), false)
+    await limit(c)
+    return c.json({ ok: true, id: await addReply(user, row.id, parsed, []) })
+  })
 
   app.get("/api/threads", async (c) => {
     const user = c.get("user")
@@ -625,16 +861,7 @@ export function createApp(options: AppOptions) {
     const files = await claimFiles(user, input.files)
     const parsed = bodyOf(input.body, files.length > 0)
     await limit(c)
-    const id = newId()
-    await db.batch(
-      [
-        ...(await insertComment(user, id, row.id, parsed, files)),
-        touch(row.id),
-        ...markRead(user.id, row.id),
-        bump(user.project),
-      ],
-      "write",
-    )
+    const id = await addReply(user, row.id, parsed, files)
     const result = await thread(c, row.id)
     return c.json({ ...result, comment: result.thread?.comments.find((x) => x.id === id) })
   })
@@ -751,7 +978,7 @@ export function createApp(options: AppOptions) {
     const data = new Uint8Array(await file.arrayBuffer())
     const info = readImage(data)
     if (!info) throw new HTTPException(415, { message: "Use a PNG, JPEG, GIF or WebP image" })
-    const id = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url")
+    const id = randomToken(16)
     // Bytes in the store first: a row always has its bytes.
     if (store) await store.put(id, data, info.mime)
     await run(
@@ -771,9 +998,10 @@ export function createApp(options: AppOptions) {
   })
 
   return Object.assign(app, {
-    /** Deletes uploads that no comment uses after 24 h, and expired sessions. Returns how many of each. */
+    /** Deletes uploads that no comment uses after 24 h, and what expired. Returns how many uploads and sessions. */
     cleanup: async () => {
       const sessions = await run(db, "delete from sessions where expires_at <= ?", now())
+      await run(db, "delete from agent_connects where expires_at <= ?", now())
       await run(db, "delete from limits where window_start < ?", now() - 24 * HOUR_MS)
       const old = await all<{ id: string }>(
         db,

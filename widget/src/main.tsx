@@ -47,6 +47,7 @@ function start({ __queue: queue, __script: script }: Loader) {
     projectInfo: null,
     revealed: new URLSearchParams(location.search).has("comma"),
     pendingLink: null,
+    agentCode: null,
     session: null,
     loaded: false,
     loadFailed: false,

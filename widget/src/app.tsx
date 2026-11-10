@@ -9,8 +9,28 @@ import { Toolbar } from "./ui/toolbar"
 import { detailsMode } from "./ui/view"
 
 const DetailsDialog = lazy(() => import("./ui/details").then((m) => ({ default: m.DetailsDialog })))
+const AgentConnect = lazy(() => import("./ui/agent-connect").then((m) => ({ default: m.AgentConnect })))
 
 const HASH = /^#comma=([\w-]+)$/
+const CONNECT = /^#comma-connect=([A-Z2-9]{4}-[A-Z2-9]{4})$/
+
+/**
+ * A coding agent asks to connect (#comma-connect=<code>): the widget shows, and asks the person. The link goes from the
+ * URL at once, so a reload does not ask again.
+ */
+function useAgentLink() {
+  useEffect(() => {
+    const read = () => {
+      const code = CONNECT.exec(location.hash)?.[1]
+      if (!code) return
+      setState({ agentCode: code, revealed: true })
+      history.replaceState(history.state, "", location.pathname + location.search)
+    }
+    read()
+    window.addEventListener("hashchange", read)
+    return () => window.removeEventListener("hashchange", read)
+  }, [])
+}
 
 /**
  * Opens the thread in the URL hash (#comma=<id>) when it is loaded.
@@ -49,7 +69,9 @@ export function App() {
   const placing = useStore((s) => s.commentMode || !!s.moving)
   const visible = useStore(widgetVisible)
   const dialog = useStore((s) => s.detailsOpen && detailsMode(s) === "dialog")
+  const agentCode = useStore((s) => s.agentCode)
   useDeepLink()
+  useAgentLink()
   return (
     <TooltipProvider delay={400}>
       {placing && <CommentOverlay />}
@@ -59,6 +81,11 @@ export function App() {
       {dialog && (
         <Suspense fallback={null}>
           <DetailsDialog />
+        </Suspense>
+      )}
+      {agentCode && (
+        <Suspense fallback={null}>
+          <AgentConnect key={agentCode} code={agentCode} />
         </Suspense>
       )}
     </TooltipProvider>

@@ -68,7 +68,14 @@ export async function setup(
   async function request(
     method: string,
     path: string,
-    init: { token?: string; body?: unknown; origin?: string | null; headers?: Record<string, string> } = {},
+    init: {
+      token?: string
+      body?: unknown
+      /** A body as it is, like `curl --data-binary`. */
+      raw?: string
+      origin?: string | null
+      headers?: Record<string, string>
+    } = {},
   ) {
     // `origin: null`: no Origin header (a browser sends none on same-origin GET requests).
     const headers: Record<string, string> = {
@@ -77,7 +84,8 @@ export async function setup(
     }
     if (init.token) headers.authorization = `Bearer ${init.token}`
     let body: BodyInit | undefined
-    if (init.body instanceof FormData) body = init.body
+    if (init.raw !== undefined) body = init.raw
+    else if (init.body instanceof FormData) body = init.body
     else if (init.body !== undefined) {
       headers["content-type"] = "application/json"
       body = JSON.stringify(init.body)
@@ -126,4 +134,21 @@ export const anchor = {
   context: "",
   point: { x: 10, y: 50 },
   viewport: 1280,
+}
+
+// A 2×3 PNG.
+export const PNG = Uint8Array.from(
+  atob("iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAYAAAC56t6BAAAAEklEQVR42mP8z8DwnwEIGHEIAD0KBf+0cY5MAAAAAElFTkSuQmCC"),
+  (c) => c.charCodeAt(0),
+)
+
+export async function upload(
+  s: { request: Awaited<ReturnType<typeof setup>>["request"] },
+  token: string,
+  bytes: Uint8Array<ArrayBuffer> = PNG,
+  name = "a.png",
+) {
+  const form = new FormData()
+  form.set("file", new File([bytes], name, { type: "image/png" }))
+  return s.request("POST", "/api/files", { token, body: form })
 }
