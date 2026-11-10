@@ -42,6 +42,8 @@ export type Thread = {
   /** The element when the thread was made. */
   screenshot: FileRef | null
   unread: boolean
+  /** Someone else mentioned me after my last read. */
+  mentioned: boolean
   comments: Comment[]
 }
 
