@@ -50,11 +50,11 @@ test("the person allows the agent, and the agent's reply shows in the thread", a
   const markdown = await (await agent.api.get(`${COMMA}/agent/threads`, { headers: { authorization } })).text()
   expect(markdown).toContain("Make this bigger")
 
-  const { threads } = await (
-    await agent.api.get(`${COMMA}/api/threads`, { headers: { origin: SITE, authorization: `Bearer ${session.token}` } })
-  ).json()
-  const thread = threads.find((t: { page: string }) => t.page === testPath("agent"))
-  const reply = await agent.api.post(`${COMMA}/agent/threads/${thread.id}/reply`, {
+  // Like an agent: the thread id from the markdown, in the section of this test's page.
+  const section = markdown.split("\n## ").find((s) => s.includes(`${SITE}${testPath("agent")}`))
+  const threadId = /- Thread: (\S+)/.exec(section ?? "")?.[1]
+  expect(threadId).toBeTruthy()
+  const reply = await agent.api.post(`${COMMA}/agent/threads/${threadId}/reply`, {
     headers: { authorization },
     data: "Fixed: the title is larger now.",
   })

@@ -90,5 +90,9 @@ export const allowsOrigin = (project: Project, origin: string) => project.origin
 export const allowsHost = (project: Project, host: string) => !!originOf(project, host)
 
 /** The origin of a host of the project: `www.acme.com` → `https://www.acme.com`. undefined: not a site of it. */
-export const originOf = (project: Project, host: string) =>
-  project.origins.map((o) => `${o.split("://")[0]}://${host}`).find((o, i) => matches(project.origins[i] as string, o))
+export function originOf(project: Project, host: string) {
+  for (const pattern of project.origins) {
+    const origin = `${pattern.split("://")[0]}://${host}`
+    if (matches(pattern, origin)) return origin
+  }
+}

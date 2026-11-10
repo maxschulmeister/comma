@@ -35,6 +35,10 @@ const CLOCK_SKEW_SECONDS = 30
 
 export const newId = () => crypto.randomUUID()
 
+/** A random token for URLs: `bytes` random bytes in base64url. */
+export const randomToken = (bytes: number) =>
+  Buffer.from(crypto.getRandomValues(new Uint8Array(bytes))).toString("base64url")
+
 /** Starts a session: a row the server can end (sign-out), and a token that names it. */
 export async function startSession(db: Db, secret: string, user: UserRow, now: number) {
   const id = newId()
