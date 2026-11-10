@@ -1,6 +1,7 @@
 // View settings: how the side panel shows (over the page, or next to it), on which side, and where the details
 // open (in the panel, or in a window). Each person chooses in the panel's view menu (the side also by dragging the
 // panel); the choice stays in this browser. Without a choice, the project config decides (`panel`, `details`).
+import { readRules } from "@/lib/filters"
 import { type DetailsMode, getState, type PanelMode, type PanelSide, type State, setState, subscribe } from "@/store"
 
 const PANEL_KEY = "comma:panel-mode"
@@ -78,16 +79,17 @@ export function loadReview(): Pick<State, "panelOpen" | "filters" | "hiddenView"
       typeof value?.panelOpen !== "boolean" ||
       !["page", "all"].includes(f?.scope) ||
       !["date", "unread"].includes(f?.sort) ||
-      ![f.mine, f.assigned, f.resolved].every((b) => typeof b === "boolean") ||
+      typeof f.mine !== "boolean" ||
       typeof f.query !== "string"
     )
       return null
-    const { scope, sort, mine, assigned, resolved, query } = f
-    // Added later: a review from before has no tags.
-    const tags = Array.isArray(f.tags) ? f.tags.filter((t: unknown) => typeof t === "string") : []
+    const { scope, sort, mine, query } = f
+    // A review from the version before has `resolved` and `tags` ("Assigned to me" does not stay).
+    const status = ["open", "resolved", "all"].includes(f.status) ? f.status : f.resolved === true ? "all" : "open"
+    const rules = f.rules ? readRules(f.rules) : readRules([{ field: "tag", op: "is", values: f.tags }])
     return {
       panelOpen: value.panelOpen,
-      filters: { scope, sort, mine, assigned, resolved, tags, query: query.slice(0, 200) },
+      filters: { scope, status, mine, rules, sort, query: query.slice(0, 200) },
       hiddenView,
     }
   } catch {

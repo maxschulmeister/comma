@@ -50,6 +50,16 @@ async function apiTag(session: Session, thread: { id: string }, tag: string) {
   await api.dispose()
 }
 
+async function apiPatch(session: Session, thread: { id: string }, data: { status?: string; assignee?: string }) {
+  const api = await request.newContext()
+  const res = await api.patch(`${COMMA}/api/threads/${thread.id}`, {
+    headers: { origin: SITE, authorization: `Bearer ${session.token}` },
+    data,
+  })
+  expect(res.ok()).toBe(true)
+  await api.dispose()
+}
+
 const openPanel = async (page: Page) => {
   await toolbar(page)
     .getByRole("button", { name: /^Comments/ })
@@ -57,6 +67,15 @@ const openPanel = async (page: Page) => {
   await expect(panel(page)).toBeVisible()
 }
 const items = (page: Page) => panel(page).locator("[data-slot=panel-item]")
+/** Adds a filter chip from the filter menu. Its picker opens. */
+const addFilter = async (page: Page, name: string) => {
+  await panel(page)
+    .getByRole("button", { name: /^Filter and sort/ })
+    .click()
+  await page.getByRole("menuitem", { name, exact: true }).click()
+  await expect(page.getByRole("dialog", { name })).toBeVisible()
+}
+const chip = (page: Page, field: string) => panel(page).getByRole("group", { name: new RegExp(`^${field} is`) })
 
 test("the panel pushes the page and pins follow", async ({ page }) => {
   await signIn(page, await guestSession("Pusher", SITE, "push"), SITE, "push")
@@ -151,7 +170,7 @@ test("list, search, sort and filters", async ({ page }) => {
   await expect(items(page).nth(0)).toContainText("Beta from other")
 })
 
-test("items show their tags; a filter shows threads with any of the chosen tags; search finds tag names", async ({
+test("items show their tags; a tag chip shows threads with any or none of its tags; search finds tag names", async ({
   page,
 }) => {
   const me = await guestSession("Tagger")
@@ -167,31 +186,143 @@ test("items show their tags; a filter shows threads with any of the chosen tags;
   await expect(items(page)).toHaveCount(3)
   await expect(items(page).filter({ hasText: "The button is broken" }).locator("[data-slot=tag]")).toHaveText(["Bug"])
 
-  const tagFilter = async (name: string) => {
-    await panel(page)
-      .getByRole("button", { name: /^Filter and sort/ })
-      .click()
-    await page.getByRole("menuitemcheckbox", { name }).click()
-    await page.keyboard.press("Escape")
-    await expect(page.getByRole("menu")).toBeHidden()
-  }
-  await tagFilter("Bug")
+  // The picker of the new chip opens with the focus in its search field.
+  await addFilter(page, "Tag")
+  const picker = page.getByRole("dialog", { name: "Tag" })
+  await expect(picker.getByRole("searchbox", { name: "Search tags" })).toBeFocused()
+  await picker.getByRole("button", { name: "Bug", exact: true }).click()
   await expect(items(page)).toHaveCount(1)
   await expect(items(page)).toContainText("The button is broken")
-  await expect(panel(page).getByRole("button", { name: "Filter and sort, 1 on" })).toBeVisible()
-  await tagFilter("Content")
+  await picker.getByRole("button", { name: "Content", exact: true }).click()
+  await expect(items(page)).toHaveCount(2)
+  await page.keyboard.press("Escape")
+  await expect(picker).toBeHidden()
+  await expect(panel(page)).toBeVisible()
+  await expect(chip(page, "Tag")).toHaveAccessibleName("Tag is any of Bug, Content")
+
+  // "is" changes to "is not".
+  await chip(page, "Tag").getByRole("button", { name: "is any of" }).click()
+  await expect(chip(page, "Tag")).toHaveAccessibleName("Tag is none of Bug, Content")
+  await expect(items(page)).toHaveCount(1)
+  await expect(items(page)).toContainText("No tags here")
+
+  // The chips stay after a page load. The values change from the chip.
+  await page.reload()
+  await expect(items(page)).toHaveCount(1)
+  await chip(page, "Tag").getByRole("button", { name: "Bug, Content" }).click()
+  await picker.getByRole("button", { name: "Content", exact: true }).click()
+  await page.keyboard.press("Escape")
+  await expect(chip(page, "Tag")).toHaveAccessibleName("Tag is not Bug")
   await expect(items(page)).toHaveCount(2)
 
-  // The filters stay after a page load.
-  await page.reload()
-  await expect(items(page)).toHaveCount(2)
-  await tagFilter("Bug")
-  await tagFilter("Content")
+  await chip(page, "Tag").getByRole("button", { name: "Remove filter" }).click()
+  await expect(chip(page, "Tag")).toHaveCount(0)
   await expect(items(page)).toHaveCount(3)
 
   await panel(page).getByRole("searchbox", { name: "Search comments" }).fill("conte")
   await expect(items(page)).toHaveCount(1)
   await expect(items(page)).toContainText("Say it shorter")
+})
+
+test("a chip that gets no value goes away", async ({ page }) => {
+  const me = await guestSession("Undecided")
+  const path = testPath("chip-empty")
+  await apiThread(me, path, "Only one")
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  await addFilter(page, "Tag")
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("dialog", { name: "Tag" })).toBeHidden()
+  await expect(chip(page, "Tag")).toHaveCount(0)
+  await expect(items(page)).toHaveCount(1)
+  // The focus goes back to the filter menu's button.
+  await expect(panel(page).getByRole("button", { name: /^Filter and sort/ })).toBeFocused()
+})
+
+test("Started by and Assignee chips: people, Unassigned, and is not", async ({ page }) => {
+  const suffix = Math.random().toString(36).slice(2, 8)
+  const me = await guestSession(`Starter ${suffix}`)
+  const other = await guestSession(`Helper ${suffix}`)
+  const path = testPath("people-filters")
+  const mine = await apiThread(me, path, "Mine, for the helper")
+  await apiThread(other, path, "From the helper")
+  await apiPatch(me, mine, { assignee: other.user.id })
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  await expect(items(page)).toHaveCount(2)
+
+  // Started by: I am first in the list.
+  await addFilter(page, "Started by")
+  const starters = page.getByRole("dialog", { name: "Started by" })
+  await expect(starters.getByRole("button").first()).toContainText(me.user.name)
+  await starters.getByRole("searchbox", { name: "Search people" }).fill("helper ")
+  await starters.getByRole("button", { name: other.user.name }).click()
+  await page.keyboard.press("Escape")
+  await expect(chip(page, "Started by")).toHaveAccessibleName(`Started by is ${other.user.name}`)
+  await expect(items(page)).toHaveCount(1)
+  await expect(items(page)).toContainText("From the helper")
+  await chip(page, "Started by").getByRole("button", { name: "is", exact: true }).click()
+  await expect(items(page)).toHaveCount(1)
+  await expect(items(page)).toContainText("Mine, for the helper")
+  await chip(page, "Started by").getByRole("button", { name: "Remove filter" }).click()
+
+  // Assignee: Unassigned, then also the helper.
+  await addFilter(page, "Assignee")
+  const assignees = page.getByRole("dialog", { name: "Assignee" })
+  await assignees.getByRole("button", { name: "Unassigned" }).click()
+  await expect(items(page)).toHaveCount(1)
+  await expect(items(page)).toContainText("From the helper")
+  // The full name: the same test in the other browsers has its own helper.
+  await assignees.getByRole("searchbox", { name: "Search people" }).fill(other.user.name)
+  // Enter changes the first match.
+  await page.keyboard.press("Enter")
+  await expect(assignees.getByRole("button", { name: other.user.name })).toHaveAttribute("aria-pressed", "true")
+  await expect(items(page)).toHaveCount(2)
+  await page.keyboard.press("Escape")
+  await expect(chip(page, "Assignee")).toHaveAccessibleName(`Assignee is any of Unassigned, ${other.user.name}`)
+})
+
+test("Status: only the resolved threads; a review from the version before keeps its tags and resolved threads", async ({
+  page,
+}) => {
+  const me = await guestSession("Returner")
+  const path = testPath("old-review")
+  const resolved = await apiThread(me, path, "Old bug, resolved")
+  const open = await apiThread(me, path, "Open bug")
+  await apiThread(me, path, "No tag")
+  await apiTag(me, resolved, "Bug")
+  await apiTag(me, open, "Bug")
+  await apiPatch(me, resolved, { status: "resolved" })
+  await signIn(page, me)
+  // What the version before kept for the review in this tab.
+  const filters = {
+    scope: "page",
+    sort: "date",
+    mine: false,
+    assigned: false,
+    resolved: true,
+    tags: ["Bug"],
+    query: "",
+  }
+  await page.addInitScript(([key, value]) => sessionStorage.setItem(key, value), [
+    `comma:review:${COMMA}:example`,
+    JSON.stringify({ panelOpen: true, filters, hiddenView: null }),
+  ] as const)
+  await page.goto(path)
+  await expect(panel(page)).toBeVisible()
+  await expect(chip(page, "Tag")).toHaveAccessibleName("Tag is Bug")
+  await expect(items(page)).toHaveCount(2)
+
+  await panel(page)
+    .getByRole("button", { name: /^Filter and sort/ })
+    .click()
+  await expect(page.getByRole("menuitemradio", { name: "Open and resolved" })).toBeChecked()
+  await page.getByRole("menuitemradio", { name: "Resolved", exact: true }).click()
+  await page.keyboard.press("Escape")
+  await expect(items(page)).toHaveCount(1)
+  await expect(items(page)).toContainText("Old bug, resolved")
 })
 
 test("a tag that someone deletes goes out of my filter", async ({ page }) => {
@@ -207,10 +338,8 @@ test("a tag that someone deletes goes out of my filter", async ({ page }) => {
   await signIn(page, me)
   await page.goto(path)
   await openPanel(page)
-  await panel(page)
-    .getByRole("button", { name: /^Filter and sort/ })
-    .click()
-  await page.getByRole("menuitemcheckbox", { name }).click()
+  await addFilter(page, "Tag")
+  await page.getByRole("dialog", { name: "Tag" }).getByRole("button", { name }).click()
   await page.keyboard.press("Escape")
   await expect(items(page)).toHaveCount(1)
 
@@ -219,7 +348,7 @@ test("a tag that someone deletes goes out of my filter", async ({ page }) => {
   await api.dispose()
   await page.evaluate(() => window.dispatchEvent(new Event("focus")))
   await expect(items(page)).toHaveCount(2)
-  await expect(panel(page).getByRole("button", { name: "Filter and sort" })).toBeVisible()
+  await expect(chip(page, "Tag")).toHaveCount(0)
 })
 
 test("unread first keeps its order while I read: ↓ goes on to the next unread thread", async ({ page }) => {
@@ -495,12 +624,7 @@ test("a link opens a resolved, detached thread", async ({ page }) => {
   const me = await guestSession("Linked")
   const path = testPath("deep-resolved")
   const thread = await apiThread(me, path, "Old and resolved", "This heading is gone")
-  const api = await request.newContext()
-  await api.patch(`${COMMA}/api/threads/${thread.id}`, {
-    headers: { origin: SITE, authorization: `Bearer ${me.token}` },
-    data: { status: "resolved" },
-  })
-  await api.dispose()
+  await apiPatch(me, thread, { status: "resolved" })
   await signIn(page, me)
   await page.goto(`${path}#comma=${thread.id}`)
   await expect(threadPopover(page)).toContainText("Old and resolved")

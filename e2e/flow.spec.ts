@@ -85,7 +85,7 @@ test("comment, mention, image, reply, react, unread, resolve, reload", async ({ 
     .getByRole("button", { name: /^Comments/ })
     .click()
   await panel(ada).getByRole("button", { name: "Filter and sort" }).click()
-  await ada.getByRole("menuitemcheckbox", { name: "Show resolved" }).click()
+  await ada.getByRole("menuitemradio", { name: "Open and resolved" }).click()
   await ada.keyboard.press("Escape")
   await panel(ada).locator("[data-slot=panel-item]").click()
   await expect(adaThread).toContainText("Resolved")

@@ -2,6 +2,7 @@
 import type { Anchor } from "./anchor"
 import { clearDrafts } from "./drafts"
 import type { PageContext } from "./lib/env"
+import { renameTags } from "./lib/filters"
 import { sameName } from "./lib/format"
 import { getState, type ProjectInfo, type State, setState, subscribe } from "./store"
 import type { Comment, FileRef, Session, Tag, TagColor, Thread, ThreadResult, User } from "./types"
@@ -452,12 +453,12 @@ export async function setAssignee(thread: Thread, assignee: string | null) {
 }
 
 /**
- * The tags of the project, from the server. The panel filter keeps only the names that the project still has: another
- * person can rename or delete a tag.
+ * The tags of the project, from the server. The tag chips of the panel keep only the names that the project still
+ * has, with the project's spelling: another person can rename or delete a tag, also change only its case.
  */
 function withTags(s: State, tags: Tag[]): Partial<State> {
-  const kept = s.filters.tags.filter((f) => tags.some((t) => sameName(t.name, f)))
-  return kept.length === s.filters.tags.length ? { tags } : { tags, filters: { ...s.filters, tags: kept } }
+  const rules = renameTags(s.filters.rules, (name) => tags.find((t) => sameName(t.name, name))?.name ?? null)
+  return rules === s.filters.rules ? { tags } : { tags, filters: { ...s.filters, rules } }
 }
 
 /** Makes a tag for the project. */
@@ -472,21 +473,21 @@ export async function createTag(name: string, color: TagColor) {
 
 /**
  * Changes the name or color of a tag that I made (or any tag that people made, for admins), or deletes it (`null`).
- * The threads and the panel filter change here at once: the server changes them for all threads.
+ * The threads and the tag chips of the panel change here at once: the server changes them for all threads.
  */
 export async function changeTag(tag: Tag, change: { name: string; color: TagColor } | null) {
   const path = `/api/tags/${encodeURIComponent(tag.name)}`
   const res = await request<{ tags: Tag[] }>(change ? "PATCH" : "DELETE", path, change ?? undefined)
   const next = change?.name
   const was = (name: string) => sameName(name, tag.name)
-  const rename = (names: string[]) => names.flatMap((name) => (!was(name) ? [name] : next ? [next] : []))
+  const rename = (name: string) => (!was(name) ? name : (next ?? null))
   etag = null
   changes++
   tagChanges++
   setState((s) => ({
     tags: res.tags,
-    threads: s.threads.map((t) => (t.tags.some(was) ? { ...t, tags: rename(t.tags) } : t)),
-    filters: { ...s.filters, tags: rename(s.filters.tags) },
+    threads: s.threads.map((t) => (t.tags.some(was) ? { ...t, tags: t.tags.flatMap((n) => rename(n) ?? []) } : t)),
+    filters: { ...s.filters, rules: renameTags(s.filters.rules, rename) },
   }))
 }
 

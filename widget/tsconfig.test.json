@@ -1,0 +1,9 @@
+{
+  // The unit tests (bun test). Bun types only here: in the app they would hide errors in browser code.
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "types": ["bun"]
+  },
+  "include": ["test"]
+}
