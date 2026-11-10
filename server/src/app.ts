@@ -24,6 +24,7 @@ import type { FileStore } from "./files"
 import { MAX_IMAGE_BYTES, readImage } from "./images"
 import { popupRoutes } from "./popup"
 import { takeLimit } from "./rate-limit"
+import { tagKey } from "./tags"
 import { getCommentRow, getThreadRow, isFirstComment, loadThreads, type Scope } from "./threads"
 import { widgetRoutes } from "./widget"
 
@@ -207,6 +208,7 @@ export function createApp(options: AppOptions) {
     ...deleteComments("thread_id = ?", id),
     sql("delete from files where thread_id = ?", id),
     sql("delete from reads where thread_id = ?", id),
+    sql("delete from thread_tags where thread_id = ?", id),
     sql("delete from threads where id = ?", id),
   ]
   // Image bytes outside the database go after the rows. A failure leaves bytes that no row uses, not the reverse.
@@ -540,8 +542,8 @@ export function createApp(options: AppOptions) {
   }
 
   const thread = async (c: Ctx, id: string) => {
-    const result = await loadThreads(db, c.get("scope"), c.get("user"), id)
-    return { thread: result.threads[0], users: result.users }
+    const result = await loadThreads(db, c.get("scope"), c.get("user"), c.get("project").tags, id)
+    return { thread: result.threads[0], users: result.users, tags: result.tags }
   }
 
   const findThread = async (c: Ctx, id: string) => {
@@ -683,7 +685,7 @@ export function createApp(options: AppOptions) {
 
   app.get("/agent/threads", async (c) => {
     const project = c.get("project")
-    const { threads, users } = await loadThreads(db, c.get("scope"), c.get("user"))
+    const { threads, users } = await loadThreads(db, c.get("scope"), c.get("user"), project.tags)
     c.header("content-type", "text/markdown; charset=utf-8")
     c.header("cache-control", "no-store")
     return c.body(
@@ -717,8 +719,7 @@ export function createApp(options: AppOptions) {
     c.header("etag", etag)
     c.header("cache-control", "no-cache")
     if (c.req.header("if-none-match") === etag) return c.body(null, 304)
-    const tags = c.get("project").tags.map((t) => ({ ...t, createdBy: null }))
-    return c.json({ me: publicUser(user), ...(await loadThreads(db, c.get("scope"), user)), tags })
+    return c.json({ me: publicUser(user), ...(await loadThreads(db, c.get("scope"), user, c.get("project").tags)) })
   })
 
   app.post("/api/threads", async (c) => {
@@ -833,6 +834,30 @@ export function createApp(options: AppOptions) {
     await deleteStored(stored)
     return c.json({ ok: true })
   })
+
+  // Anyone in the project adds and removes tags, like reactions: one tag at a time, so two people at the same time
+  // do not undo each other's change.
+  const tagThread = (add: boolean) =>
+    createMiddleware<Env>(async (c) => {
+      const user = c.get("user")
+      const row = await findThread(c, c.req.param("id") ?? "")
+      const key = tagKey(decodeURIComponent(c.req.param("tag") ?? ""))
+      if (add && !c.get("project").tags.some((t) => tagKey(t.name) === key))
+        throw new HTTPException(400, { message: "Unknown tag" })
+      await db.batch(
+        [
+          add
+            ? sql("insert or ignore into thread_tags (thread_id, key, created_at) values (?, ?, ?)", row.id, key, now())
+            : sql("delete from thread_tags where thread_id = ? and key = ?", row.id, key),
+          touch(row.id),
+          bump(user.project),
+        ],
+        "write",
+      )
+      return c.json(await thread(c, row.id))
+    })
+  app.put("/api/threads/:id/tags/:tag", tagThread(true))
+  app.delete("/api/threads/:id/tags/:tag", tagThread(false))
 
   app.post("/api/threads/:id/read", async (c) => {
     const user = c.get("user")

@@ -577,3 +577,26 @@ test("assign a thread; the assignee finds it with Assigned to me", async ({ page
   await expect(items).toContainText("Unread")
   await other.close()
 })
+
+test("tag a thread; others see its tags", async ({ page, context }) => {
+  const thread = await withComment(page, "tags", "Tagger")
+  await thread.getByRole("button", { name: "Tags" }).click()
+  const picker = page.getByRole("dialog", { name: "Tags" })
+  await picker.getByRole("button", { name: "Content" }).click()
+  // Search, and Enter changes the first match.
+  await picker.getByRole("searchbox", { name: "Search tags" }).fill("bu")
+  await page.keyboard.press("Enter")
+  await expect(picker.getByRole("button", { name: "Bug" })).toHaveAttribute("aria-pressed", "true")
+  await page.keyboard.press("Escape")
+  await expect(picker).toBeHidden()
+  // In the order of the project's tags.
+  await expect(thread.getByRole("list", { name: "Tags" }).getByRole("listitem")).toHaveText(["Bug", "Content"])
+
+  const bob = await asOther(context, "tags", await guestSession("Bob"))
+  const bobThread = threadPopover(bob)
+  await expect(bobThread.getByRole("list", { name: "Tags" }).getByRole("listitem")).toHaveText(["Bug", "Content"])
+  await bobThread.getByRole("button", { name: "Tags" }).click()
+  await bob.getByRole("dialog", { name: "Tags" }).getByRole("button", { name: "Bug" }).click()
+  await expect(bobThread.getByRole("list", { name: "Tags" }).getByRole("listitem")).toHaveText(["Content"])
+  await bob.close()
+})

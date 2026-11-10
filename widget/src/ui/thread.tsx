@@ -61,6 +61,7 @@ import { toggleDetails } from "./details-state"
 import { EmojiButton, QUICK_REACTIONS } from "./emoji"
 import { notify } from "./notices"
 import { SignInForm } from "./sign-in"
+import { TagButton, TagList } from "./tags"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
 
@@ -173,6 +174,7 @@ export function ThreadView({
         <span className="flex-1 truncate font-medium text-xs" title={label}>
           {label}
         </span>
+        {me && <TagButton thread={thread} />}
         {me && <AssignButton thread={thread} assignee={assignee} />}
         {me && (
           <Tooltip>
@@ -292,8 +294,9 @@ export function ThreadView({
           </a>
         </div>
       )}
-      {(assignee || thread.context || thread.screenshot) && (
+      {(thread.tags.length > 0 || assignee || thread.context || thread.screenshot) && (
         <div className="flex flex-col border-b text-muted-foreground text-xs">
+          {thread.tags.length > 0 && <TagList names={thread.tags} className="px-3 pt-1.5 last:pb-1.5" />}
           {assignee && <span className="truncate px-3 pt-1.5 last:pb-1.5">Assigned to {nameOf(assignee)}</span>}
           {(thread.context || thread.screenshot) && (
             // The line opens the details (in the panel or a dialog): the screenshot at full size and more about the page.

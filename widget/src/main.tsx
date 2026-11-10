@@ -53,6 +53,7 @@ function start({ __queue: queue, __script: script }: Loader) {
     loadFailed: false,
     threads: [],
     users: {},
+    tags: [],
     page: location.pathname,
     commentMode: false,
     pinsVisible: loadPinsVisible(),

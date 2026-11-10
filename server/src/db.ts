@@ -105,6 +105,14 @@ create table if not exists versions (
   version integer not null
 );
 
+-- Tags on threads, by key (see tags.ts).
+create table if not exists thread_tags (
+  thread_id text not null references threads (id) on delete cascade,
+  key text not null,
+  created_at integer not null,
+  primary key (thread_id, key)
+);
+
 -- A coding agent asks to connect (see agent.ts). A person allows it in the widget: then user_id is set.
 create table if not exists agent_connects (
   -- Shown to the person and the agent, so the person can see that the request is from their agent.

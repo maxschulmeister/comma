@@ -20,6 +20,54 @@ async function withThread(s: Awaited<ReturnType<typeof setup>>) {
   return { author, thread: res.json.thread }
 }
 
+describe("tags on threads", () => {
+  test("anyone adds and removes tags; case does not matter; others see the change", async () => {
+    const s = await setup()
+    const { author, thread } = await withThread(s)
+    const bob = await s.guest("Bob")
+    const before = await s.request("GET", "/api/threads", { token: author.token })
+    const etag = before.headers.get("etag") ?? ""
+
+    const tag = (token: string, name: string, method = "PUT") =>
+      s.request(method, `/api/threads/${thread.id}/tags/${encodeURIComponent(name)}`, { token })
+    const added = await tag(bob.token, "bug")
+    expect(added.status).toBe(200)
+    expect(added.json.thread.tags).toEqual(["Bug"])
+    await tag(author.token, "BUG")
+    // In the order of the project's tags.
+    expect((await tag(author.token, "Content")).json.thread.tags).toEqual(["Bug", "Content"])
+    expect((await tag(author.token, "Bug")).json.thread.tags).toEqual(["Bug", "Content"])
+
+    const after = await s.request("GET", "/api/threads", { token: author.token, headers: { "if-none-match": etag } })
+    expect(after.status).toBe(200)
+    expect(after.json.threads[0].tags).toEqual(["Bug", "Content"])
+
+    expect((await tag(bob.token, "Bug", "DELETE")).json.thread.tags).toEqual(["Content"])
+  })
+
+  test("only tags of the project; only threads of the project", async () => {
+    const s = await setup()
+    const { author, thread } = await withThread(s)
+    const unknown = await s.request("PUT", `/api/threads/${thread.id}/tags/Perf`, { token: author.token })
+    expect(unknown.status).toBe(400)
+    const stranger = await s.guest("Stranger", "https://other.test", "other")
+    const other = await s.request("PUT", `/api/threads/${thread.id}/tags/Bug`, {
+      token: stranger.token,
+      origin: "https://other.test",
+    })
+    expect(other.status).toBe(404)
+  })
+
+  test("deleting a thread deletes its tags", async () => {
+    const s = await setup()
+    const { author, thread } = await withThread(s)
+    await s.request("PUT", `/api/threads/${thread.id}/tags/Bug`, { token: author.token })
+    expect((await s.request("DELETE", `/api/threads/${thread.id}`, { token: author.token })).status).toBe(200)
+    const rows = await s.db.execute("select * from thread_tags")
+    expect(rows.rows).toHaveLength(0)
+  })
+})
+
 describe("project tags", () => {
   test("a project without tags in its config has the default tags; a new thread has no tags", async () => {
     const s = await setup()

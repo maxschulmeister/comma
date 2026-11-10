@@ -3,7 +3,7 @@ import type { Anchor } from "./anchor"
 import { clearDrafts } from "./drafts"
 import type { PageContext } from "./lib/env"
 import { getState, type ProjectInfo, setState, subscribe } from "./store"
-import type { Comment, FileRef, Session, Thread, ThreadResult, User } from "./types"
+import type { Comment, FileRef, Session, Tag, Thread, ThreadResult, User } from "./types"
 
 export class ApiError extends Error {
   status: number
@@ -41,7 +41,7 @@ function applySession(session: Session | null) {
   setState({
     session,
     signInOpen: false,
-    ...(session ? {} : { threads: [], users: {}, loaded: false, loadFailed: false }),
+    ...(session ? {} : { threads: [], users: {}, tags: [], loaded: false, loadFailed: false }),
   })
   if (session) void refresh()
 }
@@ -289,6 +289,7 @@ export function refresh(): Promise<void> {
         setState({
           threads,
           users: data.users,
+          tags: data.tags,
           loaded: true,
           loadFailed: false,
           session: session && { ...session, user: data.me },
@@ -320,7 +321,7 @@ async function requestThreads() {
   if (!res.ok) throw new ApiError(res.status, "Could not load comments")
   if (!isCurrent(session)) return null
   // The caller keeps the ETag only if it uses the data.
-  const data = (await res.json()) as { me: User; threads: Thread[]; users: Record<string, User> }
+  const data = (await res.json()) as { me: User; threads: Thread[]; users: Record<string, User>; tags: Tag[] }
   return { data, etag: res.headers.get("etag") }
 }
 
@@ -365,7 +366,7 @@ const readInFlight = new Map<string, number>()
 let readCount = 0
 
 /** `readAnswer`: the number of the read change this answer is for. */
-function applyThread({ thread, users }: ThreadResult, readAnswer?: number) {
+function applyThread({ thread, users, tags }: ThreadResult, readAnswer?: number) {
   etag = null
   changes++
   if (deleted.has(thread.id)) return thread
@@ -379,6 +380,7 @@ function applyThread({ thread, users }: ThreadResult, readAnswer?: number) {
     return {
       threads: current ? s.threads.map((t) => (t.id === thread.id ? next : t)) : [...s.threads, next],
       users: { ...s.users, ...users },
+      tags,
     }
   })
   return thread
@@ -435,6 +437,12 @@ export async function setAssignee(thread: Thread, assignee: string | null) {
   return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { assignee }))
 }
 
+/** Adds the tag to the thread, or removes it. */
+export async function setThreadTag(thread: Thread, name: string, on: boolean) {
+  const path = `/api/threads/${thread.id}/tags/${encodeURIComponent(name)}`
+  return applyThread(await request<ThreadResult>(on ? "PUT" : "DELETE", path))
+}
+
 export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
   const { session } = getState()
   // Show the new place at once. The server answer replaces it.
@@ -443,7 +451,7 @@ export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
   try {
     return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { page, anchor }))
   } catch (error) {
-    if (isCurrent(session)) applyThread({ thread, users: {} })
+    if (isCurrent(session)) applyThread({ thread, users: {}, tags: getState().tags })
     throw error
   }
 }

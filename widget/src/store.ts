@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react"
 import type { Anchor } from "./anchor"
-import type { Session, Thread, User } from "./types"
+import type { Session, Tag, Thread, User } from "./types"
 
 /** A new thread that is not sent yet. `open`: the composer shows. Else only its pin. */
 export type Draft = { id: number; anchor: Anchor; element: Element; page: string; open: boolean }
@@ -58,6 +58,8 @@ export type State = {
   loadFailed: boolean
   threads: Thread[]
   users: Record<string, User>
+  /** The tags of the project. */
+  tags: Tag[]
   /** URL path of the current page. Changes on client-side navigation. */
   page: string
   commentMode: boolean
