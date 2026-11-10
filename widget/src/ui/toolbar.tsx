@@ -23,6 +23,7 @@ import {
 import { Kbd } from "@/components/ui/kbd"
 import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { plural } from "@/lib/format"
 import { NARROW, useMedia } from "@/lib/media"
 import { setState, useStore } from "@/store"
 import { Notices, notify } from "./notices"
@@ -56,6 +57,9 @@ export function Toolbar() {
     return info.slack ? "Slack" : (info.name ?? "your account")
   })
   const unread = useStore((s) => s.threads.filter((t) => t.unread && t.status === "open").length)
+  const mentions = useStore((s) => s.threads.filter((t) => t.mentioned && t.status === "open").length)
+  // One count on the button: the mentions while there are some, then the unread threads.
+  const count = mentions || unread
   const [signInAnchor, setSignInAnchor] = useState<HTMLElement | null>(null)
   const [signInOpen, setSignInOpen] = useState(false)
 
@@ -112,20 +116,25 @@ export function Toolbar() {
             data-panel-button
             // Opening the panel keeps the open thread: its item shows there.
             data-keeps-thread
-            aria-label={unread ? `Comments, ${unread} unread` : "Comments"}
+            aria-label={["Comments", mentions && plural(mentions, "mention", "mentions"), unread && `${unread} unread`]
+              .filter(Boolean)
+              .join(", ")}
             aria-pressed={panelOpen}
             onClick={() => setState({ panelOpen: !panelOpen })}
           />
         }
       >
         <TrayIcon />
-        {unread > 0 && (
+        {count > 0 && (
           <span
             aria-hidden
-            data-slot="unread-count"
-            className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 font-medium text-[10px] text-white tabular-nums"
+            data-slot={mentions ? "mention-count" : "unread-count"}
+            className={cn(
+              "absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-medium text-[10px] tabular-nums",
+              mentions ? "bg-primary text-primary-foreground" : "bg-blue-600 text-white",
+            )}
           >
-            {unread > 99 ? "99+" : unread}
+            {count > 99 ? "99+" : count}
           </span>
         )}
       </TooltipTrigger>

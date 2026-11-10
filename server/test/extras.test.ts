@@ -130,6 +130,45 @@ describe("read state", () => {
     expect(await forA()).toBe(true)
   })
 
+  test("a thread is mentioned when someone else mentions me after my last read", async () => {
+    let time = 1000
+    const s = await setup({ now: () => ++time })
+    const a = await s.guest("Ada")
+    const b = await s.guest("Bob")
+    const created = await s.request("POST", "/api/threads", {
+      token: a.token,
+      body: { page: "/", anchor, body: mention(b.user.id, "Bob") },
+    })
+    const id = created.json.thread.id
+    const mentioned = async (token: string) =>
+      (await s.request("GET", "/api/threads", { token })).json.threads[0].mentioned
+    // The first comment mentions Bob. It is not about Ada.
+    expect(await mentioned(b.token)).toBe(true)
+    expect(await mentioned(a.token)).toBe(false)
+    await s.request("POST", `/api/threads/${id}/read`, { token: b.token, body: { read: true } })
+    expect(await mentioned(b.token)).toBe(false)
+    // A reply without a mention makes the thread unread, not mentioned.
+    await s.request("POST", `/api/threads/${id}/comments`, { token: a.token, body: { body: text("More") } })
+    const unread = (await s.request("GET", "/api/threads", { token: b.token })).json.threads[0]
+    expect(unread).toMatchObject({ unread: true, mentioned: false })
+    // A reply that mentions Bob.
+    await s.request("POST", `/api/threads/${id}/comments`, {
+      token: a.token,
+      body: { body: mention(b.user.id, "Bob") },
+    })
+    expect(await mentioned(b.token)).toBe(true)
+    // Mark as unread after a read: the old mention does not come back.
+    await s.request("POST", `/api/threads/${id}/read`, { token: b.token, body: { read: true } })
+    await s.request("POST", `/api/threads/${id}/read`, { token: b.token, body: { read: false } })
+    expect(await mentioned(b.token)).toBe(false)
+    // Bob mentions himself: no.
+    await s.request("POST", `/api/threads/${id}/comments`, {
+      token: b.token,
+      body: { body: mention(b.user.id, "Bob") },
+    })
+    expect(await mentioned(b.token)).toBe(false)
+  })
+
   test("mark as unread", async () => {
     const s = await setup()
     const { a, thread } = await start(s)

@@ -34,7 +34,7 @@ import { plural, timeAgo } from "@/lib/format"
 import { NARROW, reducedMotion, useMedia } from "@/lib/media"
 import { pageBox, resolvedElement, useResolved } from "@/live"
 import { type Filters, getState, type PanelSide, type State, setState, useStore } from "@/store"
-import type { Thread } from "@/types"
+import type { Comment, Thread } from "@/types"
 import { closeDetails, openDetails } from "./details-state"
 import { FilterChips } from "./filter-chips"
 import { focusOpenThread, openThread, panelElements, setPanelElement } from "./pins"
@@ -68,19 +68,16 @@ const lastActivity = (t: Thread) => t.comments.at(-1)?.createdAt ?? t.updatedAt
 
 // "Unread first" sorts by the unread state when the panel opens (or the sort changes). Read in the panel, a thread
 // keeps its place, so ↓ goes on to the next unread one. Threads that come later sort by their own state.
-let unreadAtSort: { known: Set<string>; unread: Set<string> } | null = null
+// Mentions come before the other unread threads.
+let unreadAtSort: Map<string, number> | null = null
+const unreadRank = (t: Thread) => (t.mentioned ? 2 : t.unread ? 1 : 0)
 const resetUnreadOrder = () => {
   unreadAtSort = null
 }
 function unreadForSort(threads: Thread[]) {
-  if (!unreadAtSort || unreadAtSort.known.size === 0) {
-    unreadAtSort = {
-      known: new Set(threads.map((t) => t.id)),
-      unread: new Set(threads.filter((t) => t.unread).map((t) => t.id)),
-    }
-  }
-  const { known, unread } = unreadAtSort
-  return (t: Thread) => (known.has(t.id) ? unread.has(t.id) : t.unread)
+  if (!unreadAtSort || unreadAtSort.size === 0) unreadAtSort = new Map(threads.map((t) => [t.id, unreadRank(t)]))
+  const atSort = unreadAtSort
+  return (t: Thread) => atSort.get(t.id) ?? unreadRank(t)
 }
 
 /** Threads in the panel: filters, search and sort. The open thread always shows (it can need its item as anchor). */
@@ -106,9 +103,9 @@ export function visibleThreads(
       return false
     return true
   })
-  const unread = filters.sort === "unread" ? unreadForSort(threads) : null
+  const rank = filters.sort === "unread" ? unreadForSort(threads) : null
   return list.sort((a, b) => {
-    if (unread && unread(a) !== unread(b)) return unread(a) ? -1 : 1
+    if (rank && rank(a) !== rank(b)) return rank(b) - rank(a)
     return lastActivity(b) - lastActivity(a)
   })
 }
@@ -711,8 +708,13 @@ function PanelItem({
   const me = useStore((s) => s.session?.user.id)
   const detailsKey = useStore((s) => arrowKeys(panelSide(s)).fromPageGlyph)
   const first = thread.comments[0]
-  // Unread: the newest comment by someone else is the news. The first comment stays as context.
-  const newest = thread.unread ? [...thread.comments].reverse().find((c) => c.authorId !== me) : undefined
+  // Unread: the newest comment by someone else is the news, or the newest that mentions me. The first comment stays
+  // as context.
+  const byOthers = (c: Comment) => c.authorId !== me
+  const newest = thread.unread
+    ? (thread.mentioned && thread.comments.findLast((c) => byOthers(c) && !!me && c.mentions.includes(me))) ||
+      thread.comments.findLast(byOthers)
+    : undefined
   const reply = newest && newest !== first ? newest : undefined
   const shown = reply ?? first
   const author = users[shown?.authorId ?? thread.createdBy]
@@ -742,11 +744,16 @@ function PanelItem({
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex items-center gap-1.5">
             <UserName user={author} className={cn("text-sm", thread.unread ? "font-semibold" : "font-medium")} />
-            {reply && <span className="shrink-0 text-muted-foreground text-xs">replied</span>}
+            {thread.mentioned ? (
+              <span className="shrink-0 font-medium text-primary text-xs">mentioned you</span>
+            ) : (
+              reply && <span className="shrink-0 text-muted-foreground text-xs">replied</span>
+            )}
             <span className="shrink-0 text-muted-foreground text-xs">{timeAgo(lastActivity(thread))}</span>
             <span className="flex-1" />
+            {thread.mentioned && <span data-slot="mention-dot" className="size-2 shrink-0 rounded-full bg-primary" />}
             {thread.unread && (
-              <span className="size-2 shrink-0 rounded-full bg-blue-500">
+              <span data-slot="unread-dot" className="size-2 shrink-0 rounded-full bg-blue-500">
                 <span className="sr-only">Unread</span>
               </span>
             )}

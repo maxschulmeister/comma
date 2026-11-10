@@ -286,7 +286,7 @@ export function refresh(): Promise<void> {
         const local = new Map(getState().threads.map((t) => [t.id, t]))
         const threads = data.threads.map((t) => {
           const current = local.get(t.id)
-          return current && readInFlight.get(t.id) ? { ...t, unread: current.unread } : t
+          return current && readInFlight.get(t.id) ? { ...t, ...readState(current) } : t
         })
         setState({
           threads,
@@ -366,6 +366,9 @@ const deleted = new Set<string>()
 const readLatest = new Map<string, number>()
 const readInFlight = new Map<string, number>()
 let readCount = 0
+// The read state of a thread for me. Read changes set these fields together.
+type ReadState = Pick<Thread, "unread" | "mentioned">
+const readState = (t: Thread): ReadState => ({ unread: t.unread, mentioned: t.mentioned })
 
 // Tag changes here (make, change, delete). An answer to a request from before one has an old list of tags.
 let tagChanges = 0
@@ -388,7 +391,7 @@ function applyThread({ thread, users, tags }: ThreadResult, readAnswer?: number)
     // While a read change is on its way, only its own answer sets the read state.
     let next = current && current.updatedAt > thread.updatedAt ? current : thread
     const keepRead = readAnswer ? readLatest.get(thread.id) !== readAnswer : (readInFlight.get(thread.id) ?? 0) > 0
-    if (current && keepRead) next = { ...next, unread: current.unread }
+    if (current && keepRead) next = { ...next, ...readState(current) }
     return {
       threads: current ? s.threads.map((t) => (t.id === thread.id ? next : t)) : [...s.threads, next],
       users: { ...s.users, ...users },
@@ -508,21 +511,22 @@ export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
 }
 
 export async function setRead(thread: Thread, read: boolean) {
-  const setUnread = (unread: boolean) =>
-    setState((s) => ({ threads: s.threads.map((t) => (t.id === thread.id ? { ...t, unread } : t)) }))
+  const setReadState = (state: ReadState) =>
+    setState((s) => ({ threads: s.threads.map((t) => (t.id === thread.id ? { ...t, ...state } : t)) }))
   const { session } = getState()
   const number = ++readCount
   readLatest.set(thread.id, number)
   readInFlight.set(thread.id, (readInFlight.get(thread.id) ?? 0) + 1)
   changes++
-  setUnread(!read)
+  // Read also reads the mention. "Mark as unread" does not change it (the server does the same).
+  setReadState(read ? { unread: false, mentioned: false } : { unread: true, mentioned: thread.mentioned })
   try {
     // An older read change (open = read, then "Mark as unread") must not undo the newer one.
     return applyThread(await threadRequest<ThreadResult>("POST", `/api/threads/${thread.id}/read`, { read }), number)
   } catch (error) {
     if (readLatest.get(thread.id) === number && isCurrent(session)) {
       etag = null
-      setUnread(thread.unread)
+      setReadState(readState(thread))
     }
     throw error
   } finally {

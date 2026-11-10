@@ -59,6 +59,8 @@ export type Thread = {
   /** The element when the thread was made. */
   screenshot: FileRef | null
   unread: boolean
+  /** Someone else mentioned me after my last read. */
+  mentioned: boolean
   comments: Comment[]
 }
 
@@ -208,9 +210,8 @@ export async function loadThreads(db: Db, scope: Scope, me: UserRow, configTags:
     const list = commentsBy.get(t.id) ?? []
     const read = reads.get(t.id)
     const screenshot = screenshots.get(t.id)
-    const unread =
-      read?.unread === 1 ||
-      list.some((c) => c.authorId !== me.id && c.createdAt > (read?.read_at ?? Number.NEGATIVE_INFINITY))
+    const news = list.filter((c) => c.authorId !== me.id && c.createdAt > (read?.read_at ?? Number.NEGATIVE_INFINITY))
+    const unread = read?.unread === 1 || news.length > 0
     return {
       id: t.id,
       page: t.page,
@@ -226,6 +227,7 @@ export async function loadThreads(db: Db, scope: Scope, me: UserRow, configTags:
       tags: (tagsBy.get(t.id) ?? []).sort((a, b) => a - b).map((i) => tags[i].name),
       screenshot: screenshot ? fileRef(screenshot) : null,
       unread,
+      mentioned: news.some((c) => c.mentions.includes(me.id)),
       comments: list,
     }
   })

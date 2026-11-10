@@ -380,6 +380,62 @@ test("unread first keeps its order while I read: ↓ goes on to the next unread 
   await expect(items(page).nth(0)).toContainText("Unread C")
 })
 
+test("a mention shows before unread: in the item, the sort and the toolbar", async ({ page }) => {
+  const other = await guestSession("Mentioner")
+  const me = await guestSession("Mentioned")
+  const path = testPath("mention")
+  const asked = await apiThread(me, path, "Who checks the hero?")
+  const api = await request.newContext()
+  const reply = await api.post(`${COMMA}/api/threads/${asked.id}/comments`, {
+    headers: { origin: SITE, authorization: `Bearer ${other.token}` },
+    data: {
+      body: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "mention", attrs: { id: me.user.id, label: "Mentioned" } },
+              { type: "text", text: " can you check it?" },
+            ],
+          },
+        ],
+      },
+    },
+  })
+  expect((await reply.json()).comment.mentions).toEqual([me.user.id])
+  await api.dispose()
+  // Newer, unread, without a mention.
+  await apiThread(other, path, "Only unread")
+  await signIn(page, me)
+  await page.goto(path)
+
+  // The toolbar shows the mentions, not the unread count.
+  const button = toolbar(page).getByRole("button", { name: /^Comments, 1 mention, \d+ unread$/ })
+  await expect(button.locator("[data-slot=mention-count]")).toHaveText("1")
+  await expect(button.locator("[data-slot=unread-count]")).toHaveCount(0)
+
+  await openPanel(page)
+  const mentioned = items(page).filter({ hasText: "can you check it?" })
+  await expect(mentioned).toContainText("mentioned you")
+  await expect(mentioned.locator("[data-slot=mention-dot]")).toBeVisible()
+  await expect(mentioned.locator("[data-slot=unread-dot]")).toBeVisible()
+  await expect(items(page).filter({ hasText: "Only unread" }).locator("[data-slot=mention-dot]")).toHaveCount(0)
+
+  // Unread first: the mention comes before the newer unread thread.
+  await panel(page).getByRole("button", { name: "Filter and sort" }).click()
+  await page.getByRole("menuitemradio", { name: "Unread first" }).click()
+  await page.keyboard.press("Escape")
+  await expect(items(page).nth(0)).toContainText("can you check it?")
+
+  // Read: the toolbar shows the unread count again.
+  await mentioned.click()
+  await expect(threadPopover(page)).toContainText("can you check it?")
+  await expect(toolbar(page).getByRole("button", { name: /^Comments, \d+ unread$/ })).toBeVisible()
+  await expect(toolbar(page).locator("[data-slot=unread-count]")).toBeVisible()
+  await expect(toolbar(page).locator("[data-slot=mention-count]")).toHaveCount(0)
+})
+
 test("arrow keys move between threads, Enter opens one", async ({ page }) => {
   const me = await guestSession("Keys")
   const path = testPath("keys")
