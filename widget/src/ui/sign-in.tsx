@@ -7,8 +7,11 @@ import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { useStore } from "@/store"
 
-/** Sign in with the app or Slack (popup), or as a guest with a name. The project decides which ones it has. */
-export function SignInForm({ title = "Sign in to comment" }: { title?: string }) {
+/**
+ * Sign in with the app or Slack (popup), or as a guest with a name. The project decides which ones it has.
+ * `title: null`: the place around the form has its own title.
+ */
+export function SignInForm({ title = "Sign in to comment" }: { title?: string | null }) {
   const info = useStore((s) => s.projectInfo)
   const [name, setName] = useState("")
   const [busy, setBusy] = useState<"guest" | "popup" | "slack" | null>(null)
@@ -48,7 +51,7 @@ export function SignInForm({ title = "Sign in to comment" }: { title?: string })
   const popups = info.popupSignIn || info.slack
   return (
     <form className="flex flex-col gap-2.5" onSubmit={onSubmit} noValidate>
-      <p className="font-medium text-sm">{title}</p>
+      {title && <p className="font-medium text-sm">{title}</p>}
       {info.popupSignIn && (
         <Button type="button" onClick={() => run("popup", () => signInWithPopup("app"))} disabled={!!busy}>
           {busy === "popup" && <Spinner />}

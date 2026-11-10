@@ -478,6 +478,11 @@ export async function toggleReaction(comment: Comment, emoji: string) {
   return applyThread(await request<ThreadResult>(mine ? "DELETE" : "PUT", path))
 }
 
+/** The person allows a coding agent to work on the comments as them, or not (see /llms.txt on the server). */
+export async function answerAgent(code: string, allow: boolean) {
+  await request("POST", "/api/agent/connect", { code, allow })
+}
+
 export async function searchUsers(q: string) {
   if (!getState().session) return []
   const res = await request<{ users: User[] }>("GET", `/api/users?q=${encodeURIComponent(q)}`)

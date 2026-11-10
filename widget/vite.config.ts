@@ -87,6 +87,8 @@ export default defineConfig({
         entryFileNames: "[name].js",
         chunkFileNames: "chunks/[name]-[hash].js",
         assetFileNames: "assets/[name]-[hash][extname]",
+        // Agents that find the script tag in a repo can read c.js: it tells them where to start.
+        postBanner: (chunk) => (chunk.name === "c" ? "// comma. Coding agents: read /llms.txt on this server." : ""),
       },
       preserveEntrySignatures: false,
       onwarn(warning, warn) {
