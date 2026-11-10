@@ -83,9 +83,11 @@ export function loadReview(): Pick<State, "panelOpen" | "filters" | "hiddenView"
     )
       return null
     const { scope, sort, mine, assigned, resolved, query } = f
+    // Added later: a review from before has no tags.
+    const tags = Array.isArray(f.tags) ? f.tags.filter((t: unknown) => typeof t === "string") : []
     return {
       panelOpen: value.panelOpen,
-      filters: { scope, sort, mine, assigned, resolved, query: query.slice(0, 200) },
+      filters: { scope, sort, mine, assigned, resolved, tags, query: query.slice(0, 200) },
       hiddenView,
     }
   } catch {

@@ -66,7 +66,7 @@ function start({ __queue: queue, __script: script }: Loader) {
     draft: null,
     draftMove: null,
     moving: null,
-    filters: { scope: "page", mine: false, assigned: false, resolved: false, sort: "date", query: "" },
+    filters: { scope: "page", mine: false, assigned: false, resolved: false, tags: [], sort: "date", query: "" },
     signInOpen: false,
     notice: null,
     shortcut: parseShortcut(script.shortcut),

@@ -23,7 +23,7 @@ const PILL: Record<TagColor, string> = {
   pink: "bg-pink-100 text-pink-800",
 }
 
-const DOT: Record<TagColor, string> = {
+export const DOT: Record<TagColor, string> = {
   gray: "bg-neutral-500",
   red: "bg-red-500",
   orange: "bg-orange-500",
@@ -42,7 +42,7 @@ const colorName = (color: TagColor) => color[0].toUpperCase() + color.slice(1)
 // The same as the server's limit.
 const MAX_NAME = 32
 
-const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+export const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
 /** The color of a tag of the project. Gray if the project does not have it. */
 function useTagColor(name: string): TagColor {
@@ -53,6 +53,7 @@ export function TagPill({ name, className }: { name: string; className?: string 
   const color = useTagColor(name)
   return (
     <span
+      data-slot="tag"
       className={cn(
         "inline-flex h-5 max-w-40 items-center truncate rounded-full px-2 font-medium text-xs",
         PILL[color],

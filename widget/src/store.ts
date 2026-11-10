@@ -37,6 +37,8 @@ export type Filters = {
   mine: boolean
   assigned: boolean
   resolved: boolean
+  /** Threads with any of these tags. Empty: all threads. */
+  tags: string[]
   sort: "date" | "unread"
   query: string
 }

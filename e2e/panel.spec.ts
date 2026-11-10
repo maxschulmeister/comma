@@ -41,6 +41,15 @@ async function apiThread(session: Session, page: string, text: string, anchorTex
   return json.thread as { id: string }
 }
 
+async function apiTag(session: Session, thread: { id: string }, tag: string) {
+  const api = await request.newContext()
+  const res = await api.put(`${COMMA}/api/threads/${thread.id}/tags/${tag}`, {
+    headers: { origin: SITE, authorization: `Bearer ${session.token}` },
+  })
+  expect(res.ok()).toBe(true)
+  await api.dispose()
+}
+
 const openPanel = async (page: Page) => {
   await toolbar(page)
     .getByRole("button", { name: /^Comments/ })
@@ -140,6 +149,49 @@ test("list, search, sort and filters", async ({ page }) => {
   await menu("This page", "menuitemradio")
   await menu("Unread first", "menuitemradio")
   await expect(items(page).nth(0)).toContainText("Beta from other")
+})
+
+test("items show their tags; a filter shows threads with any of the chosen tags; search finds tag names", async ({
+  page,
+}) => {
+  const me = await guestSession("Tagger")
+  const path = testPath("tag-filter")
+  const bug = await apiThread(me, path, "The button is broken")
+  const copy = await apiThread(me, path, "Say it shorter")
+  await apiThread(me, path, "No tags here")
+  await apiTag(me, bug, "Bug")
+  await apiTag(me, copy, "Content")
+  await signIn(page, me)
+  await page.goto(path)
+  await openPanel(page)
+  await expect(items(page)).toHaveCount(3)
+  await expect(items(page).filter({ hasText: "The button is broken" }).locator("[data-slot=tag]")).toHaveText(["Bug"])
+
+  const tagFilter = async (name: string) => {
+    await panel(page)
+      .getByRole("button", { name: /^Filter and sort/ })
+      .click()
+    await page.getByRole("menuitemcheckbox", { name }).click()
+    await page.keyboard.press("Escape")
+    await expect(page.getByRole("menu")).toBeHidden()
+  }
+  await tagFilter("Bug")
+  await expect(items(page)).toHaveCount(1)
+  await expect(items(page)).toContainText("The button is broken")
+  await expect(panel(page).getByRole("button", { name: "Filter and sort, 1 on" })).toBeVisible()
+  await tagFilter("Content")
+  await expect(items(page)).toHaveCount(2)
+
+  // The filters stay after a page load.
+  await page.reload()
+  await expect(items(page)).toHaveCount(2)
+  await tagFilter("Bug")
+  await tagFilter("Content")
+  await expect(items(page)).toHaveCount(3)
+
+  await panel(page).getByRole("searchbox", { name: "Search comments" }).fill("conte")
+  await expect(items(page)).toHaveCount(1)
+  await expect(items(page)).toContainText("Say it shorter")
 })
 
 test("unread first keeps its order while I read: ↓ goes on to the next unread thread", async ({ page }) => {
