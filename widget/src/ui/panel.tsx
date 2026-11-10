@@ -19,6 +19,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -28,16 +29,18 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Kbd } from "@/components/ui/kbd"
 import { shortText } from "@/lib/describe"
-import { plural, sameName, timeAgo } from "@/lib/format"
+import { FIELD_LABELS, FILTER_FIELDS, type FilterField, matchesRules } from "@/lib/filters"
+import { plural, timeAgo } from "@/lib/format"
 import { NARROW, reducedMotion, useMedia } from "@/lib/media"
 import { pageBox, resolvedElement, useResolved } from "@/live"
 import { type Filters, getState, type PanelSide, type State, setState, useStore } from "@/store"
 import type { Thread } from "@/types"
 import { closeDetails, openDetails } from "./details-state"
+import { FilterChips } from "./filter-chips"
 import { focusOpenThread, openThread, panelElements, setPanelElement } from "./pins"
 import { setCommentMode } from "./shortcuts"
 import { SignInForm } from "./sign-in"
-import { TagPill, tagDot } from "./tags"
+import { TagPill } from "./tags"
 import { threadLink } from "./thread"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
@@ -92,10 +95,9 @@ export function visibleThreads(
   const list = threads.filter((t) => {
     if (t.id === open) return true
     if (filters.scope === "page" && t.page !== page) return false
-    if (!filters.resolved && t.status === "resolved") return false
+    if (filters.status !== "all" && t.status !== filters.status) return false
     if (filters.mine && (!me || !t.comments.some((c) => c.authorId === me || c.mentions.includes(me)))) return false
-    if (filters.assigned && (!me || t.assigneeId !== me)) return false
-    if (filters.tags.length > 0 && !t.tags.some((name) => filters.tags.some((f) => sameName(f, name)))) return false
+    if (!matchesRules(t, filters.rules)) return false
     if (
       q &&
       !t.comments.some((c) => c.text.toLowerCase().includes(q)) &&
@@ -292,15 +294,23 @@ function PanelContent() {
   const asideRef = useRef<HTMLElement>(null)
   useFocusManagement(asideRef)
   const list = usePanelList()
-  const tags = useStore((s) => s.tags)
-  const activeFilters = [
-    filters.scope === "all",
-    filters.mine,
-    filters.assigned,
-    filters.resolved,
-    filters.tags.length > 0,
-  ].filter(Boolean).length
-  const tagFiltered = (name: string) => filters.tags.some((f) => sameName(f, name))
+  const hasTags = useStore((s) => s.tags.length > 0)
+  // The chips show on their own. The dot on the filter button tells about the menu's choices only.
+  const activeFilters = [filters.scope === "all", filters.status !== "open", filters.mine].filter(Boolean).length
+  const filterButtonRef = useRef<HTMLButtonElement>(null)
+  // The chip whose picker is open.
+  const [editingChip, setEditingChip] = useState<number | null>(null)
+  // A field chosen in the menu: its chip opens after the menu has closed, so the menu does not take the focus back.
+  const chosenField = useRef<FilterField | null>(null)
+  const openChip = () => {
+    const field = chosenField.current
+    chosenField.current = null
+    if (!field) return
+    const rules = getState().filters.rules
+    const index = rules.findIndex((r) => r.field === field && r.op === "is")
+    if (index < 0) setFilters({ rules: [...rules, { field, op: "is", values: [] }] })
+    setEditingChip(index < 0 ? rules.length : index)
+  }
 
   // The keys follow the screen (see arrowKeys). ↑ ↓ select a thread: it opens at its pin and the focus stays here
   // (a thread on another page only gets the focus). Toward the page (or Enter): into the thread. Away from the
@@ -456,98 +466,96 @@ function PanelContent() {
           </Button>
         </header>
 
-        <div className="flex shrink-0 items-center gap-1 border-b p-2">
-          <InputGroup className="flex-1">
-            <InputGroupAddon>
-              <MagnifyingGlassIcon />
-            </InputGroupAddon>
-            <InputGroupInput
-              type="search"
-              aria-label="Search comments"
-              placeholder="Search"
-              value={filters.query}
-              onChange={(e) => setFilters({ query: e.currentTarget.value })}
-            />
-          </InputGroup>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="relative"
-                  aria-label={activeFilters ? `Filter and sort, ${activeFilters} on` : "Filter and sort"}
-                  title="Filter and sort"
-                />
-              }
-            >
-              <FunnelSimpleIcon />
-              {activeFilters > 0 && (
-                <span aria-hidden className="absolute top-1 right-1 size-1.5 rounded-full bg-primary" />
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Show</DropdownMenuLabel>
-                <DropdownMenuRadioGroup value={filters.scope} onValueChange={(scope) => setFilters({ scope })}>
-                  <DropdownMenuRadioItem value="page">This page</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="all">All pages</DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem
-                checked={filters.mine}
-                onCheckedChange={(mine) => setFilters({ mine })}
-                disabled={!signedIn}
+        <div className="flex shrink-0 flex-col gap-2 border-b p-2">
+          <div className="flex items-center gap-1">
+            <InputGroup className="flex-1">
+              <InputGroupAddon>
+                <MagnifyingGlassIcon />
+              </InputGroupAddon>
+              <InputGroupInput
+                type="search"
+                aria-label="Search comments"
+                placeholder="Search"
+                value={filters.query}
+                onChange={(e) => setFilters({ query: e.currentTarget.value })}
+              />
+            </InputGroup>
+            <DropdownMenu onOpenChangeComplete={(open) => !open && openChip()}>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    ref={filterButtonRef}
+                    variant="ghost"
+                    size="icon-sm"
+                    className="relative"
+                    aria-label={activeFilters ? `Filter and sort, ${activeFilters} on` : "Filter and sort"}
+                    title="Filter and sort"
+                  />
+                }
               >
-                Only my threads
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={filters.assigned}
-                onCheckedChange={(assigned) => setFilters({ assigned })}
-                disabled={!signedIn}
-              >
-                Assigned to me
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={filters.resolved}
-                onCheckedChange={(resolved) => setFilters({ resolved })}
-              >
-                Show resolved
-              </DropdownMenuCheckboxItem>
-              {/* Not a submenu: in the shadow root, a click in a submenu closes the menus. */}
-              {tags.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>Tags</DropdownMenuLabel>
-                    {tags.map((tag) => (
-                      <DropdownMenuCheckboxItem
-                        key={tag.name}
-                        checked={tagFiltered(tag.name)}
-                        onCheckedChange={(on) =>
-                          setFilters({
-                            tags: on ? [...filters.tags, tag.name] : filters.tags.filter((f) => !sameName(f, tag.name)),
-                          })
-                        }
-                      >
-                        <span aria-hidden className={cn("size-2 shrink-0 rounded-full", tagDot(tag.color))} />
-                        <span className="truncate">{tag.name}</span>
-                      </DropdownMenuCheckboxItem>
-                    ))}
-                  </DropdownMenuGroup>
-                </>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Sort</DropdownMenuLabel>
-                <DropdownMenuRadioGroup value={filters.sort} onValueChange={(sort) => setFilters({ sort })}>
-                  <DropdownMenuRadioItem value="date">Newest first</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="unread">Unread first</DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <FunnelSimpleIcon />
+                {activeFilters > 0 && (
+                  <span aria-hidden className="absolute top-1 right-1 size-1.5 rounded-full bg-primary" />
+                )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Show</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={filters.scope} onValueChange={(scope) => setFilters({ scope })}>
+                    <DropdownMenuRadioItem value="page">This page</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="all">All pages</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Status</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={filters.status} onValueChange={(status) => setFilters({ status })}>
+                    <DropdownMenuRadioItem value="open">Open</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="resolved">Resolved</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="all">Open and resolved</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem
+                  checked={filters.mine}
+                  onCheckedChange={(mine) => setFilters({ mine })}
+                  disabled={!signedIn}
+                >
+                  Only my threads
+                </DropdownMenuCheckboxItem>
+                {/* Not a submenu: in the shadow root, a click in a submenu closes the menus. The field's chip opens. */}
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Filter by</DropdownMenuLabel>
+                  {FILTER_FIELDS.filter((field) => field !== "tag" || hasTags).map((field) => (
+                    <DropdownMenuItem
+                      key={field}
+                      disabled={!signedIn}
+                      onClick={() => {
+                        chosenField.current = field
+                      }}
+                    >
+                      {FIELD_LABELS[field]}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Sort</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={filters.sort} onValueChange={(sort) => setFilters({ sort })}>
+                    <DropdownMenuRadioItem value="date">Newest first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="unread">Unread first</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <FilterChips
+            onChange={(rules) => setFilters({ rules })}
+            editing={editingChip}
+            onEditingChange={setEditingChip}
+            returnFocus={filterButtonRef}
+          />
         </div>
 
         {!signedIn ? (
@@ -605,6 +613,12 @@ function EmptyState() {
   const me = useStore((s) => s.session?.user.id)
   const shortcut = useStore((s) => s.shortcut)
   const query = filters.query.trim()
+  // "Only resolved" goes back to the open threads.
+  const cleared: Pick<Filters, "mine" | "rules" | "status"> = {
+    mine: false,
+    rules: [],
+    status: filters.status === "resolved" ? "open" : filters.status,
+  }
 
   let title: string
   const hints: string[] = []
@@ -620,11 +634,11 @@ function EmptyState() {
     }
     actions.push({ label: "Clear search", run: () => setFilters({ query: "" }) })
   } else if (
-    (filters.mine || filters.assigned || filters.tags.length > 0) &&
-    visibleThreads(threads, { ...filters, mine: false, assigned: false, tags: [] }, page, me, null).length > 0
+    (filters.mine || filters.rules.length > 0 || filters.status === "resolved") &&
+    visibleThreads(threads, { ...filters, ...cleared }, page, me, null).length > 0
   ) {
     title = "No comments match the filters"
-    actions.push({ label: "Clear filters", run: () => setFilters({ mine: false, assigned: false, tags: [] }) })
+    actions.push({ label: "Clear filters", run: () => setFilters(cleared) })
   } else {
     title = filters.scope === "page" ? "No comments on this page" : "No comments yet"
     const open = threads.filter((t) => t.status === "open")
@@ -639,9 +653,9 @@ function EmptyState() {
     const resolvedHere = threads.filter(
       (t) => t.status === "resolved" && (filters.scope === "all" || t.page === page),
     ).length
-    if (!filters.resolved && resolvedHere > 0) {
+    if (filters.status === "open" && resolvedHere > 0) {
       hints.push(`${plural(resolvedHere, "resolved comment", "resolved comments")}`)
-      actions.push({ label: "Show resolved", run: () => setFilters({ resolved: true }) })
+      actions.push({ label: "Show resolved", run: () => setFilters({ status: "all" }) })
     }
     actions.push({ label: "Add comment", run: () => setCommentMode(true) })
   }

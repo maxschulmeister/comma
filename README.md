@@ -11,7 +11,7 @@ Comments pinned to any website. One script tag. Your own service.
 - Each thread keeps where it was made: the page title and URL, the scroll position, the window size, the browser, the system, the theme, the language and the time zone.
 - Details in the side panel: the screenshot at full size and all of the above. Go through the threads with them open. Copy them as a bug report.
 - Unsent comments stay on their pin, also after a reload.
-- A panel with all comments of the site. Search, filters, keyboard navigation.
+- A panel with all comments of the site. Search, keyboard navigation, and filters: status, tag, who started the thread, assignee (each with "is" or "is not").
 - Pins stay on their element when the page changes. If comma cannot find the element, the thread says "Element not found" and what it was on. It never moves to a wrong element.
 - Coding agents fix the comments, with no setup: tell your agent "fix the open comma comments" (see [Fix comments with a coding agent](#fix-comments-with-a-coding-agent)).
 
