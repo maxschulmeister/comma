@@ -1,16 +1,17 @@
 // Tags on threads ("Bug", "Content"): the pills, and the picker that adds and removes them.
-import { CheckIcon, MagnifyingGlassIcon, PencilSimpleIcon, TagIcon } from "@phosphor-icons/react"
+import { PencilSimpleIcon, TagIcon } from "@phosphor-icons/react"
 import { cn } from "cn"
 import { useId, useRef, useState } from "react"
 import { changeTag, createTag, setThreadTag } from "@/client"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { sameName } from "@/lib/format"
 import { useStore } from "@/store"
 import type { Tag, TagColor, Thread } from "@/types"
 import { notify } from "./notices"
+import { PickerOption, PickerSearch } from "./picker"
 
 // In the order of the swatches. Gray last: a new tag gets a color that few tags have (see TagButton).
 // Full class names, so Tailwind finds them. Pill text on its tint: 4.5:1 or more.
@@ -40,13 +41,10 @@ function useTagColor(name: string): TagColor {
 export function TagPill({ name }: { name: string }) {
   const color = useTagColor(name)
   return (
-    // A block, not flex: the ellipsis of a long name shows.
-    <span
-      data-slot="tag"
-      className={cn("inline-block h-5 max-w-40 truncate rounded-full px-2 font-medium text-xs/5", STYLES[color].pill)}
-    >
-      {name}
-    </span>
+    <Badge variant={null} data-slot="tag" className={cn("max-w-40 justify-start", STYLES[color].pill)}>
+      {/* Its own box: a long name ends with "…". */}
+      <span className="min-w-0 truncate">{name}</span>
+    </Badge>
   )
 }
 
@@ -96,10 +94,11 @@ export function TagButton({ thread }: { thread: Thread }) {
   const [editing, setEditing] = useState<Tag | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const typed = query.trim()
-  const q = typed.toLowerCase()
-  const shown = tags.filter((t) => t.name.toLowerCase().includes(q))
+  const matching = (text: string) => tags.filter((t) => t.name.toLowerCase().includes(text.toLowerCase()))
+  const shown = matching(typed)
   const has = (name: string) => thread.tags.some((n) => sameName(n, name))
-  const canCreate = typed.length > 0 && typed.length <= MAX_NAME && !tags.some((t) => sameName(t.name, typed))
+  const canCreate = (text: string) =>
+    text.length > 0 && text.length <= MAX_NAME && !tags.some((t) => sameName(t.name, text))
   // The tags that people made: their creator and admins change them. The config's tags change in the config.
   const canEdit = (tag: Tag) => !!tag.createdBy && (tag.createdBy === me?.id || !!me?.isAdmin)
   // Unless the person chooses: the color that the fewest tags have.
@@ -109,9 +108,9 @@ export function TagButton({ thread }: { thread: Thread }) {
   const toggle = (name: string) =>
     setThreadTag(thread, name, !has(name)).catch(() => notify("Could not change the tags"))
 
-  const create = async () => {
+  const create = async (name: string) => {
     try {
-      const tag = await createTag(typed, newColor)
+      const tag = await createTag(name, newColor)
       setQuery("")
       setColor(null)
       searchRef.current?.focus()
@@ -119,6 +118,14 @@ export function TagButton({ thread }: { thread: Thread }) {
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not make the tag")
     }
+  }
+
+  // An exact match first, then the first match. No match: a new tag.
+  const choose = (text: string) => {
+    const found = matching(text)
+    const match = found.find((t) => sameName(t.name, text)) ?? found[0]
+    if (match) void toggle(match.name)
+    else if (canCreate(text)) void create(text)
   }
 
   return (
@@ -147,43 +154,19 @@ export function TagButton({ thread }: { thread: Thread }) {
           />
         ) : (
           <>
-            <InputGroup>
-              <InputGroupAddon>
-                <MagnifyingGlassIcon />
-              </InputGroupAddon>
-              <InputGroupInput
-                ref={searchRef}
-                type="search"
-                autoFocus
-                aria-label="Search tags"
-                placeholder="Search tags"
-                value={query}
-                onChange={(e) => setQuery(e.currentTarget.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter") return
-                  e.preventDefault()
-                  const match = shown.find((t) => sameName(t.name, typed)) ?? shown[0]
-                  if (match) void toggle(match.name)
-                  else if (canCreate) void create()
-                }}
-              />
-            </InputGroup>
+            <PickerSearch ref={searchRef} label="Search tags" value={query} onChange={setQuery} onEnter={choose} />
             <ul className="max-h-56 overflow-y-auto">
               {shown.map((tag) => (
                 <li key={tag.name} className="group/tag relative">
-                  <button
-                    type="button"
+                  <PickerOption
+                    checked={has(tag.name)}
                     aria-pressed={has(tag.name)}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-md p-1.5 text-left text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
-                      canEdit(tag) && "pr-8",
-                    )}
+                    className={cn(canEdit(tag) && "pr-8")}
                     onClick={() => void toggle(tag.name)}
                   >
                     <span aria-hidden className={cn("size-2.5 shrink-0 rounded-full", tagDot(tag.color))} />
                     <span className="flex-1 truncate">{tag.name}</span>
-                    {has(tag.name) && <CheckIcon className="shrink-0" />}
-                  </button>
+                  </PickerOption>
                   {canEdit(tag) && (
                     // Shows with the row (hover or focus), and always on touch screens.
                     <Button
@@ -200,10 +183,10 @@ export function TagButton({ thread }: { thread: Thread }) {
                 </li>
               ))}
             </ul>
-            {canCreate && (
+            {canCreate(typed) && (
               <div className="flex flex-col gap-1 border-t pt-1">
                 <ColorPicker value={newColor} onChange={setColor} />
-                <Button variant="ghost" size="sm" className="justify-start" onClick={() => void create()}>
+                <Button variant="ghost" size="sm" className="justify-start" onClick={() => void create(typed)}>
                   <span className="truncate">Create “{typed}”</span>
                 </Button>
               </div>
