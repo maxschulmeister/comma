@@ -105,6 +105,25 @@ create table if not exists versions (
   version integer not null
 );
 
+-- Tags that people made. The tags of the project config are not here. key: the name in lowercase (see tags.ts).
+create table if not exists tags (
+  project text not null,
+  key text not null,
+  name text not null,
+  color text not null,
+  created_by text not null references users (id),
+  created_at integer not null,
+  primary key (project, key)
+);
+
+-- Tags on threads, by key.
+create table if not exists thread_tags (
+  thread_id text not null references threads (id) on delete cascade,
+  key text not null,
+  created_at integer not null,
+  primary key (thread_id, key)
+);
+
 -- A coding agent asks to connect (see agent.ts). A person allows it in the widget: then user_id is set.
 create table if not exists agent_connects (
   -- Shown to the person and the agent, so the person can see that the request is from their agent.

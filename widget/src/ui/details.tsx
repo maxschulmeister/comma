@@ -30,6 +30,7 @@ function facts(thread: Thread): { title: string; facts: Fact[] }[] {
       facts: [
         { label: "By", value: nameOf(getState().users[thread.createdBy]) },
         { label: "Date", value: fullDate(thread.createdAt) },
+        ...(thread.tags.length > 0 ? [{ label: "Tags", value: thread.tags.join(", ") }] : []),
         ...(first?.text ? [{ label: "Text", value: first.text }] : []),
       ],
     },

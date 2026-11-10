@@ -577,3 +577,102 @@ test("assign a thread; the assignee finds it with Assigned to me", async ({ page
   await expect(items).toContainText("Unread")
   await other.close()
 })
+
+test("tag a thread; others see its tags", async ({ page, context }) => {
+  const thread = await withComment(page, "tags", "Tagger")
+  await thread.getByRole("button", { name: "Tags" }).click()
+  const picker = page.getByRole("dialog", { name: "Tags" })
+  await picker.getByRole("button", { name: "Content" }).click()
+  // Search, and Enter changes the first match.
+  await picker.getByRole("searchbox", { name: "Search tags" }).fill("bu")
+  await page.keyboard.press("Enter")
+  await expect(picker.getByRole("button", { name: "Bug" })).toHaveAttribute("aria-pressed", "true")
+  await page.keyboard.press("Escape")
+  await expect(picker).toBeHidden()
+  // In the order of the project's tags.
+  await expect(thread.getByRole("list", { name: "Tags" }).getByRole("listitem")).toHaveText(["Bug", "Content"])
+
+  const bob = await asOther(context, "tags", await guestSession("Bob"))
+  const bobThread = threadPopover(bob)
+  await expect(bobThread.getByRole("list", { name: "Tags" }).getByRole("listitem")).toHaveText(["Bug", "Content"])
+  await bobThread.getByRole("button", { name: "Tags" }).click()
+  await bob.getByRole("dialog", { name: "Tags" }).getByRole("button", { name: "Bug" }).click()
+  await expect(bobThread.getByRole("list", { name: "Tags" }).getByRole("listitem")).toHaveText(["Content"])
+  await bob.close()
+})
+
+test("make a tag with a color; it goes on the thread", async ({ page }) => {
+  const thread = await withComment(page, "new-tag", "Maker")
+  await thread.getByRole("button", { name: "Tags" }).click()
+  const picker = page.getByRole("dialog", { name: "Tags" })
+  // Tags are for the whole project: each run and browser makes its own.
+  const name = `Perf ${Math.random().toString(36).slice(2, 8)}`
+  const search = picker.getByRole("searchbox", { name: "Search tags" })
+  await search.fill(name)
+  await picker.getByRole("radio", { name: "Teal" }).check()
+  await picker.getByRole("button", { name: `Create “${name}”` }).click()
+  await expect(picker.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true")
+  await expect(thread.getByRole("list", { name: "Tags" }).getByRole("listitem")).toHaveText([name])
+
+  // The name is taken now, in any case.
+  await search.fill(name.toUpperCase())
+  await expect(picker.getByRole("button", { name, exact: true })).toBeVisible()
+  await expect(picker.getByRole("button", { name: /^Create/ })).toHaveCount(0)
+})
+
+test("the creator changes and deletes a tag; the config's tags have no edit button", async ({ page }) => {
+  const thread = await withComment(page, "edit-tag", "Editor")
+  const pills = thread.getByRole("list", { name: "Tags" }).getByRole("listitem")
+  await thread.getByRole("button", { name: "Tags" }).click()
+  const picker = page.getByRole("dialog", { name: "Tags" })
+  await expect(picker.getByRole("button", { name: "Bug" })).toBeVisible()
+  await expect(picker.getByRole("button", { name: "Edit Bug" })).toHaveCount(0)
+  const id = Math.random().toString(36).slice(2, 8)
+  // Enter makes a tag when no tag matches.
+  await picker.getByRole("searchbox", { name: "Search tags" }).fill(`Old ${id}`)
+  await page.keyboard.press("Enter")
+  await expect(pills).toHaveText([`Old ${id}`])
+
+  await picker.getByRole("button", { name: `Edit Old ${id}` }).click()
+  await picker.getByRole("textbox", { name: "Name" }).fill(`New ${id}`)
+  await picker.getByRole("radio", { name: "Blue" }).check()
+  await picker.getByRole("button", { name: "Save" }).click()
+  await expect(pills).toHaveText([`New ${id}`])
+
+  await picker.getByRole("button", { name: `Edit New ${id}` }).click()
+  await expect(picker.getByRole("radio", { name: "Blue" })).toBeChecked()
+  await picker.getByRole("button", { name: "Delete", exact: true }).click()
+  await picker.getByRole("button", { name: "Delete tag" }).click()
+  await expect(thread.getByRole("list", { name: "Tags" })).toHaveCount(0)
+  await expect(picker.getByRole("button", { name: `New ${id}`, exact: true })).toHaveCount(0)
+})
+
+test("a late answer does not bring back an old list of tags", async ({ page }) => {
+  const thread = await withComment(page, "late-tags", "Racer")
+  await thread.getByRole("button", { name: "Tags" }).click()
+  const picker = page.getByRole("dialog", { name: "Tags" })
+  // The server adds Bug at once, but its answer, with the tags of that time, comes after the new tag.
+  let release = () => {}
+  const late = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let answered = () => {}
+  const lateAnswered = new Promise<void>((resolve) => {
+    answered = resolve
+  })
+  await page.route("**/api/threads/*/tags/Bug", async (route) => {
+    const response = await route.fetch()
+    await late
+    await route.fulfill({ response })
+    answered()
+  })
+  await picker.getByRole("button", { name: "Bug", exact: true }).click()
+  const name = `Late ${Math.random().toString(36).slice(2, 8)}`
+  await picker.getByRole("searchbox", { name: "Search tags" }).fill(name)
+  await page.keyboard.press("Enter")
+  await expect(picker.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true")
+  release()
+  await lateAnswered
+  await page.waitForTimeout(100)
+  await expect(picker.getByRole("button", { name, exact: true })).toBeVisible()
+})

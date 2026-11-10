@@ -28,7 +28,7 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Kbd } from "@/components/ui/kbd"
 import { shortText } from "@/lib/describe"
-import { plural, timeAgo } from "@/lib/format"
+import { plural, sameName, timeAgo } from "@/lib/format"
 import { NARROW, reducedMotion, useMedia } from "@/lib/media"
 import { pageBox, resolvedElement, useResolved } from "@/live"
 import { type Filters, getState, type PanelSide, type State, setState, useStore } from "@/store"
@@ -37,6 +37,7 @@ import { closeDetails, openDetails } from "./details-state"
 import { focusOpenThread, openThread, panelElements, setPanelElement } from "./pins"
 import { setCommentMode } from "./shortcuts"
 import { SignInForm } from "./sign-in"
+import { TagPill, tagDot } from "./tags"
 import { threadLink } from "./thread"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
@@ -94,7 +95,13 @@ export function visibleThreads(
     if (!filters.resolved && t.status === "resolved") return false
     if (filters.mine && (!me || !t.comments.some((c) => c.authorId === me || c.mentions.includes(me)))) return false
     if (filters.assigned && (!me || t.assigneeId !== me)) return false
-    if (q && !t.comments.some((c) => c.text.toLowerCase().includes(q))) return false
+    if (filters.tags.length > 0 && !t.tags.some((name) => filters.tags.some((f) => sameName(f, name)))) return false
+    if (
+      q &&
+      !t.comments.some((c) => c.text.toLowerCase().includes(q)) &&
+      !t.tags.some((name) => name.toLowerCase().includes(q))
+    )
+      return false
     return true
   })
   const unread = filters.sort === "unread" ? unreadForSort(threads) : null
@@ -285,9 +292,15 @@ function PanelContent() {
   const asideRef = useRef<HTMLElement>(null)
   useFocusManagement(asideRef)
   const list = usePanelList()
-  const activeFilters = [filters.scope === "all", filters.mine, filters.assigned, filters.resolved].filter(
-    Boolean,
-  ).length
+  const tags = useStore((s) => s.tags)
+  const activeFilters = [
+    filters.scope === "all",
+    filters.mine,
+    filters.assigned,
+    filters.resolved,
+    filters.tags.length > 0,
+  ].filter(Boolean).length
+  const tagFiltered = (name: string) => filters.tags.some((f) => sameName(f, name))
 
   // The keys follow the screen (see arrowKeys). ↑ ↓ select a thread: it opens at its pin and the focus stays here
   // (a thread on another page only gets the focus). Toward the page (or Enter): into the thread. Away from the
@@ -502,6 +515,29 @@ function PanelContent() {
               >
                 Show resolved
               </DropdownMenuCheckboxItem>
+              {/* Not a submenu: in the shadow root, a click in a submenu closes the menus. */}
+              {tags.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Tags</DropdownMenuLabel>
+                    {tags.map((tag) => (
+                      <DropdownMenuCheckboxItem
+                        key={tag.name}
+                        checked={tagFiltered(tag.name)}
+                        onCheckedChange={(on) =>
+                          setFilters({
+                            tags: on ? [...filters.tags, tag.name] : filters.tags.filter((f) => !sameName(f, tag.name)),
+                          })
+                        }
+                      >
+                        <span aria-hidden className={cn("size-2 shrink-0 rounded-full", tagDot(tag.color))} />
+                        <span className="truncate">{tag.name}</span>
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuGroup>
+                </>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Sort</DropdownMenuLabel>
@@ -584,11 +620,11 @@ function EmptyState() {
     }
     actions.push({ label: "Clear search", run: () => setFilters({ query: "" }) })
   } else if (
-    (filters.mine || filters.assigned) &&
-    visibleThreads(threads, { ...filters, mine: false, assigned: false }, page, me, null).length > 0
+    (filters.mine || filters.assigned || filters.tags.length > 0) &&
+    visibleThreads(threads, { ...filters, mine: false, assigned: false, tags: [] }, page, me, null).length > 0
   ) {
     title = "No comments match the filters"
-    actions.push({ label: "Clear filters", run: () => setFilters({ mine: false, assigned: false }) })
+    actions.push({ label: "Clear filters", run: () => setFilters({ mine: false, assigned: false, tags: [] }) })
   } else {
     title = filters.scope === "page" ? "No comments on this page" : "No comments yet"
     const open = threads.filter((t) => t.status === "open")
@@ -710,8 +746,11 @@ function PanelItem({
             {shown?.text || "Image"}
           </span>
           {reply && <span className="truncate text-muted-foreground text-xs">On: {first?.text || "Image"}</span>}
-          {(replies > 0 || assignee || detached || thread.status === "resolved") && (
+          {(thread.tags.length > 0 || replies > 0 || assignee || detached || thread.status === "resolved") && (
             <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-muted-foreground text-xs">
+              {thread.tags.map((name) => (
+                <TagPill key={name} name={name} />
+              ))}
               {replies > 0 && <span>{plural(replies, "reply", "replies")}</span>}
               {assignee && <span className="truncate">Assigned to {nameOf(assignee)}</span>}
               {thread.status === "resolved" && <Badge variant="secondary">Resolved</Badge>}

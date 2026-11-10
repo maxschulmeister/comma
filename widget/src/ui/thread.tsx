@@ -7,7 +7,6 @@ import {
   DotsThreeIcon,
   EnvelopeSimpleIcon,
   LinkSimpleIcon,
-  MagnifyingGlassIcon,
   PencilSimpleIcon,
   SmileyIcon,
   TrashIcon,
@@ -46,7 +45,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { describe, kindOf, shortText } from "@/lib/describe"
@@ -60,7 +58,9 @@ import { Composer } from "./composer"
 import { toggleDetails } from "./details-state"
 import { EmojiButton, QUICK_REACTIONS } from "./emoji"
 import { notify } from "./notices"
+import { PickerOption, PickerSearch } from "./picker"
 import { SignInForm } from "./sign-in"
+import { TagButton, TagList } from "./tags"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
 
@@ -173,6 +173,7 @@ export function ThreadView({
         <span className="flex-1 truncate font-medium text-xs" title={label}>
           {label}
         </span>
+        {me && <TagButton thread={thread} />}
         {me && <AssignButton thread={thread} assignee={assignee} />}
         {me && (
           <Tooltip>
@@ -292,8 +293,9 @@ export function ThreadView({
           </a>
         </div>
       )}
-      {(assignee || thread.context || thread.screenshot) && (
+      {(thread.tags.length > 0 || assignee || thread.context || thread.screenshot) && (
         <div className="flex flex-col border-b text-muted-foreground text-xs">
+          {thread.tags.length > 0 && <TagList names={thread.tags} className="px-3 pt-1.5 last:pb-1.5" />}
           {assignee && <span className="truncate px-3 pt-1.5 last:pb-1.5">Assigned to {nameOf(assignee)}</span>}
           {(thread.context || thread.screenshot) && (
             // The line opens the details (in the panel or a dialog): the screenshot at full size and more about the page.
@@ -485,37 +487,19 @@ function AssignButton({ thread, assignee }: { thread: Thread; assignee: User | u
         {assignee ? <UserAvatar user={assignee} className="size-5" /> : <UserCirclePlusIcon />}
       </PopoverTrigger>
       <PopoverContent side="bottom" align="end" className="w-60 gap-1 p-1" aria-label="Assign">
-        <InputGroup>
-          <InputGroupAddon>
-            <MagnifyingGlassIcon />
-          </InputGroupAddon>
-          <InputGroupInput
-            type="search"
-            autoFocus
-            aria-label="Search people"
-            placeholder="Search people"
-            value={query}
-            onChange={(e) => setQuery(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && people[0]) {
-                e.preventDefault()
-                pick(people[0])
-              }
-            }}
-          />
-        </InputGroup>
+        <PickerSearch
+          label="Search people"
+          value={query}
+          onChange={setQuery}
+          onEnter={() => people[0] && pick(people[0])}
+        />
         <ul className="max-h-56 overflow-y-auto">
           {people.map((user) => (
             <li key={user.id}>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md p-1.5 text-left text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => pick(user)}
-              >
+              <PickerOption checked={user.id === thread.assigneeId} onClick={() => pick(user)}>
                 <UserAvatar user={user} />
                 <UserName user={user} className="flex-1" />
-                {user.id === thread.assigneeId && <CheckIcon className="shrink-0" />}
-              </button>
+              </PickerOption>
             </li>
           ))}
         </ul>

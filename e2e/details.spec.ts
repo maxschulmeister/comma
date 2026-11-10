@@ -297,6 +297,11 @@ test("copy as bug report", async ({ page, context, browserName }) => {
       },
     },
   })
+  for (const tag of ["Design", "Bug"]) {
+    await api.put(`${COMMA}/api/threads/${thread.id}/tags/${tag}`, {
+      headers: { origin: SITE, authorization: `Bearer ${me.token}` },
+    })
+  }
   await api.dispose()
   await signIn(page, me)
   await page.goto(path)
@@ -307,6 +312,7 @@ test("copy as bug report", async ({ page, context, browserName }) => {
   await expect(page.getByRole("status").filter({ hasText: "Bug report copied" })).toBeVisible()
   const text = await page.evaluate(() => navigator.clipboard.readText())
   expect(text).toContain("Button is cut off")
+  expect(text).toContain("- Tags: Bug, Design")
   expect(text).toContain("Firefox 140")
   expect(text).toContain("`body > main > section > h1`")
   expect(text).toMatch(/!\[Screenshot\]\(http:\/\/localhost:4800\/files\/[\w-]+\)/)

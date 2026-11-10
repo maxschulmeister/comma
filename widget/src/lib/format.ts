@@ -7,6 +7,9 @@ const units: [Intl.RelativeTimeFormatUnit, number][] = [
   ["minute", 60],
 ]
 
+/** Tag names: case does not matter. */
+export const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+
 /** "5 minutes ago", "yesterday". Under a minute: "just now". */
 export function timeAgo(ms: number, now = Date.now()) {
   const seconds = Math.round((ms - now) / 1000)

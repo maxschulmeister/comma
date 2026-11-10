@@ -1,6 +1,7 @@
 // Reads threads with their comments, reactions, files and read state, in the shape the widget uses.
 import { publicUser, type User, type UserRow } from "./auth"
 import { all, type Db, get, sql } from "./db"
+import { CUSTOM_TAGS, projectTags, type TagInput, type TagRow, tagKey } from "./tags"
 
 type ThreadRow = {
   id: string
@@ -53,6 +54,8 @@ export type Thread = {
   resolvedBy: string | null
   context: unknown
   assigneeId: string | null
+  /** Tag names. */
+  tags: string[]
   /** The element when the thread was made. */
   screenshot: FileRef | null
   unread: boolean
@@ -100,8 +103,9 @@ const fileRef = (f: { id: string; mime: string; width: number; height: number })
   height: f.height,
 })
 
-// All threads in the scope (or one thread), for one user. One round trip for the threads, one for the users.
-export async function loadThreads(db: Db, scope: Scope, me: UserRow, onlyThread?: string) {
+// All threads in the scope (or one thread), for one user, and the project's tags. One round trip for the threads,
+// one for the users. `configTags`: the tags of the project config.
+export async function loadThreads(db: Db, scope: Scope, me: UserRow, configTags: TagInput[], onlyThread?: string) {
   const s = inScope(scope)
   const where = onlyThread ? `${s.where} and t.id = ?` : s.where
   const args = onlyThread ? [...s.args, onlyThread] : s.args
@@ -131,6 +135,11 @@ export async function loadThreads(db: Db, scope: Scope, me: UserRow, onlyThread?
         `select f.id, f.thread_id, f.mime, f.width, f.height from files f join threads t on t.id = f.thread_id where ${where}`,
         ...args,
       ),
+      sql(
+        `select tt.thread_id, tt.key from thread_tags tt join threads t on t.id = tt.thread_id where ${where}`,
+        ...args,
+      ),
+      sql(`${CUSTOM_TAGS} order by key`, scope.project),
     ],
     "read",
   )
@@ -147,6 +156,15 @@ export async function loadThreads(db: Db, scope: Scope, me: UserRow, onlyThread?
       f,
     ]),
   )
+
+  const tags = projectTags(configTags, rows<TagRow>(8))
+  // A thread's tags in the order of the project's tags. Tags that the project no longer has do not show.
+  const tagOrder = new Map(tags.map((t, i) => [tagKey(t.name), i]))
+  const tagsBy = new Map<string, number[]>()
+  for (const row of rows<{ thread_id: string; key: string }>(7)) {
+    const index = tagOrder.get(row.key)
+    if (index !== undefined) tagsBy.set(row.thread_id, [...(tagsBy.get(row.thread_id) ?? []), index])
+  }
 
   const userIds = new Set<string>([me.id])
   const byComment = <T extends { comment_id: string }>(rows: T[]) => {
@@ -205,6 +223,7 @@ export async function loadThreads(db: Db, scope: Scope, me: UserRow, onlyThread?
       resolvedBy: t.resolved_by,
       context: t.context ? JSON.parse(t.context) : null,
       assigneeId: t.assignee_id,
+      tags: (tagsBy.get(t.id) ?? []).sort((a, b) => a - b).map((i) => tags[i].name),
       screenshot: screenshot ? fileRef(screenshot) : null,
       unread,
       comments: list,
@@ -217,5 +236,5 @@ export async function loadThreads(db: Db, scope: Scope, me: UserRow, onlyThread?
     const list = await all<UserRow>(db, `select * from users where id in (${ids.map(() => "?").join(",")})`, ...ids)
     for (const u of list) users[u.id] = publicUser(u)
   }
-  return { threads: result, users }
+  return { threads: result, users, tags }
 }

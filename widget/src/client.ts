@@ -2,8 +2,9 @@
 import type { Anchor } from "./anchor"
 import { clearDrafts } from "./drafts"
 import type { PageContext } from "./lib/env"
-import { getState, type ProjectInfo, setState, subscribe } from "./store"
-import type { Comment, FileRef, Session, Thread, ThreadResult, User } from "./types"
+import { sameName } from "./lib/format"
+import { getState, type ProjectInfo, type State, setState, subscribe } from "./store"
+import type { Comment, FileRef, Session, Tag, TagColor, Thread, ThreadResult, User } from "./types"
 
 export class ApiError extends Error {
   status: number
@@ -41,7 +42,7 @@ function applySession(session: Session | null) {
   setState({
     session,
     signInOpen: false,
-    ...(session ? {} : { threads: [], users: {}, loaded: false, loadFailed: false }),
+    ...(session ? {} : { threads: [], users: {}, tags: [], loaded: false, loadFailed: false }),
   })
   if (session) void refresh()
 }
@@ -289,6 +290,7 @@ export function refresh(): Promise<void> {
         setState({
           threads,
           users: data.users,
+          ...withTags(getState(), data.tags),
           loaded: true,
           loadFailed: false,
           session: session && { ...session, user: data.me },
@@ -320,7 +322,7 @@ async function requestThreads() {
   if (!res.ok) throw new ApiError(res.status, "Could not load comments")
   if (!isCurrent(session)) return null
   // The caller keeps the ETag only if it uses the data.
-  const data = (await res.json()) as { me: User; threads: Thread[]; users: Record<string, User> }
+  const data = (await res.json()) as { me: User; threads: Thread[]; users: Record<string, User>; tags: Tag[] }
   return { data, etag: res.headers.get("etag") }
 }
 
@@ -364,8 +366,18 @@ const readLatest = new Map<string, number>()
 const readInFlight = new Map<string, number>()
 let readCount = 0
 
+// Tag changes here (make, change, delete). An answer to a request from before one has an old list of tags.
+let tagChanges = 0
+
+/** A request that answers with a thread. If tags changed here while it ran, the list of tags stays as it is. */
+async function threadRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const before = tagChanges
+  const res = await request<T>(method, path, body)
+  return before === tagChanges ? res : { ...res, tags: getState().tags }
+}
+
 /** `readAnswer`: the number of the read change this answer is for. */
-function applyThread({ thread, users }: ThreadResult, readAnswer?: number) {
+function applyThread({ thread, users, tags }: ThreadResult, readAnswer?: number) {
   etag = null
   changes++
   if (deleted.has(thread.id)) return thread
@@ -379,6 +391,7 @@ function applyThread({ thread, users }: ThreadResult, readAnswer?: number) {
     return {
       threads: current ? s.threads.map((t) => (t.id === thread.id ? next : t)) : [...s.threads, next],
       users: { ...s.users, ...users },
+      ...withTags(s, tags),
     }
   })
   return thread
@@ -402,19 +415,19 @@ export async function createThread(input: {
   context: PageContext
   screenshot?: string
 }) {
-  return applyThread(await request<ThreadResult>("POST", "/api/threads", input))
+  return applyThread(await threadRequest<ThreadResult>("POST", "/api/threads", input))
 }
 
 export async function reply(threadId: string, body: unknown, files: string[]) {
-  return applyThread(await request<ThreadResult>("POST", `/api/threads/${threadId}/comments`, { body, files }))
+  return applyThread(await threadRequest<ThreadResult>("POST", `/api/threads/${threadId}/comments`, { body, files }))
 }
 
 export async function editComment(comment: Comment, body: unknown) {
-  return applyThread(await request<ThreadResult>("PATCH", `/api/comments/${comment.id}`, { body }))
+  return applyThread(await threadRequest<ThreadResult>("PATCH", `/api/comments/${comment.id}`, { body }))
 }
 
 export async function deleteComment(comment: Comment) {
-  const res = await request<{ threadDeleted: true } | ({ threadDeleted: false } & ThreadResult)>(
+  const res = await threadRequest<{ threadDeleted: true } | ({ threadDeleted: false } & ThreadResult)>(
     "DELETE",
     `/api/comments/${comment.id}`,
   )
@@ -428,11 +441,56 @@ export async function deleteThread(thread: Thread) {
 }
 
 export async function setStatus(thread: Thread, status: Thread["status"]) {
-  return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { status }))
+  return applyThread(await threadRequest<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { status }))
 }
 
 export async function setAssignee(thread: Thread, assignee: string | null) {
-  return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { assignee }))
+  return applyThread(await threadRequest<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { assignee }))
+}
+
+/**
+ * The tags of the project, from the server. The panel filter keeps only the names that the project still has: another
+ * person can rename or delete a tag.
+ */
+function withTags(s: State, tags: Tag[]): Partial<State> {
+  const kept = s.filters.tags.filter((f) => tags.some((t) => sameName(t.name, f)))
+  return kept.length === s.filters.tags.length ? { tags } : { tags, filters: { ...s.filters, tags: kept } }
+}
+
+/** Makes a tag for the project. */
+export async function createTag(name: string, color: TagColor) {
+  const res = await request<{ tag: Tag; tags: Tag[] }>("POST", "/api/tags", { name, color })
+  etag = null
+  changes++
+  tagChanges++
+  setState({ tags: res.tags })
+  return res.tag
+}
+
+/**
+ * Changes the name or color of a tag that I made (or any tag that people made, for admins), or deletes it (`null`).
+ * The threads and the panel filter change here at once: the server changes them for all threads.
+ */
+export async function changeTag(tag: Tag, change: { name: string; color: TagColor } | null) {
+  const path = `/api/tags/${encodeURIComponent(tag.name)}`
+  const res = await request<{ tags: Tag[] }>(change ? "PATCH" : "DELETE", path, change ?? undefined)
+  const next = change?.name
+  const was = (name: string) => sameName(name, tag.name)
+  const rename = (names: string[]) => names.flatMap((name) => (!was(name) ? [name] : next ? [next] : []))
+  etag = null
+  changes++
+  tagChanges++
+  setState((s) => ({
+    tags: res.tags,
+    threads: s.threads.map((t) => (t.tags.some(was) ? { ...t, tags: rename(t.tags) } : t)),
+    filters: { ...s.filters, tags: rename(s.filters.tags) },
+  }))
+}
+
+/** Adds the tag to the thread, or removes it. */
+export async function setThreadTag(thread: Thread, name: string, on: boolean) {
+  const path = `/api/threads/${thread.id}/tags/${encodeURIComponent(name)}`
+  return applyThread(await threadRequest<ThreadResult>(on ? "PUT" : "DELETE", path))
 }
 
 export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
@@ -441,9 +499,9 @@ export async function moveThread(thread: Thread, page: string, anchor: Anchor) {
   changes++
   setState((s) => ({ threads: s.threads.map((t) => (t.id === thread.id ? { ...t, page, anchor } : t)) }))
   try {
-    return applyThread(await request<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { page, anchor }))
+    return applyThread(await threadRequest<ThreadResult>("PATCH", `/api/threads/${thread.id}`, { page, anchor }))
   } catch (error) {
-    if (isCurrent(session)) applyThread({ thread, users: {} })
+    if (isCurrent(session)) applyThread({ thread, users: {}, tags: getState().tags })
     throw error
   }
 }
@@ -459,7 +517,7 @@ export async function setRead(thread: Thread, read: boolean) {
   setUnread(!read)
   try {
     // An older read change (open = read, then "Mark as unread") must not undo the newer one.
-    return applyThread(await request<ThreadResult>("POST", `/api/threads/${thread.id}/read`, { read }), number)
+    return applyThread(await threadRequest<ThreadResult>("POST", `/api/threads/${thread.id}/read`, { read }), number)
   } catch (error) {
     if (readLatest.get(thread.id) === number && isCurrent(session)) {
       etag = null
@@ -475,7 +533,7 @@ export async function toggleReaction(comment: Comment, emoji: string) {
   const me = getState().session?.user.id
   const mine = comment.reactions.some((r) => r.emoji === emoji && me && r.userIds.includes(me))
   const path = `/api/comments/${comment.id}/reactions/${encodeURIComponent(emoji)}`
-  return applyThread(await request<ThreadResult>(mine ? "DELETE" : "PUT", path))
+  return applyThread(await threadRequest<ThreadResult>(mine ? "DELETE" : "PUT", path))
 }
 
 /** The person allows a coding agent to work on the comments as them, or not (see /llms.txt on the server). */

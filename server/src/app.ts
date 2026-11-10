@@ -24,6 +24,7 @@ import type { FileStore } from "./files"
 import { MAX_IMAGE_BYTES, readImage } from "./images"
 import { popupRoutes } from "./popup"
 import { takeLimit } from "./rate-limit"
+import { CUSTOM_TAGS, projectTags, type TagRow, TagSchema, tagKey } from "./tags"
 import { getCommentRow, getThreadRow, isFirstComment, loadThreads, type Scope } from "./threads"
 import { widgetRoutes } from "./widget"
 
@@ -139,6 +140,7 @@ const UpdateThread = z.union([
   z.object({ page: Page, anchor: AnchorSchema }),
   z.object({ assignee: z.string().max(100).nullable() }),
 ])
+const TagChange = TagSchema.partial()
 const CreateComment = z.object({ body: z.unknown(), files: FileIds })
 const UpdateComment = z.object({ body: z.unknown() })
 const Read = z.object({ read: z.boolean() })
@@ -207,6 +209,7 @@ export function createApp(options: AppOptions) {
     ...deleteComments("thread_id = ?", id),
     sql("delete from files where thread_id = ?", id),
     sql("delete from reads where thread_id = ?", id),
+    sql("delete from thread_tags where thread_id = ?", id),
     sql("delete from threads where id = ?", id),
   ]
   // Image bytes outside the database go after the rows. A failure leaves bytes that no row uses, not the reverse.
@@ -540,8 +543,8 @@ export function createApp(options: AppOptions) {
   }
 
   const thread = async (c: Ctx, id: string) => {
-    const result = await loadThreads(db, c.get("scope"), c.get("user"), id)
-    return { thread: result.threads[0], users: result.users }
+    const result = await loadThreads(db, c.get("scope"), c.get("user"), c.get("project").tags, id)
+    return { thread: result.threads[0], users: result.users, tags: result.tags }
   }
 
   const findThread = async (c: Ctx, id: string) => {
@@ -683,7 +686,7 @@ export function createApp(options: AppOptions) {
 
   app.get("/agent/threads", async (c) => {
     const project = c.get("project")
-    const { threads, users } = await loadThreads(db, c.get("scope"), c.get("user"))
+    const { threads, users } = await loadThreads(db, c.get("scope"), c.get("user"), project.tags)
     c.header("content-type", "text/markdown; charset=utf-8")
     c.header("cache-control", "no-store")
     return c.body(
@@ -717,7 +720,7 @@ export function createApp(options: AppOptions) {
     c.header("etag", etag)
     c.header("cache-control", "no-cache")
     if (c.req.header("if-none-match") === etag) return c.body(null, 304)
-    return c.json({ me: publicUser(user), ...(await loadThreads(db, c.get("scope"), user)) })
+    return c.json({ me: publicUser(user), ...(await loadThreads(db, c.get("scope"), user, c.get("project").tags)) })
   })
 
   app.post("/api/threads", async (c) => {
@@ -832,6 +835,126 @@ export function createApp(options: AppOptions) {
     await deleteStored(stored)
     return c.json({ ok: true })
   })
+
+  const inConfig = (project: Project, key: string) => project.tags.some((t) => tagKey(t.name) === key)
+  const customTag = (project: Project, key: string) => get<TagRow>(db, `${CUSTOM_TAGS} and key = ?`, project.id, key)
+  const hasTag = async (project: Project, key: string) => inConfig(project, key) || !!(await customTag(project, key))
+  const allTags = async (project: Project) =>
+    projectTags(project.tags, await all<TagRow>(db, `${CUSTOM_TAGS} order by key`, project.id))
+  const tagTaken = () => new HTTPException(409, { message: "A tag with this name exists" })
+  // The tags of the threads of the project.
+  const inProject = "thread_id in (select id from threads where project = ?)"
+
+  // Anyone in the project makes tags, guests too. Names are unique in the project, in any case.
+  app.post("/api/tags", async (c) => {
+    const user = c.get("user")
+    const project = c.get("project")
+    const input = parse(TagSchema, await json(c))
+    const key = tagKey(input.name)
+    if (inConfig(project, key)) throw tagTaken()
+    await limit(c)
+    const [inserted] = await db.batch(
+      [
+        sql(
+          `insert into tags (project, key, name, color, created_by, created_at) values (?, ?, ?, ?, ?, ?)
+           on conflict (project, key) do nothing`,
+          project.id,
+          key,
+          input.name,
+          input.color,
+          user.id,
+          now(),
+        ),
+        bump(project.id),
+      ],
+      "write",
+    )
+    if (inserted?.rowsAffected === 0) throw tagTaken()
+    return c.json({ tag: { ...input, createdBy: user.id }, tags: await allTags(project) })
+  })
+
+  // A tag that people made: its creator or an admin changes it. The config's tags change only in the config.
+  const ownTag = async (c: Ctx) => {
+    const user = c.get("user")
+    const project = c.get("project")
+    const key = tagKey(c.req.param("tag") ?? "")
+    if (inConfig(project, key)) throw new HTTPException(403, { message: "Change this tag in the project config" })
+    const row = await customTag(project, key)
+    if (!row) throw new HTTPException(404, { message: "Tag not found" })
+    if (row.created_by !== user.id && user.is_admin !== 1)
+      throw new HTTPException(403, { message: "Only the person who made this tag or an admin can change it" })
+    return { key, row }
+  }
+
+  app.patch("/api/tags/:tag", async (c) => {
+    const project = c.get("project")
+    const { key, row } = await ownTag(c)
+    const input = parse(TagChange, await json(c))
+    const tag = { name: input.name ?? row.name, color: input.color ?? row.color, createdBy: row.created_by }
+    const next = tagKey(tag.name)
+    const renamed = next !== key
+    if (renamed && (await hasTag(project, next))) throw tagTaken()
+    await db.batch(
+      [
+        sql(
+          "update tags set key = ?, name = ?, color = ? where project = ? and key = ?",
+          next,
+          tag.name,
+          tag.color,
+          project.id,
+          key,
+        ),
+        // Threads keep the tag. A thread can have the new key already, from a tag that the config had before.
+        ...(renamed
+          ? [
+              sql(`update or ignore thread_tags set key = ? where key = ? and ${inProject}`, next, key, project.id),
+              sql(`delete from thread_tags where key = ? and ${inProject}`, key, project.id),
+            ]
+          : []),
+        bump(project.id),
+      ],
+      "write",
+    )
+    return c.json({ tag, tags: await allTags(project) })
+  })
+
+  // The tag goes off all threads.
+  app.delete("/api/tags/:tag", async (c) => {
+    const project = c.get("project")
+    const { key } = await ownTag(c)
+    await db.batch(
+      [
+        sql(`delete from thread_tags where key = ? and ${inProject}`, key, project.id),
+        sql("delete from tags where project = ? and key = ?", project.id, key),
+        bump(project.id),
+      ],
+      "write",
+    )
+    return c.json({ tags: await allTags(project) })
+  })
+
+  // Anyone in the project adds and removes tags, like reactions: one tag at a time, so two people at the same time
+  // do not undo each other's change.
+  const tagThread = (add: boolean) =>
+    createMiddleware<Env>(async (c) => {
+      const user = c.get("user")
+      const row = await findThread(c, c.req.param("id") ?? "")
+      const key = tagKey(c.req.param("tag") ?? "")
+      if (add && !(await hasTag(c.get("project"), key))) throw new HTTPException(400, { message: "Unknown tag" })
+      await db.batch(
+        [
+          add
+            ? sql("insert or ignore into thread_tags (thread_id, key, created_at) values (?, ?, ?)", row.id, key, now())
+            : sql("delete from thread_tags where thread_id = ? and key = ?", row.id, key),
+          touch(row.id),
+          bump(user.project),
+        ],
+        "write",
+      )
+      return c.json(await thread(c, row.id))
+    })
+  app.put("/api/threads/:id/tags/:tag", tagThread(true))
+  app.delete("/api/threads/:id/tags/:tag", tagThread(false))
 
   app.post("/api/threads/:id/read", async (c) => {
     const user = c.get("user")

@@ -6,6 +6,7 @@ Comments pinned to any website. One script tag. Your own service.
 
 - Press `C`, click an element, write a comment. Drag to comment on a region.
 - Threads with replies, reactions, mentions, images, screenshots of the page, assignees, resolve (with undo) and unread state.
+- Tags with colors on threads: Bug, Change, Content, Design, Question, Idea, or your own. Filter the panel by tags.
 - Each new thread keeps a screenshot of its element (or region).
 - Each thread keeps where it was made: the page title and URL, the scroll position, the window size, the browser, the system, the theme, the language and the time zone.
 - Details in the side panel: the screenshot at full size and all of the above. Go through the threads with them open. Copy them as a bug report.
@@ -82,8 +83,11 @@ To try comma on your computer first, see [Run it locally](#run-it-locally).
 | `toolbar`   | `"always"` (default) or `"signed-in"`: visitors see no toolbar until they sign in. To sign in, open a page with `?comma` in the URL (`https://www.acme.com/?comma`). Links to a thread also ask to sign in.      |
 | `details`   | Default place of a thread's details (screenshot, page, device): `"panel"` (default, a layer of the side panel) or `"dialog"` (a window over the page). Each person can change it in the panel's view menu.       |
 | `panel`     | Default of the side panel: `"overlay"` (default) floats over the page and keeps its width; `"push"` makes the page narrower and covers nothing. Each person can change it in the panel's view menu.              |
+| `tags`      | Tags of the threads, instead of the defaults (Bug, Change, Content, Design, Question, Idea): `[{ name: "Perf", color: "teal" }]`. `[]`: only the tags that people make. See below the table.                     |
 
 `guests` is a change for projects with `appSecret` that used guests before: set `guests: true` to keep them.
+
+Tag colors: `gray`, `red`, `orange`, `amber`, `green`, `teal`, `blue`, `violet`, `pink`. Anyone who is signed in can add tags to a thread, and make new tags. Only the person who made a tag, or an admin, can change or delete it. The tags of the config change only in the config.
 
 ### Script tag settings
 

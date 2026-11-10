@@ -168,6 +168,7 @@ export function threadsMarkdown(input: {
         `Window: ${context.viewport.width} × ${context.viewport.height}${context.dpr !== 1 ? ` at ${context.dpr}×` : ""}, ${oneLine(`${context.browser} on ${context.os}`)}${context.theme ? `, ${context.theme} theme` : ""}`,
       t.screenshot && `Screenshot: ${server}${t.screenshot.url}`,
       t.assigneeId && `Assigned to: ${name(t.assigneeId)}`,
+      t.tags.length > 0 && `Tags: ${oneLine(t.tags.join(", "))}`,
       `Link: ${new URL(url).origin}${t.page}#comma=${t.id}`,
     ]
     lines.push(`## ${i + 1}. ${oneLine(t.comments[0]?.text ?? "").slice(0, 80) || "Image"}`, "")
