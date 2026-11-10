@@ -717,7 +717,8 @@ export function createApp(options: AppOptions) {
     c.header("etag", etag)
     c.header("cache-control", "no-cache")
     if (c.req.header("if-none-match") === etag) return c.body(null, 304)
-    return c.json({ me: publicUser(user), ...(await loadThreads(db, c.get("scope"), user)) })
+    const tags = c.get("project").tags.map((t) => ({ ...t, createdBy: null }))
+    return c.json({ me: publicUser(user), ...(await loadThreads(db, c.get("scope"), user)), tags })
   })
 
   app.post("/api/threads", async (c) => {

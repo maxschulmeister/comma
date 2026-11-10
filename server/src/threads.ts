@@ -53,6 +53,8 @@ export type Thread = {
   resolvedBy: string | null
   context: unknown
   assigneeId: string | null
+  /** Tag names. */
+  tags: string[]
   /** The element when the thread was made. */
   screenshot: FileRef | null
   unread: boolean
@@ -205,6 +207,7 @@ export async function loadThreads(db: Db, scope: Scope, me: UserRow, onlyThread?
       resolvedBy: t.resolved_by,
       context: t.context ? JSON.parse(t.context) : null,
       assigneeId: t.assignee_id,
+      tags: [],
       screenshot: screenshot ? fileRef(screenshot) : null,
       unread,
       comments: list,

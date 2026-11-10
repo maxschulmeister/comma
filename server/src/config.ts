@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { DEFAULT_TAGS, TagSchema, tagKey } from "./tags"
 
 // An origin, or a pattern with `*` as the first label of the host: `https://*.preview.example.com`.
 const origin = z
@@ -52,6 +53,12 @@ export const ProjectSchema = z
     details: z.enum(["panel", "dialog"]).default("panel"),
     /** The default of the side panel: `overlay` floats over the page, `push` makes the page narrower. People toggle it. */
     panel: z.enum(["push", "overlay"]).default("overlay"),
+    /** Tags that each thread can have. Default: comma's tags (see tags.ts). `[]`: only the tags that people make. */
+    tags: z
+      .array(TagSchema)
+      .max(50)
+      .refine((tags) => new Set(tags.map((t) => tagKey(t.name))).size === tags.length, "Use each tag name once")
+      .default(DEFAULT_TAGS),
   })
   .refine((p) => !(p.appSecret && p.userUrl), "Use appSecret or userUrl, not both")
   .refine((p) => !p.appUrl || p.appSecret || p.userUrl, "appUrl needs app sign-in: set appSecret or userUrl")
