@@ -17,6 +17,7 @@ const thread = (patch: Partial<Thread>): Thread => ({
   tags: [],
   screenshot: null,
   unread: false,
+  mentioned: false,
   comments: [],
   ...patch,
 })
