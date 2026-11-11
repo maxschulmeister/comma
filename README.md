@@ -285,7 +285,7 @@ A coding agent (Claude Code, Codex, Cursor, pi…) works on the comments in your
 4. The agent reads the open comments: the page, the element, its CSS selector, the screenshot and the replies. It can filter them by status, tag, page and assignee. It changes the code, and can reply in the thread as you.
 5. You check the change on the site and resolve the thread. You can also tell the agent to resolve it.
 
-The agent acts as you. It can read comments, reply, resolve and reopen, add and remove tags, make new tags, and assign. It resolves only with a reply that says what it changed. It cannot edit or delete. Its access ends after 24 hours, or when you sign out. With `scope: "origin"`, it sees only the comments of the site where you allowed it.
+The agent acts as you. It can read comments, reply, make new comments, resolve and reopen, add and remove tags, make new tags, and assign. It resolves only with a reply that says what it changed. It cannot edit or delete. Its access ends after 24 hours, or when you sign out. With `scope: "origin"`, it sees only the comments of the site where you allowed it.
 
 ## Keyboard
 

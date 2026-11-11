@@ -163,6 +163,13 @@ const AgentFilter = z.object({
 })
 // The body of PUT /agent/threads/:id/assignee.
 const AgentAssignee = z.string().trim().min(1, "Send me or a user id. To unassign, use DELETE.").max(100)
+// A new comment of an agent: plain text instead of the editor's body, no images.
+const AgentCreateThread = z.object({
+  page: Page,
+  anchor: AnchorSchema,
+  text: z.string().max(MAX_BODY_BYTES),
+  context: PageContext.optional(),
+})
 const Emoji = z
   .string()
   .max(32)
@@ -858,13 +865,15 @@ export function createApp(options: AppOptions) {
     return c.json({ me: publicUser(user), ...(await loadThreads(db, c.get("scope"), user, c.get("project").tags)) })
   })
 
-  app.post("/api/threads", async (c) => {
+  // A new thread with its first comment, read for its author. `screenshot`: an upload of the element, or none.
+  const createThread = async (
+    c: Ctx,
+    input: { page: string; anchor: Anchor; context?: PageContext },
+    parsed: Extract<ReturnType<typeof parseBody>, { body: unknown }>,
+    files: string[],
+    screenshot?: string,
+  ) => {
     const user = c.get("user")
-    const input = parse(CreateThread, await json(c))
-    const files = await claimFiles(user, input.files)
-    const [screenshot] = input.screenshot ? await claimFiles(user, [input.screenshot]) : []
-    if (screenshot && files.includes(screenshot)) throw new HTTPException(400, { message: "Unknown image" })
-    const parsed = bodyOf(input.body, files.length > 0)
     await limit(c)
     const id = newId()
     await db.batch(
@@ -896,7 +905,24 @@ export function createApp(options: AppOptions) {
       ],
       "write",
     )
-    return c.json(await thread(c, id))
+    return id
+  }
+
+  app.post("/api/threads", async (c) => {
+    const user = c.get("user")
+    const input = parse(CreateThread, await json(c))
+    const files = await claimFiles(user, input.files)
+    const [screenshot] = input.screenshot ? await claimFiles(user, [input.screenshot]) : []
+    if (screenshot && files.includes(screenshot)) throw new HTTPException(400, { message: "Unknown image" })
+    const parsed = bodyOf(input.body, files.length > 0)
+    return c.json(await thread(c, await createThread(c, input, parsed, files, screenshot)))
+  })
+
+  // Posted as the person, on the site where the person allowed the agent.
+  app.post("/agent/threads", async (c) => {
+    const input = parse(AgentCreateThread, await json(c))
+    const parsed = bodyOf(textBody(input.text), false)
+    return c.json({ ok: true, id: await createThread(c, input, parsed, []) })
   })
 
   app.patch("/api/threads/:id", async (c) => {

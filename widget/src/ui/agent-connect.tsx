@@ -45,7 +45,7 @@ export function AgentConnect({ code }: { code: string }) {
           <AlertDialogTitle>Allow your agent?</AlertDialogTitle>
           <AlertDialogDescription>
             {me
-              ? `A coding agent asks to work on the comments as ${me.name}: read, reply, resolve, tag and assign. Allow it only if you started it and it shows this code.`
+              ? `A coding agent asks to work on the comments as ${me.name}: read, reply, comment, resolve, tag and assign. Allow it only if you started it and it shows this code.`
               : "A coding agent asks to read the comments. Sign in to answer."}
           </AlertDialogDescription>
         </AlertDialogHeader>
