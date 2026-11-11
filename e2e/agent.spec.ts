@@ -103,7 +103,7 @@ test("the agent pins a new comment to the element that /llms.txt tells it to des
           text: element,
           context: "Beta|",
           point: { x: 50, y: 50 },
-          viewport: 1280,
+          viewport: 0,
         },
       },
     })

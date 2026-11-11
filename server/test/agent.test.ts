@@ -454,6 +454,10 @@ describe("agent new comment", () => {
     const t = await setup()
     const { person, token } = await connected(t)
     expect((await create(t, token, { page: "/about", anchor, text: " \n " })).status).toBe(400)
+    // The same message as a reply that is too long.
+    const long = await create(t, token, { page: "/about", anchor, text: "a".repeat(100_000) })
+    expect(long.status).toBe(400)
+    expect(long.json.error).toBe("The comment is too long")
     expect((await create(t, token, { page: "/about", text: "Shorter." })).status).toBe(400)
     expect((await create(t, token, { page: "https://acme.test/about", anchor, text: "Shorter." })).status).toBe(400)
     expect((await t.request("GET", "/api/threads", { token: person.token })).json.threads).toHaveLength(1)

@@ -153,6 +153,8 @@ const AgentClaims = z.object({
   site: z.string(),
   exp: z.number(),
 })
+/** A comment body that passed `parseBody`. */
+type ParsedBody = Extract<ReturnType<typeof parseBody>, { body: unknown }>
 // The filters of /agent/threads. A thread matches each filter that the agent sends, and any of the tags.
 const AgentFilter = z.object({
   status: z.enum(["open", "resolved", "all"]).default("open"),
@@ -168,7 +170,7 @@ const AgentAssignee = z.string().trim().min(1, "Send me or a user id. To unassig
 const AgentCreateThread = z.object({
   page: Page,
   anchor: AnchorSchema,
-  text: z.string().max(MAX_BODY_BYTES),
+  text: z.string().max(MAX_BODY_BYTES, "The comment is too long"),
 })
 const Emoji = z
   .string()
@@ -579,13 +581,7 @@ export function createApp(options: AppOptions) {
     ...ids.map((id) => sql("insert or ignore into mentions (comment_id, user_id) values (?, ?)", commentId, id)),
   ]
 
-  const insertComment = async (
-    user: UserRow,
-    id: string,
-    threadId: string,
-    parsed: Extract<ReturnType<typeof parseBody>, { body: unknown }>,
-    files: string[],
-  ) => [
+  const insertComment = async (user: UserRow, id: string, threadId: string, parsed: ParsedBody, files: string[]) => [
     sql(
       "insert into comments (id, thread_id, author_id, body, text, created_at) values (?, ?, ?, ?, ?, ?)",
       id,
@@ -605,7 +601,7 @@ export function createApp(options: AppOptions) {
   const addReply = async (
     user: UserRow,
     threadId: string,
-    parsed: Extract<ReturnType<typeof parseBody>, { body: unknown }>,
+    parsed: ParsedBody,
     files: string[],
     also: ReturnType<typeof sql>[] = [],
   ) => {
@@ -869,7 +865,7 @@ export function createApp(options: AppOptions) {
   const createThread = async (
     c: Ctx,
     input: { page: string; anchor: Anchor; context?: PageContext },
-    parsed: Extract<ReturnType<typeof parseBody>, { body: unknown }>,
+    parsed: ParsedBody,
     files: string[],
     screenshot?: string,
   ) => {
