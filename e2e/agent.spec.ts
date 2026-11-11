@@ -7,8 +7,10 @@ import {
   endCommentMode,
   guestSession,
   openTestPage,
+  panel,
   pins,
   SITE,
+  showPanel,
   signIn,
   testPath,
   threadPopover,
@@ -76,4 +78,46 @@ test("signed out, the person signs in first; when they do not allow it, the agen
   await dialog.getByRole("button", { name: "Don't allow" }).click()
   await expect(dialog).toBeHidden()
   expect((await agent.token()).status()).toBe(410)
+})
+
+test("the agent pins a new comment to the element that /llms.txt tells it to describe", async ({ page }) => {
+  const session = await guestSession("Ada")
+  await signIn(page, session)
+  const path = testPath("agent-new")
+  const agent = await connectAgent()
+  await page.goto(`${path}#comma-connect=${agent.code}`)
+  await allowDialog(page).getByRole("button", { name: "Allow", exact: true }).click()
+  await expect(allowDialog(page)).toBeHidden()
+  const authorization = `Bearer ${(await (await agent.token()).json()).token}`
+
+  // The anchor as /llms.txt describes it: the text of the element, and the text of the elements before and after it.
+  const create = (text: string, element: string) =>
+    agent.api.post(`${COMMA}/agent/threads`, {
+      headers: { authorization },
+      data: {
+        page: path,
+        text,
+        anchor: {
+          selectors: { css: "#cards > div:nth-of-type(2) > p" },
+          tag: "p",
+          text: element,
+          context: "Beta|",
+          point: { x: 50, y: 50 },
+          viewport: 1280,
+        },
+      },
+    })
+  expect((await create("Make this text longer.", "Second card text.")).ok()).toBe(true)
+  expect((await create("About a text that is gone.", "A text that is not on the page.")).ok()).toBe(true)
+
+  await page.reload()
+  await expect(pins(page)).toHaveCount(1)
+  const pin = await pins(page).first().boundingBox()
+  const box = await page.getByTestId("beta").boundingBox()
+  expect(Math.abs((pin?.x ?? 0) - ((box?.x ?? 0) + (box?.width ?? 0) * 0.5))).toBeLessThan(2)
+  expect(Math.abs((pin?.y ?? 0) + (pin?.height ?? 0) - ((box?.y ?? 0) + (box?.height ?? 0) * 0.5))).toBeLessThan(2)
+  await showPanel(page)
+  await expect(
+    panel(page).locator("[data-slot=panel-item]").filter({ hasText: "About a text that is gone." }),
+  ).toContainText("Element not found")
 })

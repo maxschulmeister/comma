@@ -85,15 +85,15 @@ Pin a new comment to an element of a page:
     {"page":"/pricing","text":"Make the heading shorter.","anchor":{"selectors":{"css":"#main > section > h2"},"tag":"h2","text":"Simple pricing for every team","context":"Pricing|Start free, upgrade when you grow.","point":{"x":50,"y":50},"viewport":1280}}
     EOF
 
-\`page\` is the path of the page. \`text\` is plain text, as with Reply. \`anchor\` tells comma where the element is:
+\`page\` is the path of the page. \`text\` is plain text, as with Reply. \`anchor\` tells comma which element it is. Read the code of the page, and give what the browser shows:
 
-- \`selectors.css\`: a CSS selector of the element. Start at the closest element with an id, without class names.
 - \`tag\`: the tag name, in lowercase.
-- \`text\`: the first 120 characters of the element's text, with whitespace collapsed.
-- \`context\`: the last 60 characters of the text of the element before it, \`|\`, and the first 60 characters of the text of the element after it.
-- \`point\`: where the pin is, in percent of the element's box. \`viewport\`: the width of the window, in pixels.
+- \`text\`: the text of the element, with whitespace changed to one space, the first 120 characters.
+- \`context\`: the text of the element just before it (the last 60 characters), \`|\`, and the text of the element just after it (the first 60 characters), in the same parent. Empty if there is no such element: \`Beta|\`. If both are empty, use the elements before and after the parent (up to 4 levels).
+- \`selectors.css\`: a CSS path of the element, from the closest element with an id, without class names. comma uses it only to tell apart elements with the same text.
+- \`point\`: where the pin is, in percent of the element's box. \`{"x":50,"y":50}\` is the center. \`viewport\`: the width of the window, in pixels.
 
-comma finds the element by its selector, its text and its context. If it cannot, the comment says "Element not found". The answer has the \`id\` of the new comment, for tags and assignees.
+comma finds the element by its tag, its text and its context. A short text (under 25 characters) needs the exact context. If comma cannot find the element, the comment says "Element not found". So choose an element with its own text, such as a heading or a paragraph, not "Learn more". The answer has the \`id\` of the new comment, for tags and assignees.
 
 ## Resolve
 

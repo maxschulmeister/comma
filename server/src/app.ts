@@ -163,12 +163,12 @@ const AgentFilter = z.object({
 })
 // The body of PUT /agent/threads/:id/assignee.
 const AgentAssignee = z.string().trim().min(1, "Send me or a user id. To unassign, use DELETE.").max(100)
-// A new comment of an agent: plain text instead of the editor's body, no images.
+// A new comment of an agent: plain text instead of the editor's body, no images. No page context: an agent has no
+// browser, so it cannot know the window, the browser or the system.
 const AgentCreateThread = z.object({
   page: Page,
   anchor: AnchorSchema,
   text: z.string().max(MAX_BODY_BYTES),
-  context: PageContext.optional(),
 })
 const Emoji = z
   .string()

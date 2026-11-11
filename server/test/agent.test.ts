@@ -153,6 +153,7 @@ describe("instructions for agents", () => {
         expect(res.text).toContain(path)
       expect(res.text).toContain("Resolve a comment only when the person tells you to")
       expect(res.text).toContain("## New comment")
+      expect(res.text).toContain("comma finds the element by its tag, its text and its context")
       expect(res.text).toContain("Make a new comment or a new tag only when the person asks for it")
     }
   })
@@ -422,12 +423,27 @@ describe("agent new comment", () => {
   test("pins a new comment as the person, on the site of the connection", async () => {
     const t = await setup()
     const { person, token } = await connected(t)
-    const res = await create(t, token, { page: "/about", anchor, text: "Shorter, please.\nOne line is enough." })
+    // An agent has no browser: it cannot know the window, the browser or the system. comma does not keep them.
+    const context = {
+      url: "https://acme.test/about",
+      title: "About",
+      viewport: { width: 1, height: 1 },
+      dpr: 1,
+      browser: "Chrome",
+      os: "macOS",
+    }
+    const res = await create(t, token, {
+      page: "/about",
+      anchor,
+      text: "Shorter, please.\nOne line is enough.",
+      context,
+    })
     expect(res.status).toBe(200)
     const { threads } = (await t.request("GET", "/api/threads", { token: person.token })).json
     const made = threads.find((x: { id: string }) => x.id === res.json.id)
     expect(made.page).toBe("/about")
     expect(made.anchor).toEqual(anchor)
+    expect(made.context).toBeNull()
     expect(made.createdBy).toBe(person.user.id)
     expect(made.comments[0].authorId).toBe(person.user.id)
     expect(made.comments[0].text).toBe("Shorter, please.\nOne line is enough.")
