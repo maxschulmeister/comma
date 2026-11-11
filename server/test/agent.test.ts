@@ -141,6 +141,18 @@ describe("instructions for agents", () => {
       expect(res.text).toContain("curl -X POST https://comma.example.com/agent/connect")
       expect(res.text).toContain("https://comma.example.com/agent/token")
       expect(res.text).toContain("https://comma.example.com/agent/threads")
+      for (const path of [
+        "status=resolved",
+        "/resolve",
+        "/reopen",
+        "/tags/",
+        "/agent/tags",
+        "/assignee",
+        "/agent/users?q=",
+      ])
+        expect(res.text).toContain(path)
+      expect(res.text).toContain("Resolve a comment only when the person tells you to")
+      expect(res.text).toContain("Make a new tag only when the person asks for it")
     }
   })
 })
@@ -244,13 +256,17 @@ describe("agent threads", () => {
         "",
         "1 open comment. You act as Ada.",
         "",
+        "Tags of the project: Bug, Change, Content, Design, Question, Idea",
+        "",
+        `People: Ada (${ada.user.id}), Bob (${bob.user.id})`,
+        "",
         "Reply in plain text. The quoted heredoc ('EOF') keeps the shell from changing the text:",
         "",
         `    curl -X POST http://comma.test/agent/threads/<thread id>/reply -H "Authorization: Bearer $COMMA_TOKEN" --data-binary @- <<'EOF'`,
         "    What you changed",
         "    EOF",
         "",
-        "Do not resolve comments: people check the change and resolve them.",
+        "Resolve a comment only when the person tells you to (see /llms.txt).",
         "",
         "## 1. Make this bigger",
         "",
@@ -309,6 +325,43 @@ describe("agent threads", () => {
     expect(res.text.match(/^## /gm)).toHaveLength(1)
   })
 
+  test("filters: status, tag, page and assignee", async () => {
+    const t = await setup()
+    const { person, token, threadId: bigger } = await connected(t)
+    const bob = await t.guest("Bob")
+    const create = async (page: string, words: string) =>
+      (await t.request("POST", "/api/threads", { token: bob.token, body: { page, anchor, body: text(words) } })).json
+        .thread.id as string
+    const copy = await create("/", "Fix the copy")
+    const old = await create("/pricing", "Done long ago")
+    await t.request("PUT", `/api/threads/${bigger}/tags/Bug`, { token: bob.token })
+    await t.request("PUT", `/api/threads/${copy}/tags/Content`, { token: bob.token })
+    await t.request("PATCH", `/api/threads/${copy}`, { token: bob.token, body: { assignee: person.user.id } })
+    await t.request("PATCH", `/api/threads/${old}`, { token: bob.token, body: { status: "resolved" } })
+    const ids = async (query: string) => {
+      const res = await t.request("GET", `/agent/threads${query}`, { origin: null, token })
+      return [...res.text.matchAll(/^- Thread: (\S+)$/gm)].map((m) => m[1])
+    }
+
+    expect(await ids("")).toEqual([bigger, copy])
+    expect(await ids("?status=resolved")).toEqual([old])
+    expect((await ids("?status=all")).sort()).toEqual([bigger, copy, old].sort())
+    expect(await ids("?tag=bug")).toEqual([bigger])
+    expect(await ids("?tag=Bug&tag=Content")).toEqual([bigger, copy])
+    expect(await ids("?page=/pricing")).toEqual([bigger])
+    expect(await ids("?page=/pricing&status=all")).toEqual([bigger, old])
+    expect(await ids("?assignee=me")).toEqual([copy])
+    expect(await ids(`?assignee=${person.user.id}`)).toEqual([copy])
+    const resolved = await t.request("GET", "/agent/threads?status=resolved", { origin: null, token })
+    expect(resolved.text).toStartWith("# Resolved comments on Acme\n\n1 resolved comment. You act as Ada.")
+    expect(resolved.text).toContain("- Status: resolved")
+    expect((await t.request("GET", "/agent/threads?status=done", { origin: null, token })).status).toBe(400)
+    // A page is a path: a URL does not give an empty list.
+    expect(
+      (await t.request("GET", "/agent/threads?page=https://acme.test/pricing", { origin: null, token })).status,
+    ).toBe(400)
+  })
+
   test("without open comments, the agent is told so", async () => {
     const t = await setup()
     const person = await t.guest("Ada")
@@ -362,10 +415,113 @@ describe("agent reply", () => {
   })
 })
 
+describe("agent resolve", () => {
+  test("resolves with a reply, as the person, and reopens", async () => {
+    const t = await setup()
+    const { person, token, threadId } = await connected(t)
+    const res = await t.request("POST", `/agent/threads/${threadId}/resolve`, {
+      origin: null,
+      token,
+      raw: "Fixed in a1b2c3.",
+    })
+    expect(res.status).toBe(200)
+    const [thread] = (await t.request("GET", "/api/threads", { token: person.token })).json.threads
+    expect(thread.status).toBe("resolved")
+    expect(thread.resolvedBy).toBe(person.user.id)
+    expect(thread.comments[1].text).toBe("Fixed in a1b2c3.")
+    expect(thread.comments[1].authorId).toBe(person.user.id)
+
+    expect((await t.request("POST", `/agent/threads/${threadId}/reopen`, { origin: null, token })).status).toBe(200)
+    const [reopened] = (await t.request("GET", "/api/threads", { token: person.token })).json.threads
+    expect(reopened.status).toBe("open")
+    expect(reopened.resolvedBy).toBeNull()
+  })
+
+  test("without a reply, the thread stays open", async () => {
+    const t = await setup()
+    const { person, token, threadId } = await connected(t)
+    const res = await t.request("POST", `/agent/threads/${threadId}/resolve`, { origin: null, token, raw: " \n" })
+    expect(res.status).toBe(400)
+    const [thread] = (await t.request("GET", "/api/threads", { token: person.token })).json.threads
+    expect(thread.status).toBe("open")
+    expect(thread.comments).toHaveLength(1)
+  })
+})
+
+describe("agent tags", () => {
+  const tagsOf = async (t: T, token: string) =>
+    (await t.request("GET", "/api/threads", { token })).json.threads[0].tags as string[]
+
+  test("adds and removes a tag of the project, and the comments list the tags", async () => {
+    const t = await setup()
+    const { person, token, threadId } = await connected(t)
+    const list = await t.request("GET", "/agent/threads", { origin: null, token })
+    expect(list.text).toContain("Tags of the project: Bug, Change, Content, Design, Question, Idea")
+    const tag = (method: string, name: string) =>
+      t.request(method, `/agent/threads/${threadId}/tags/${name}`, { origin: null, token })
+    expect((await tag("PUT", "Bug")).status).toBe(200)
+    expect(await tagsOf(t, person.token)).toEqual(["Bug"])
+    expect((await tag("DELETE", "bug")).status).toBe(200)
+    expect(await tagsOf(t, person.token)).toEqual([])
+    expect((await tag("PUT", "Nope")).status).toBe(400)
+  })
+
+  test("makes a new tag as the person", async () => {
+    const t = await setup()
+    const { person, token, threadId } = await connected(t)
+    const res = await t.request("POST", "/agent/tags", { origin: null, token, body: { name: "SEO", color: "teal" } })
+    expect(res.status).toBe(200)
+    expect(res.json.tag.createdBy).toBe(person.user.id)
+    await t.request("PUT", `/agent/threads/${threadId}/tags/SEO`, { origin: null, token })
+    expect(await tagsOf(t, person.token)).toEqual(["SEO"])
+    const again = await t.request("POST", "/agent/tags", { origin: null, token, body: { name: "seo", color: "red" } })
+    expect(again.status).toBe(409)
+  })
+})
+
+describe("agent assign", () => {
+  test("assigns the person, someone else, or nobody", async () => {
+    const t = await setup()
+    const { person, token, threadId } = await connected(t)
+    const bob = await t.guest("Bob")
+    const assignee = async () =>
+      (await t.request("GET", "/api/threads", { token: person.token })).json.threads[0].assigneeId as string | null
+    const assign = (raw: string) =>
+      t.request("PUT", `/agent/threads/${threadId}/assignee`, { origin: null, token, raw })
+    expect((await assign("me")).status).toBe(200)
+    expect(await assignee()).toBe(person.user.id)
+    expect((await assign(`${bob.user.id}\n`)).status).toBe(200)
+    expect(await assignee()).toBe(bob.user.id)
+    expect((await assign("nobody")).status).toBe(400)
+    expect((await assign("")).status).toBe(400)
+    expect(await assignee()).toBe(bob.user.id)
+    const unassign = await t.request("DELETE", `/agent/threads/${threadId}/assignee`, { origin: null, token })
+    expect(unassign.status).toBe(200)
+    expect(await assignee()).toBeNull()
+  })
+})
+
+describe("agent users", () => {
+  test("lists the people of the project with their ids, and finds them by name", async () => {
+    const t = await setup()
+    const { person, token, threadId } = await connected(t)
+    const bob = await t.guest("Bob")
+    await t.request("POST", `/api/threads/${threadId}/comments`, { token: bob.token, body: { body: text("Hi") } })
+    const users = (query = "") => t.request("GET", `/agent/users${query}`, { origin: null, token })
+    const all = await users()
+    expect(all.status).toBe(200)
+    expect(all.headers.get("content-type")).toContain("text/markdown")
+    expect(all.text).toBe(`- Ada (${person.user.id})\n- Bob (${bob.user.id})\n`)
+    expect((await users("?q=bo")).text).toBe(`- Bob (${bob.user.id})\n`)
+    expect((await users("?q=zed")).text).toBe("No people.\n")
+  })
+})
+
 describe("agent token", () => {
-  test("cannot resolve, delete or do anything else in the widget API", async () => {
+  test("cannot delete, and cannot use the widget API", async () => {
     const t = await setup()
     const { token, threadId } = await connected(t)
+    expect((await t.request("DELETE", `/agent/threads/${threadId}`, { origin: null, token })).status).toBe(404)
     const resolve = await t.request("PATCH", `/api/threads/${threadId}`, { token, body: { status: "resolved" } })
     expect(resolve.status).toBe(401)
     expect((await t.request("DELETE", `/api/threads/${threadId}`, { token })).status).toBe(401)

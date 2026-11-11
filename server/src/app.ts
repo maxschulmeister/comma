@@ -3,7 +3,7 @@ import { createMiddleware } from "hono/factory"
 import { HTTPException } from "hono/http-exception"
 import { sign, verify } from "hono/jwt"
 import { z } from "zod"
-import { connectLink, connectPage, llmsTxt, newCode, textBody, threadsMarkdown } from "./agent"
+import { connectLink, connectPage, llmsTxt, newCode, textBody, threadsMarkdown, usersMarkdown } from "./agent"
 import {
   appUserClaims,
   type Claims,
@@ -25,7 +25,7 @@ import { MAX_IMAGE_BYTES, readImage } from "./images"
 import { popupRoutes } from "./popup"
 import { takeLimit } from "./rate-limit"
 import { CUSTOM_TAGS, projectTags, type TagRow, TagSchema, tagKey } from "./tags"
-import { getCommentRow, getThreadRow, isFirstComment, loadThreads, type Scope } from "./threads"
+import { getCommentRow, getThreadRow, isFirstComment, loadThreads, type Scope, type Thread } from "./threads"
 import { widgetRoutes } from "./widget"
 
 export type AppOptions = {
@@ -153,6 +153,16 @@ const AgentClaims = z.object({
   site: z.string(),
   exp: z.number(),
 })
+// The filters of /agent/threads. A thread matches each filter that the agent sends, and any of the tags.
+const AgentFilter = z.object({
+  status: z.enum(["open", "resolved", "all"]).default("open"),
+  tag: z.array(z.string().max(100)).max(20).default([]),
+  page: Page.optional(),
+  // `me`, or a user id.
+  assignee: z.string().max(100).optional(),
+})
+// The body of PUT /agent/threads/:id/assignee.
+const AgentAssignee = z.string().trim().min(1, "Send me or a user id. To unassign, use DELETE.").max(100)
 const Emoji = z
   .string()
   .max(32)
@@ -187,6 +197,48 @@ export function createApp(options: AppOptions) {
   // `updated_at` is the thread revision: it always grows, also for two changes in the same millisecond.
   const touch = (threadId: string) =>
     sql("update threads set updated_at = max(?, updated_at + 1) where id = ?", now(), threadId)
+  // Changes nothing if the thread has the status already: in SQL, so a change at the same time counts.
+  const setStatus = (userId: string, threadId: string, status: Thread["status"]) => {
+    const resolved = status === "resolved"
+    return sql(
+      `update threads set status = ?, resolved_at = ?, resolved_by = ?, updated_at = max(?, updated_at + 1)
+       where id = ? and status <> ?`,
+      status,
+      resolved ? now() : null,
+      resolved ? userId : null,
+      now(),
+      threadId,
+      status,
+    )
+  }
+  // The changes that assign a person of the project (or nobody) to a thread.
+  const assign = async (user: UserRow, threadId: string, assignee: string | null) => {
+    if (assignee && (await projectUsers(user, [assignee])).length === 0) {
+      throw new HTTPException(400, { message: "Unknown user" })
+    }
+    const changes = [
+      sql(
+        "update threads set assignee_id = ?, updated_at = max(?, updated_at + 1) where id = ?",
+        assignee,
+        now(),
+        threadId,
+      ),
+    ]
+    // The thread shows as unread for the new assignee, so they see it in their list.
+    if (assignee && assignee !== user.id) {
+      changes.push(
+        sql(
+          `insert into reads (user_id, thread_id, read_at, unread) values (?, ?, 0, 1)
+           on conflict (user_id, thread_id) do update set unread = 1`,
+          assignee,
+          threadId,
+        ),
+        sql("update users set reads_version = reads_version + 1 where id = ?", assignee),
+      )
+    }
+    return changes
+  }
+
   const markRead = (userId: string, threadId: string) => [
     sql(
       `insert into reads (user_id, thread_id, read_at, unread) values (?, ?, ?, 0)
@@ -485,6 +537,25 @@ export function createApp(options: AppOptions) {
     return parsed
   }
 
+  // Signed-in app users and people who commented, whose name has `q` in the query. Names that start with it first.
+  const findUsers = (c: Ctx, limit: number) => {
+    const q = (c.req.query("q") ?? "").trim().toLowerCase().slice(0, 60)
+    return all<UserRow>(
+      db,
+      `select * from users u where u.project = ?
+       and (u.kind = 'app' or exists (select 1 from comments c where c.author_id = u.id))
+       and instr(lower(u.name), ?) > 0
+       order by (instr(lower(u.name), ?) = 1) desc, u.name limit ?`,
+      c.get("user").project,
+      q,
+      q,
+      limit,
+    )
+  }
+
+  // An agent names a person with `me`, or with an id.
+  const userIdOf = (user: UserRow, id: string) => (id === "me" ? user.id : id)
+
   // Users in the same project only (mentions, assignees).
   const projectUsers = async (user: UserRow, ids: string[]) => {
     if (ids.length === 0) return []
@@ -522,18 +593,21 @@ export function createApp(options: AppOptions) {
     ...files.map((fileId) => sql("update files set comment_id = ? where id = ? and comment_id is null", id, fileId)),
   ]
 
-  // A reply: the comment, a new revision of the thread, and the thread read for its author.
+  // A reply: the comment, a new revision of the thread, and the thread read for its author. `also`: more changes in
+  // the same batch.
   const addReply = async (
     user: UserRow,
     threadId: string,
     parsed: Extract<ReturnType<typeof parseBody>, { body: unknown }>,
     files: string[],
+    also: ReturnType<typeof sql>[] = [],
   ) => {
     const id = newId()
     await db.batch(
       [
         ...(await insertComment(user, id, threadId, parsed, files)),
         touch(threadId),
+        ...also,
         ...markRead(user.id, threadId),
         bump(user.project),
       ],
@@ -686,14 +760,31 @@ export function createApp(options: AppOptions) {
 
   app.get("/agent/threads", async (c) => {
     const project = c.get("project")
-    const { threads, users } = await loadThreads(db, c.get("scope"), c.get("user"), project.tags)
+    const user = c.get("user")
+    const filter = parse(AgentFilter, {
+      status: c.req.query("status"),
+      tag: c.req.queries("tag"),
+      page: c.req.query("page"),
+      assignee: c.req.query("assignee"),
+    })
+    const tagKeys = new Set(filter.tag.map(tagKey))
+    const assignee = filter.assignee && userIdOf(user, filter.assignee)
+    const { threads, users, tags } = await loadThreads(db, c.get("scope"), user, project.tags)
     c.header("content-type", "text/markdown; charset=utf-8")
     c.header("cache-control", "no-store")
     return c.body(
       threadsMarkdown({
-        threads: threads.filter((t) => t.status === "open"),
+        threads: threads.filter(
+          (t) =>
+            (filter.status === "all" || t.status === filter.status) &&
+            (tagKeys.size === 0 || t.tags.some((name) => tagKeys.has(tagKey(name)))) &&
+            (filter.page === undefined || t.page === filter.page) &&
+            (assignee === undefined || t.assigneeId === assignee),
+        ),
+        status: filter.status,
+        tags: tags.map((t) => t.name),
         users,
-        me: c.get("user").name,
+        me: user.name,
         project,
         origin: originOf(project, c.get("site")) ?? `https://${c.get("site")}`,
         server: serverUrl(c).origin,
@@ -701,16 +792,60 @@ export function createApp(options: AppOptions) {
     )
   })
 
-  // Plain text, like `curl --data-binary "Fixed in a1b2c3"`. Posted as the person.
-  app.post("/agent/threads/:id/reply", async (c) => {
-    const user = c.get("user")
-    const row = await findThread(c, c.req.param("id"))
+  // Plain text, like `curl --data-binary "Fixed in a1b2c3"`.
+  const agentText = async (c: Ctx) => {
     const text = await c.req.text()
     // Before the paragraphs: a large body makes many objects.
     if (text.length > MAX_BODY_BYTES) throw new HTTPException(400, { message: "The comment is too long" })
-    const parsed = bodyOf(textBody(text), false)
+    return bodyOf(textBody(text), false)
+  }
+
+  // Posted as the person.
+  app.post("/agent/threads/:id/reply", async (c) => {
+    const user = c.get("user")
+    const row = await findThread(c, c.req.param("id"))
+    const parsed = await agentText(c)
     await limit(c)
     return c.json({ ok: true, id: await addReply(user, row.id, parsed, []) })
+  })
+
+  // Resolved as the person, always with a reply: people see what the agent changed.
+  app.post("/agent/threads/:id/resolve", async (c) => {
+    const user = c.get("user")
+    const row = await findThread(c, c.req.param("id"))
+    const parsed = await agentText(c)
+    await limit(c)
+    return c.json({ ok: true, id: await addReply(user, row.id, parsed, [], [setStatus(user.id, row.id, "resolved")]) })
+  })
+
+  // The people to assign, as in the mention picker.
+  app.get("/agent/users", agentAuth, async (c) => {
+    c.header("content-type", "text/markdown; charset=utf-8")
+    c.header("cache-control", "no-store")
+    return c.body(usersMarkdown(await findUsers(c, 50)))
+  })
+
+  // Plain text: `me`, or the id of a person of the project.
+  app.put("/agent/threads/:id/assignee", async (c) => {
+    const user = c.get("user")
+    const row = await findThread(c, c.req.param("id"))
+    const changes = await assign(user, row.id, userIdOf(user, parse(AgentAssignee, await c.req.text())))
+    await db.batch([...changes, bump(user.project)], "write")
+    return c.json({ ok: true })
+  })
+
+  app.delete("/agent/threads/:id/assignee", async (c) => {
+    const user = c.get("user")
+    const row = await findThread(c, c.req.param("id"))
+    await db.batch([...(await assign(user, row.id, null)), bump(user.project)], "write")
+    return c.json({ ok: true })
+  })
+
+  app.post("/agent/threads/:id/reopen", async (c) => {
+    const user = c.get("user")
+    const row = await findThread(c, c.req.param("id"))
+    await db.batch([setStatus(user.id, row.id, "open"), bump(user.project)], "write")
+    return c.json({ ok: true })
   })
 
   app.get("/api/threads", async (c) => {
@@ -770,44 +905,9 @@ export function createApp(options: AppOptions) {
     const input = parse(UpdateThread, await json(c))
     const changes = []
     if ("status" in input) {
-      if (input.status !== row.status) {
-        const resolved = input.status === "resolved"
-        changes.push(
-          sql(
-            "update threads set status = ?, resolved_at = ?, resolved_by = ?, updated_at = max(?, updated_at + 1) where id = ?",
-            input.status,
-            resolved ? now() : null,
-            resolved ? user.id : null,
-            now(),
-            row.id,
-          ),
-        )
-      }
+      changes.push(setStatus(user.id, row.id, input.status))
     } else if ("assignee" in input) {
-      const assignee = input.assignee
-      if (assignee && (await projectUsers(user, [assignee])).length === 0) {
-        throw new HTTPException(400, { message: "Unknown user" })
-      }
-      changes.push(
-        sql(
-          "update threads set assignee_id = ?, updated_at = max(?, updated_at + 1) where id = ?",
-          assignee,
-          now(),
-          row.id,
-        ),
-      )
-      // The thread shows as unread for the new assignee, so they see it in their list.
-      if (assignee && assignee !== user.id) {
-        changes.push(
-          sql(
-            `insert into reads (user_id, thread_id, read_at, unread) values (?, ?, 0, 1)
-             on conflict (user_id, thread_id) do update set unread = 1`,
-            assignee,
-            row.id,
-          ),
-          sql("update users set reads_version = reads_version + 1 where id = ?", assignee),
-        )
-      }
+      changes.push(...(await assign(user, row.id, input.assignee)))
     } else {
       if (row.created_by !== user.id) throw new HTTPException(403, { message: "Only the author can move this comment" })
       changes.push(
@@ -845,8 +945,8 @@ export function createApp(options: AppOptions) {
   // The tags of the threads of the project.
   const inProject = "thread_id in (select id from threads where project = ?)"
 
-  // Anyone in the project makes tags, guests too. Names are unique in the project, in any case.
-  app.post("/api/tags", async (c) => {
+  // Anyone in the project makes tags, guests too, and their agents. Names are unique in the project, in any case.
+  const createTag = createMiddleware<Env>(async (c) => {
     const user = c.get("user")
     const project = c.get("project")
     const input = parse(TagSchema, await json(c))
@@ -872,6 +972,8 @@ export function createApp(options: AppOptions) {
     if (inserted?.rowsAffected === 0) throw tagTaken()
     return c.json({ tag: { ...input, createdBy: user.id }, tags: await allTags(project) })
   })
+  app.post("/api/tags", createTag)
+  app.post("/agent/tags", agentAuth, createTag)
 
   // A tag that people made: its creator or an admin changes it. The config's tags change only in the config.
   const ownTag = async (c: Ctx) => {
@@ -955,6 +1057,8 @@ export function createApp(options: AppOptions) {
     })
   app.put("/api/threads/:id/tags/:tag", tagThread(true))
   app.delete("/api/threads/:id/tags/:tag", tagThread(false))
+  app.put("/agent/threads/:id/tags/:tag", tagThread(true))
+  app.delete("/agent/threads/:id/tags/:tag", tagThread(false))
 
   app.post("/api/threads/:id/read", async (c) => {
     const user = c.get("user")
@@ -1062,19 +1166,7 @@ export function createApp(options: AppOptions) {
 
   // Mention picker: signed-in app users and people who commented.
   app.get("/api/users", async (c) => {
-    const user = c.get("user")
-    const q = (c.req.query("q") ?? "").trim().toLowerCase().slice(0, 60)
-    const rows = await all<UserRow>(
-      db,
-      `select * from users u where u.project = ?
-       and (u.kind = 'app' or exists (select 1 from comments c where c.author_id = u.id))
-       and instr(lower(u.name), ?) > 0
-       order by (instr(lower(u.name), ?) = 1) desc, u.name limit 8`,
-      user.project,
-      q,
-      q,
-    )
-    return c.json({ users: rows.map(publicUser) })
+    return c.json({ users: (await findUsers(c, 8)).map(publicUser) })
   })
 
   app.post("/api/files", async (c) => {
