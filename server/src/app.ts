@@ -638,6 +638,8 @@ export function createApp(options: AppOptions) {
 
   // The address of comma, behind a proxy too.
   const serverUrl = (c: Context, path = "/") => new URL(path, options.publicUrl ?? c.req.url)
+  // The site of the request, like `https://acme.com`.
+  const siteOrigin = (c: Ctx) => originOf(c.get("project"), c.get("site")) ?? `https://${c.get("site")}`
 
   // Instructions for coding agents. Agents that find comma in the repo look at its address first.
   const agentDocs = (c: Context) => {
@@ -789,7 +791,7 @@ export function createApp(options: AppOptions) {
         users,
         me: user.name,
         project,
-        origin: originOf(project, c.get("site")) ?? `https://${c.get("site")}`,
+        origin: siteOrigin(c),
         server: serverUrl(c).origin,
       }),
     )
@@ -916,9 +918,12 @@ export function createApp(options: AppOptions) {
 
   // Posted as the person, on the site where the person allowed the agent.
   app.post("/agent/threads", async (c) => {
-    const input = parse(AgentCreateThread, await json(c))
-    const parsed = bodyOf(textBody(input.text), false)
-    return c.json({ ok: true, id: await createThread(c, input, parsed, []) })
+    const { page, anchor, text } = parse(AgentCreateThread, await json(c))
+    // Only the widget knows these from the page (see Anchor). A guessed value never matches: the pin would not show.
+    const { fingerprint, twins, repeated, scope, card, ...known } = anchor
+    const id = await createThread(c, { page, anchor: known }, bodyOf(textBody(text), false), [])
+    // The person opens the link to check the pin.
+    return c.json({ ok: true, id, link: `${siteOrigin(c)}${page}#comma=${id}` })
   })
 
   app.patch("/api/threads/:id", async (c) => {

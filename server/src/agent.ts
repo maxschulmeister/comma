@@ -93,7 +93,7 @@ Pin a new comment to an element of a page:
 - \`selectors\`: \`id\`, the id of the element if the code sets a fixed one. \`anchor\`, the value of its \`data-comment-anchor\` attribute if it has one: comma always finds that element. \`css\`, a CSS path from the closest element with an id, without class names: people and agents see it, but comma does not use it to find the element.
 - \`point\`: where the pin is, in percent of the element's box. \`{"x":50,"y":50}\` is the center. \`viewport\`: \`0\` (an agent has no window).
 
-comma finds the element by its tag, its text and its context. A short text (under 25 characters) needs the exact context. If two elements have the same tag, text and context, comma cannot tell them apart. If comma cannot find the element, the comment says "Element not found". So choose an element with its own text, such as a heading or a paragraph, not "Learn more". The answer has the thread id (\`id\`): use it as \`<thread id>\` for tags and assignees.
+comma finds the element by its tag, its text and its context. A short text (under 25 characters) needs the exact context. If two elements have the same tag, text and context, comma cannot tell them apart. If comma cannot find the element, the comment says "Element not found". So choose an element with its own text, such as a heading or a paragraph, not "Learn more". The answer has the thread id (\`id\`): use it as \`<thread id>\` for tags and assignees. It also has \`link\`: give it to the person, so they can check that the pin is on the correct element.
 
 ## Resolve
 

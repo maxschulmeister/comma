@@ -107,7 +107,10 @@ test("the agent pins a new comment to the element that /llms.txt tells it to des
         },
       },
     })
-  expect((await create("Make this text longer.", "Second card text.")).ok()).toBe(true)
+  const made = await create("Make this text longer.", "Second card text.")
+  expect(made.ok()).toBe(true)
+  const { id, link } = (await made.json()) as { id: string; link: string }
+  expect(link).toBe(`${SITE}${path}#comma=${id}`)
   expect((await create("About a text that is gone.", "A text that is not on the page.")).ok()).toBe(true)
 
   await page.reload()
@@ -120,4 +123,8 @@ test("the agent pins a new comment to the element that /llms.txt tells it to des
   await expect(
     panel(page).locator("[data-slot=panel-item]").filter({ hasText: "About a text that is gone." }),
   ).toContainText("Element not found")
+
+  // The link from the answer opens the new comment at its pin.
+  await page.goto(link)
+  await expect(threadPopover(page)).toContainText("Make this text longer.")
 })

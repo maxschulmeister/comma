@@ -154,6 +154,7 @@ describe("instructions for agents", () => {
       expect(res.text).toContain("Resolve a comment only when the person tells you to")
       expect(res.text).toContain("## New comment")
       expect(res.text).toContain("comma finds the element by its tag, its text and its context")
+      expect(res.text).toContain("It also has `link`: give it to the person")
       expect(res.text).toContain("Make a new comment or a new tag only when the person asks for it")
     }
   })
@@ -444,10 +445,30 @@ describe("agent new comment", () => {
     expect(made.page).toBe("/about")
     expect(made.anchor).toEqual(anchor)
     expect(made.context).toBeNull()
+    // A link for the person, to check the pin.
+    expect(res.json.link).toBe(`https://acme.test/about#comma=${res.json.id}`)
     expect(made.createdBy).toBe(person.user.id)
     expect(made.comments[0].authorId).toBe(person.user.id)
     expect(made.comments[0].text).toBe("Shorter, please.\nOne line is enough.")
     expect((await t.request("PUT", `/agent/threads/${res.json.id}/tags/Bug`, { origin: null, token })).status).toBe(200)
+  })
+
+  test("does not keep what only the widget can know about the element", async () => {
+    const t = await setup()
+    const { person, token } = await connected(t)
+    // A guessed value never matches the page: the pin would never show.
+    const guessed = {
+      ...anchor,
+      fingerprint: "abc123",
+      twins: 3,
+      repeated: true,
+      scope: { depth: 1, hash: "abc" },
+      card: { depth: 1, urls: ["abc"] },
+    }
+    const res = await create(t, token, { page: "/about", anchor: guessed, text: "Shorter." })
+    expect(res.status).toBe(200)
+    const { threads } = (await t.request("GET", "/api/threads", { token: person.token })).json
+    expect(threads.find((x: { id: string }) => x.id === res.json.id).anchor).toEqual(anchor)
   })
 
   test("refuses a comment without text or without an anchor", async () => {
