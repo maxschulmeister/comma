@@ -45,6 +45,7 @@ export type Anchor = {
   viewport: number
 }
 
+// /llms.txt tells agents these numbers and how textOf and contextOf work (server/src/agent.ts): change both.
 const TEXT_LENGTH = 120
 const CONTEXT_LENGTH = 60
 const MIN_TEXT = 0.8
