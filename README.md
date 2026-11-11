@@ -282,10 +282,10 @@ A coding agent (Claude Code, Codex, Cursor, pi…) works on the comments in your
 1. Tell the agent: "Fix the open comma comments". Add a page or a site if you like: "… on /pricing", "… on staging".
 2. The agent finds the script tag in your repo and reads `/llms.txt` on your comma server. Then it opens a link in your browser.
 3. The link opens your site, where you see the comments. comma asks: "Allow your agent?" Check that the code is the same as the code that the agent shows, then click **Allow**. If the comments are on more than one site, you choose the site first.
-4. The agent reads the open comments: the page, the element, its CSS selector, the screenshot and the replies. It changes the code, and can reply in the thread as you.
-5. You check the change on the site and resolve the thread.
+4. The agent reads the open comments: the page, the element, its CSS selector, the screenshot and the replies. It can filter them by status, tag, page and assignee. It changes the code, and can reply in the thread as you.
+5. You check the change on the site and resolve the thread. You can also tell the agent to resolve it.
 
-The agent acts as you. It can read comments and reply. It cannot resolve, edit or delete. Its access ends after 24 hours, or when you sign out. With `scope: "origin"`, it sees only the comments of the site where you allowed it.
+The agent acts as you. It can read comments, reply, resolve and reopen, add and remove tags, make new tags, and assign. It resolves only with a reply that says what it changed. It cannot edit or delete. Its access ends after 24 hours, or when you sign out. With `scope: "origin"`, it sees only the comments of the site where you allowed it.
 
 ## Keyboard
 

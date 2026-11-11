@@ -38,7 +38,7 @@ test("the person allows the agent, and the agent's reply shows in the thread", a
   await page.goto(`${testPath("agent")}#comma-connect=${agent.code}`)
   const dialog = allowDialog(page)
   await expect(dialog).toContainText(agent.code)
-  await expect(dialog).toContainText("reply as Ada")
+  await expect(dialog).toContainText("as Ada: read, reply, resolve, tag and assign")
   await dialog.getByRole("button", { name: "Allow", exact: true }).click()
   await expect(dialog).toBeHidden()
   // The link does not ask again after a reload.
