@@ -702,7 +702,7 @@ test.describe("closed comma", () => {
     page.on("request", (request) => {
       if (request.url().startsWith(COMMA)) loaded.push(new URL(request.url()).pathname)
     })
-    const pageUi = (path: string) => /\/w\/chunks\/(page-ui|panel|editor)-/.test(path)
+    const pageUi = (path: string) => /\/w\/chunks\/(page-ui|editor)-/.test(path)
     await signIn(page, await guestSession("Light"))
     await openTestPage(page, "light")
     // Idle time: comma loads nothing more while it is closed.
@@ -723,16 +723,18 @@ test.describe("closed comma", () => {
     const pageUi = "**/w/chunks/page-ui-*.js"
     await page.route(pageUi, (route) => route.fulfill({ status: 404, body: "" }))
     await openTestPage(page, "outdated")
-    await toolbar(page)
-      .getByRole("button", { name: /^Comments/ })
-      .click()
+    const comments = toolbar(page).getByRole("button", { name: /^Comments/ })
+    await comments.click()
     const notices = page.locator("[data-slot=notices]")
     await expect(notices).toContainText("comma was updated. Reload the page.")
+    // No panel can show: the toolbar does not make room for it.
+    await expect(comments).toHaveAttribute("aria-pressed", "false")
     await page.keyboard.press("c")
     await expect(toolbar(page).getByRole("button", { name: "Comment mode" })).toHaveAttribute("aria-pressed", "true")
     await page.unroute(pageUi)
     await notices.getByRole("button", { name: "Reload" }).click()
-    // The panel was open: it opens again after the reload.
+    await expect(toolbar(page)).toBeVisible()
+    await comments.click()
     await expect(panel(page)).toBeVisible()
   })
 

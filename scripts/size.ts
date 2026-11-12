@@ -1,6 +1,6 @@
 // Checks the gzip size of the built widget against the budget. Run after `bun run build`.
 import { readdirSync, readFileSync } from "node:fs"
-import { dirname, join, normalize } from "node:path"
+import { dirname, join } from "node:path"
 import { gzipSync } from "node:zlib"
 
 const dist = join(import.meta.dir, "../widget/dist")
@@ -10,7 +10,7 @@ const withImports = (file: string, seen = new Set<string>()): Set<string> => {
   if (seen.has(file)) return seen
   seen.add(file)
   for (const [, path] of readFileSync(join(dist, file), "utf8").matchAll(/(?:from|import)\s*"(\.\/[^"]+)"/g)) {
-    withImports(normalize(join(dirname(file), path as string)), seen)
+    withImports(join(dirname(file), path as string), seen)
   }
   return seen
 }

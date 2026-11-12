@@ -25,7 +25,6 @@ import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { plural } from "@/lib/format"
 import { NARROW, useMedia } from "@/lib/media"
-import { loadFonts } from "@/shadow"
 import { setState, useStore } from "@/store"
 import { loadPageUi } from "./load-page-ui"
 import { Notices, notify } from "./notices"
@@ -190,10 +189,8 @@ export function Toolbar() {
     </DropdownMenu>,
   ]
 
-  const prepare = () => {
-    loadFonts()
-    void loadPageUi().catch(() => {})
-  }
+  // Someone comes to the toolbar: the pins, the panel and the font load, so they are ready at the click.
+  const prepare = () => void loadPageUi().catch(() => {})
 
   // The row: the toolbar, and beside it the messages. With the panel open, it spans the panel's bottom, and the
   // message is at its other end. Narrow screens: the message is above the toolbar.
@@ -212,9 +209,8 @@ export function Toolbar() {
         role="toolbar"
         aria-label="Comments"
         data-slot="toolbar"
-        // Someone comes to the toolbar: the font, the pins and the panel load, so they are ready at the click.
         onPointerEnter={prepare}
-        onFocusCapture={prepare}
+        onFocus={prepare}
         className={cn(
           "pointer-events-auto flex items-center gap-0.5 rounded-full bg-background p-1 ring-foreground/10 transition-shadow duration-150 ease-out",
           panelOpen ? "shadow-none ring-0" : "shadow-lg ring-1",
