@@ -715,6 +715,27 @@ test.describe("closed comma", () => {
     await expect(page.locator("style[data-comma=fonts]")).toHaveCount(1)
   })
 
+  test("when the pins and the panel cannot load, comma asks to reload, and the toolbar still works", async ({
+    page,
+  }) => {
+    await signIn(page, await guestSession("Outdated"))
+    // After a deploy, a tab that was open before asks for files that are gone.
+    const pageUi = "**/w/chunks/page-ui-*.js"
+    await page.route(pageUi, (route) => route.fulfill({ status: 404, body: "" }))
+    await openTestPage(page, "outdated")
+    await toolbar(page)
+      .getByRole("button", { name: /^Comments/ })
+      .click()
+    const notices = page.locator("[data-slot=notices]")
+    await expect(notices).toContainText("comma was updated. Reload the page.")
+    await page.keyboard.press("c")
+    await expect(toolbar(page).getByRole("button", { name: "Comment mode" })).toHaveAttribute("aria-pressed", "true")
+    await page.unroute(pageUi)
+    await notices.getByRole("button", { name: "Reload" }).click()
+    // The panel was open: it opens again after the reload.
+    await expect(panel(page)).toBeVisible()
+  })
+
   test("with comments hidden, a link opens the thread at its pin", async ({ page }) => {
     await signIn(page, await guestSession("Linked"))
     await openTestPage(page, "quiet-link")

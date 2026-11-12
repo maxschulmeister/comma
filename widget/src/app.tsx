@@ -1,13 +1,27 @@
-import { lazy, Suspense, useEffect, useRef } from "react"
+import { type ComponentType, lazy, Suspense, useEffect, useRef } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { pageBox, resolvedElement, showsOnPage, useResolved } from "./live"
 import { getState, setState, useStore, widgetVisible } from "./store"
 import { loadPageUi } from "./ui/load-page-ui"
+import { notify } from "./ui/notices"
 import { CommentOverlay } from "./ui/overlay"
 import { Toolbar } from "./ui/toolbar"
 import { detailsMode } from "./ui/view"
 
-const PageUi = lazy(() => loadPageUi().then((m) => ({ default: m.PageUi })))
+// After a deploy, a tab that was open before asks for files that are gone. comma goes on without the pins and the
+// panel, and asks to reload.
+const PageUi = lazy(
+  (): Promise<{ default: ComponentType }> =>
+    loadPageUi()
+      .then((m) => ({ default: m.PageUi }))
+      .catch(() => {
+        notify("comma was updated. Reload the page.", {
+          action: { kind: "reload", run: () => location.reload() },
+          stay: true,
+        })
+        return { default: () => null }
+      }),
+)
 const DetailsDialog = lazy(() => import("./ui/details").then((m) => ({ default: m.DetailsDialog })))
 const AgentConnect = lazy(() => import("./ui/agent-connect").then((m) => ({ default: m.AgentConnect })))
 
