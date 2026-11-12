@@ -11,7 +11,7 @@ export type Draft = { id: number; anchor: Anchor; element: Element; page: string
 export type Notice = {
   id: number
   text: string
-  action?: { kind: "undo" | "retry"; run: () => void }
+  action?: { kind: "undo" | "retry" | "reload"; run: () => void }
   stay?: boolean
 }
 

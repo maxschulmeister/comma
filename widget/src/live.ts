@@ -1,7 +1,8 @@
 // Keeps thread anchors attached to page elements and tells the UI when the layout changes.
+// Only while comma shows something on the page: closed, it does no work when the page changes.
 import { useSyncExternalStore } from "react"
 import { type Anchor, anchorBox, type Box, CHILD_IDENTITY, resolveAnchor } from "./anchor"
-import { getState, subscribe } from "./store"
+import { getState, type State, subscribe } from "./store"
 import type { Thread } from "./types"
 
 type Listener = () => void
@@ -14,6 +15,8 @@ const resolvedListeners = new Set<Listener>()
 let lastThreads: Thread[] | null = null
 let lastPage = ""
 let timer: ReturnType<typeof setTimeout> | undefined
+/** comma watches the page now (see startTracking). */
+let watching = false
 
 function resolveAll() {
   const { threads, page } = getState()
@@ -48,7 +51,14 @@ function scheduleResolve(delay = 120) {
 }
 
 /** The element of the thread on this page, as shown now. null: detached. */
-export const resolvedElement = (threadId: string) => resolved.get(threadId) ?? null
+export function resolvedElement(threadId: string) {
+  // While comma does not watch the page, the elements and their clipping found before can be old.
+  if (!watching) {
+    invalidateClipping()
+    resolveAll()
+  }
+  return resolved.get(threadId) ?? null
+}
 
 /** Element of each thread on this page. null: detached. */
 export function useResolved() {
@@ -68,7 +78,7 @@ let frame = 0
 const tickListeners = new Set<Listener>()
 
 export function requestLayout() {
-  if (frame) return
+  if (frame || !watching) return
   frame = requestAnimationFrame(() => {
     frame = 0
     tick++
@@ -110,6 +120,20 @@ function onlySvgRedraws(records: MutationRecord[]) {
   })
 }
 
+/** The thread has a pin on this page: an open thread while pins show, or the thread that is open now. */
+export const showsPin = (s: Pick<State, "page" | "pinsVisible" | "openThreadId">, thread: Thread) =>
+  thread.page === s.page && (thread.id === s.openThreadId || (s.pinsVisible && thread.status === "open"))
+
+/** comma shows something that needs the elements of the comments: pins, the panel, comment mode, a draft. */
+export const showsOnPage = (s: State) =>
+  s.panelOpen ||
+  s.commentMode ||
+  !!s.moving ||
+  !!s.openThreadId ||
+  !!s.draft ||
+  !!s.draftMove ||
+  s.threads.some((t) => showsPin(s, t))
+
 export function startTracking() {
   const observer = new MutationObserver((records) => {
     if (onlySvgRedraws(records)) return
@@ -117,9 +141,21 @@ export function startTracking() {
     scheduleResolve()
     requestLayout()
   })
-  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true })
   const resize = new ResizeObserver(() => requestLayout())
-  resize.observe(document.documentElement)
+  const watch = (on: boolean) => {
+    watching = on
+    if (!on) {
+      observer.disconnect()
+      resize.disconnect()
+      return
+    }
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true })
+    resize.observe(document.documentElement)
+    // The page can have changed while comma did not watch it.
+    invalidateClipping()
+    resolveAll()
+    requestLayout()
+  }
   const onLayout = () => requestLayout()
   window.addEventListener("scroll", onLayout, { capture: true, passive: true })
   window.addEventListener("resize", onLayout)
@@ -127,13 +163,15 @@ export function startTracking() {
   document.addEventListener("animationend", onLayout, true)
   document.fonts?.addEventListener?.("loadingdone", onLayout)
   const unsubscribe = subscribe(() => {
-    const { threads, page } = getState()
-    if (threads !== lastThreads || page !== lastPage) {
+    const state = getState()
+    const on = showsOnPage(state)
+    if (on !== watching) watch(on)
+    else if (on && (state.threads !== lastThreads || state.page !== lastPage)) {
       resolveAll()
       requestLayout()
     }
   })
-  resolveAll()
+  watch(showsOnPage(getState()))
   return () => {
     observer.disconnect()
     resize.disconnect()

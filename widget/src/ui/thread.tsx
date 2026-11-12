@@ -57,6 +57,7 @@ import { CommentBody } from "./body"
 import { Composer } from "./composer"
 import { toggleDetails } from "./details-state"
 import { EmojiButton, QUICK_REACTIONS } from "./emoji"
+import { setFocusOnClose } from "./focus-on-close"
 import { notify } from "./notices"
 import { PickerOption, PickerSearch } from "./picker"
 import { SignInForm } from "./sign-in"
@@ -77,19 +78,6 @@ type Confirm = {
   done: string
   /** Deletes the thread: the focus goes to the Comments button. */
   removesThread?: boolean
-}
-
-// Where the focus goes when the open thread closes, if not back to its pin: an action that removes the thread
-// chooses it (Undo after resolve, the Comments button after delete). Found when the thread has closed.
-let focusOnClose: (() => HTMLElement | null | undefined) | null = null
-/** Where the focus goes when the open thread closes, once. */
-export function setFocusOnClose(find: () => HTMLElement | null | undefined) {
-  focusOnClose = find
-}
-export function takeFocusOnClose() {
-  const find = focusOnClose
-  focusOnClose = null
-  return find?.() ?? null
 }
 
 /** The content of the thread popover: comments, reactions, actions and the reply box. */
@@ -188,7 +176,9 @@ export function ThreadView({
                       await setStatus(thread, resolved ? "open" : "resolved")
                       if (resolved) return notify("Thread reopened")
                       const root = listRef.current?.getRootNode() as ShadowRoot | undefined
-                      focusOnClose = () => root?.querySelector<HTMLElement>("[data-slot=notices] [data-notice-action]")
+                      setFocusOnClose(() =>
+                        root?.querySelector<HTMLElement>("[data-slot=notices] [data-notice-action]"),
+                      )
                       close()
                       notify("Thread resolved", {
                         action: {
@@ -426,9 +416,9 @@ export function ThreadView({
                   void act(async () => {
                     const root = listRef.current?.getRootNode() as ShadowRoot | undefined
                     if (current.removesThread)
-                      focusOnClose = () => root?.querySelector<HTMLElement>("[data-panel-button]")
+                      setFocusOnClose(() => root?.querySelector<HTMLElement>("[data-panel-button]"))
                     await current.run().catch((error) => {
-                      focusOnClose = null
+                      setFocusOnClose(null)
                       throw error
                     })
                     notify(current.done)

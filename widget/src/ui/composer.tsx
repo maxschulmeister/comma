@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { draftKey, loadDraft, saveDraft } from "@/drafts"
 import type { Editor, EditorOptions, JSONContent, SuggestionState } from "@/editor/editor"
+import { preloadEditor } from "@/editor/preload"
 import { isMac } from "@/lib/dom"
 import { initials, userColor } from "@/lib/format"
 import { shrinkImage } from "@/lib/image"
@@ -17,17 +18,6 @@ import { EmojiButton, searchEmoji } from "./emoji"
 
 const MAX_FILES = 5
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
-
-let editorModule: Promise<typeof import("@/editor/editor")> | null = null
-
-/** Loads the editor chunk. Call it early (comment mode, idle time) so the composer opens fast. */
-export function preloadEditor() {
-  editorModule ??= import("@/editor/editor").catch((error) => {
-    editorModule = null
-    throw error
-  })
-  return editorModule
-}
 
 // An upload keeps its request, so a draft that opens again still gets the result.
 type Upload = { key: string; preview: string; ref?: FileRef; error?: string; request?: Promise<FileRef> }

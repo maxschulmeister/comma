@@ -33,7 +33,7 @@ import { FIELD_LABELS, FILTER_FIELDS, type FilterField, matchesRules } from "@/l
 import { plural, timeAgo } from "@/lib/format"
 import { NARROW, reducedMotion, useMedia } from "@/lib/media"
 import { pageBox, resolvedElement, useResolved } from "@/live"
-import { type Filters, getState, type PanelSide, type State, setState, useStore } from "@/store"
+import { type Filters, getState, type PanelSide, setState, useStore } from "@/store"
 import type { Comment, Thread } from "@/types"
 import { closeDetails, openDetails } from "./details-state"
 import { FilterChips } from "./filter-chips"
@@ -44,23 +44,16 @@ import { TagPill } from "./tags"
 import { threadLink } from "./thread"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
-import { arrowKeys, detailsMode, panelMode, panelSide, setDetailsMode, setPanelMode, setPanelSide } from "./view"
-
-const PANEL_WIDTH = 360
-/** The overlay panel's space to the window edges: it floats over the page, and this shows it. */
-const PANEL_MARGIN = 8
-/** The space the open panel takes at each edge of the window. Toolbar, notices and threads stay out of it. */
-function panelInsets(s: State) {
-  const width = !s.panelOpen ? 0 : panelMode(s) === "overlay" ? PANEL_WIDTH + PANEL_MARGIN : PANEL_WIDTH
-  return panelSide(s) === "left" ? { left: width, right: 0 } : { left: 0, right: width }
-}
-/**
- * With the panel open, the toolbar row spans the panel's bottom: as far from the panel's inner edge as the toolbar is
- * from its outer edge (the toolbar is 16 px from the window edge).
- */
-export const panelRowWidth = (s: State) => PANEL_WIDTH - 2 * (16 - (panelMode(s) === "overlay" ? PANEL_MARGIN : 0))
-export const panelRightEdge = (s: State) => panelInsets(s).right
-export const panelLeftEdge = (s: State) => panelInsets(s).left
+import {
+  arrowKeys,
+  detailsMode,
+  PANEL_WIDTH,
+  panelMode,
+  panelSide,
+  setDetailsMode,
+  setPanelMode,
+  setPanelSide,
+} from "./view"
 
 const DetailsLayer = lazy(() => import("./details").then((m) => ({ default: m.DetailsLayer })))
 

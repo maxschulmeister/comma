@@ -20,7 +20,7 @@ Comments pinned to any website. One script tag. Your own service.
 - **One script tag.** Your sites do not need a backend, a database schema or a build step. One comma service holds the comments of all your sites.
 - **Your service, your data.** Run comma with Docker, or on AWS Lambda, Cloudflare Workers or Vercel. The comments stay in your own database: SQLite, Turso or another libSQL server.
 - **Your accounts.** People sign in with the accounts of your app, with Slack, or as guests.
-- **Small.** Under 150 kB gzip on the page. The editor, screenshots and emoji load when people use them.
+- **Small and quiet.** Under 150 kB gzip on the page. The pins, the panel and the font load when comma shows them, and the editor, screenshots and emoji when people use them. While comma shows nothing on the page (comments hidden or none there, panel closed), it does no work when the page changes.
 
 Moving from SitePing? comma imports its comments (see [DEPLOY.md](DEPLOY.md#move-from-siteping)).
 

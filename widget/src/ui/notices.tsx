@@ -24,6 +24,7 @@ const dismiss = (id: number) => {
 const ACTIONS = {
   undo: { label: "Undo", Icon: ArrowCounterClockwiseIcon },
   retry: { label: "Try again", Icon: ArrowClockwiseIcon },
+  reload: { label: "Reload", Icon: ArrowClockwiseIcon },
 }
 
 /**

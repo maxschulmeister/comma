@@ -18,19 +18,19 @@ import { pageContext } from "@/lib/env"
 import { plural, timeAgo } from "@/lib/format"
 import { shrinkImage } from "@/lib/image"
 import { NARROW, useMedia } from "@/lib/media"
-import { pageBox, useLayoutTick, useResolved } from "@/live"
+import { pageBox, showsPin, useLayoutTick, useResolved } from "@/live"
 import { type Draft, getState, type State, setState, threadTakesFocus, useStore } from "@/store"
 import type { Thread } from "@/types"
 import { Composer } from "./composer"
 import { focusOpenItem } from "./details-state"
+import { takeFocusOnClose } from "./focus-on-close"
 import { tellMoveFailed } from "./notices"
 import { movedAnchor } from "./overlay"
-import { panelLeftEdge, panelRightEdge } from "./panel"
 import { SignInForm } from "./sign-in"
-import { type Placement, ThreadView, takeFocusOnClose } from "./thread"
+import { type Placement, ThreadView } from "./thread"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
-import { arrowKeys, detailsMode, panelSide } from "./view"
+import { arrowKeys, detailsMode, panelLeftEdge, panelRightEdge, panelSide } from "./view"
 
 /** Elements a thread popover can attach to: pins and clusters on the page, items in the panel. */
 export const pinElements = new Map<string, HTMLElement>()
@@ -123,9 +123,9 @@ export function PinsLayer() {
   const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null)
 
   const items: Item[] = []
+  const view = { page, pinsVisible, openThreadId }
   for (const thread of threads) {
-    if (thread.page !== page) continue
-    if (thread.id !== openThreadId && (!pinsVisible || thread.status !== "open")) continue
+    if (!showsPin(view, thread)) continue
     const el = resolved.get(thread.id)
     const box = el && pageBox(thread.anchor, el)
     if (!box) continue

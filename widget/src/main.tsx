@@ -17,7 +17,6 @@ import { PortalContainer } from "./lib/portal"
 import { startTracking, watchPage } from "./live"
 import { createShadowHost } from "./shadow"
 import { getState, initStore, setState } from "./store"
-import { preloadEditor } from "./ui/composer"
 import { loadPinsVisible, showCommentsWithPanel, startShortcuts } from "./ui/shortcuts"
 import { keepReview, loadReview, loadView } from "./ui/view"
 
@@ -123,8 +122,6 @@ function start({ __queue: queue, __script: script }: Loader) {
   startPolling()
   void loadProjectUntilItWorks()
   void refresh()
-  const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 2000))
-  idle(() => void preloadEditor().catch(() => {}))
 }
 
 /**

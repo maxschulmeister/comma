@@ -1,9 +1,9 @@
 import { closeDraft } from "@/drafts"
+import { preloadEditor } from "@/editor/preload"
 import { fromWidgetPart, HOST_TAG, isTyping } from "@/lib/dom"
 import { NARROW } from "@/lib/media"
 import { getState, type State, setState, subscribe, widgetVisible } from "@/store"
-import { preloadEditor } from "./composer"
-import { setFocusOnClose } from "./thread"
+import { setFocusOnClose } from "./focus-on-close"
 import { panelMode } from "./view"
 
 const PINS_KEY = "comma:pins"

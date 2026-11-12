@@ -26,12 +26,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { plural } from "@/lib/format"
 import { NARROW, useMedia } from "@/lib/media"
 import { setState, useStore } from "@/store"
+import { loadPageUi } from "./load-page-ui"
 import { Notices, notify } from "./notices"
-import { panelRowWidth } from "./panel"
 import { setCommentMode, togglePins } from "./shortcuts"
 import { SignInForm } from "./sign-in"
 import { UserAvatar } from "./user-avatar"
-import { panelSide } from "./view"
+import { panelRowWidth, panelSide } from "./view"
 
 /**
  * Small floating bar: comment mode, show or hide the pins, panel with unread count, user menu. It does not move: it stays in the bottom
@@ -189,6 +189,9 @@ export function Toolbar() {
     </DropdownMenu>,
   ]
 
+  // Someone comes to the toolbar: the pins, the panel and the font load, so they are ready at the click.
+  const prepare = () => void loadPageUi().catch(() => {})
+
   // The row: the toolbar, and beside it the messages. With the panel open, it spans the panel's bottom, and the
   // message is at its other end. Narrow screens: the message is above the toolbar.
   return (
@@ -206,6 +209,8 @@ export function Toolbar() {
         role="toolbar"
         aria-label="Comments"
         data-slot="toolbar"
+        onPointerEnter={prepare}
+        onFocus={prepare}
         className={cn(
           "pointer-events-auto flex items-center gap-0.5 rounded-full bg-background p-1 ring-foreground/10 transition-shadow duration-150 ease-out",
           panelOpen ? "shadow-none ring-0" : "shadow-lg ring-1",
