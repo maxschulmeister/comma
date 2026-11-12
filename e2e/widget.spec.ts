@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, type Locator, test } from "@playwright/test"
 import {
   addComment,
   clickAt,
@@ -525,6 +525,116 @@ test("a page that changes all the time: pins still follow their elements", async
     lead.textContent = "Something else entirely, written by the app."
   })
   await expect(pins(page)).toHaveCount(0)
+})
+
+test.describe("an SVG that changes on each frame", () => {
+  // Distance from the pin's point (its bottom-left corner) to the point at x and y (0 to 1) of the target's box.
+  const distance = async (pin: Locator, target: Locator, x: number, y: number) => {
+    const p = await pin.boundingBox()
+    const t = await target.boundingBox()
+    if (!p || !t) return Number.NaN
+    return Math.hypot(p.x - (t.x + t.width * x), p.y + p.height - (t.y + t.height * y))
+  }
+
+  // Animation libraries (Motion) write SVG attributes (`d`, `cx`, `transform`) on each frame of a hero animation.
+  test("comma does not measure the pinned element on each frame, and pins still follow layout changes", async ({
+    page,
+  }) => {
+    await signIn(page, await guestSession("Animator"))
+    await openTestPage(page, "svg-frames")
+    const lead = page.getByTestId("lead")
+    await addComment(page, lead, "On the lead")
+    await endCommentMode(page)
+    const pin = pins(page).first()
+    await expect(pin).toBeVisible()
+    const reads = await page.evaluate(async () => {
+      // The page keeps its height: only the DOM changes, not a new page size, tell comma to move the pin.
+      document.body.style.minHeight = "4000px"
+      const hero = document.querySelector(".hero") as HTMLElement
+      hero.insertAdjacentHTML(
+        "afterbegin",
+        '<svg aria-hidden="true" width="100" height="40"><g><circle r="5" cy="20" /></g></svg>',
+      )
+      const circle = hero.querySelector("circle") as SVGCircleElement
+      const group = hero.querySelector("svg g") as SVGGElement
+      const lead = document.querySelector('[data-testid="lead"]') as HTMLElement
+      let count = 0
+      const read = Element.prototype.getBoundingClientRect
+      Element.prototype.getBoundingClientRect = function (this: Element) {
+        if (this === lead) count++
+        return read.call(this)
+      }
+      // comma places the pin again after the SVG was added.
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      count = 0
+      const end = performance.now() + 1000
+      await new Promise<void>((done) => {
+        const frame = (time: number) => {
+          circle.setAttribute("cx", String(time % 100))
+          group.setAttribute("transform", `rotate(${time % 360} 50 20)`)
+          if (time < end) requestAnimationFrame(frame)
+          else done()
+        }
+        requestAnimationFrame(frame)
+      })
+      return count
+    })
+    // Before the fix: one per frame (30 to 60).
+    expect(reads).toBeLessThan(5)
+
+    // Other changes still move the pin: a new size of the SVG, a style change on the element, and new content above it.
+    await expect.poll(() => distance(pin, lead, 0.2, 0.5)).toBeLessThan(1)
+    await page.evaluate(() => document.querySelector(".hero svg")?.setAttribute("height", "140"))
+    await expect.poll(() => distance(pin, lead, 0.2, 0.5)).toBeLessThan(1)
+    await lead.evaluate((el) => {
+      el.style.transform = "translateY(100px)"
+    })
+    await expect.poll(() => distance(pin, lead, 0.2, 0.5)).toBeLessThan(1)
+    await page.evaluate(() => {
+      const block = document.createElement("div")
+      block.style.height = "50px"
+      document.querySelector(".hero")?.prepend(block)
+    })
+    await expect.poll(() => distance(pin, lead, 0.2, 0.5)).toBeLessThan(1)
+  })
+
+  test("a pin on a shape in the SVG follows the shape", async ({ page }) => {
+    await signIn(page, await guestSession("Shaper"))
+    await openTestPage(page, "svg-shape")
+    await page.evaluate(() => {
+      document
+        .querySelector(".hero")
+        ?.insertAdjacentHTML(
+          "beforeend",
+          '<svg aria-hidden="true" width="400" height="60"><rect data-testid="square" x="0" y="10" width="40" height="40" /></svg>',
+        )
+    })
+    const square = page.getByTestId("square")
+    await addComment(page, square, "On the square", 0.5, 0.5)
+    await endCommentMode(page)
+    const pin = pins(page).first()
+    await expect.poll(() => distance(pin, square, 0.5, 0.5)).toBeLessThan(1)
+    await square.evaluate((el) => el.setAttribute("x", "200"))
+    await expect.poll(() => distance(pin, square, 0.5, 0.5)).toBeLessThan(1)
+  })
+
+  test("a pin on a link goes away when the image in the link's SVG changes to another", async ({ page }) => {
+    await signIn(page, await guestSession("Linker"))
+    await openTestPage(page, "svg-image")
+    await page.evaluate(() => {
+      document
+        .querySelector(".hero")
+        ?.insertAdjacentHTML(
+          "beforeend",
+          '<a href="/plans" data-testid="plan">Plan <svg aria-hidden="true" width="20" height="20"><image href="/basic.png" width="20" height="20" /></svg></a>',
+        )
+    })
+    await addComment(page, page.getByTestId("plan"), "On the plan")
+    await endCommentMode(page)
+    await expect(pins(page)).toHaveCount(1)
+    await page.evaluate(() => document.querySelector('[data-testid="plan"] image')?.setAttribute("href", "/pro.png"))
+    await expect(pins(page)).toHaveCount(0)
+  })
 })
 
 test.describe("touch", () => {
