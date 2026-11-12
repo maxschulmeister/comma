@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { pageBox, useResolved } from "./live"
+import { pageBox, resolvedElement, useResolved } from "./live"
 import { getState, setState, useStore, widgetVisible } from "./store"
 import { CommentOverlay } from "./ui/overlay"
 import { Panel } from "./ui/panel"
@@ -52,7 +52,7 @@ function useDeepLink() {
       if (!getState().loaded) return
       const thread = getState().threads.find((t) => t.id === id)
       if (!thread) return
-      const el = resolved.get(id)
+      const el = resolvedElement(id)
       el?.scrollIntoView({ block: "center" })
       // Without a visible pin (detached, or the element is hidden), the thread opens next to its item in the panel.
       const pin = el && pageBox(thread.anchor, el)

@@ -1,4 +1,4 @@
-import { expect, type Locator, test } from "@playwright/test"
+import { expect, type Locator, type Page, test } from "@playwright/test"
 import {
   addComment,
   clickAt,
@@ -17,6 +17,14 @@ import {
   toolbar,
   typeComment,
 } from "./helpers"
+
+// Distance from the pin's point (its bottom-left corner) to the point at x and y (0 to 1) of the target's box.
+async function distance(pin: Locator, target: Locator, x: number, y: number) {
+  const p = await pin.boundingBox()
+  const t = await target.boundingBox()
+  if (!p || !t) return Number.NaN
+  return Math.hypot(p.x - (t.x + t.width * x), p.y + p.height - (t.y + t.height * y))
+}
 
 test("the page does not change the widget styles", async ({ page }) => {
   await signIn(page, await guestSession("Styles"))
@@ -528,14 +536,6 @@ test("a page that changes all the time: pins still follow their elements", async
 })
 
 test.describe("an SVG that changes on each frame", () => {
-  // Distance from the pin's point (its bottom-left corner) to the point at x and y (0 to 1) of the target's box.
-  const distance = async (pin: Locator, target: Locator, x: number, y: number) => {
-    const p = await pin.boundingBox()
-    const t = await target.boundingBox()
-    if (!p || !t) return Number.NaN
-    return Math.hypot(p.x - (t.x + t.width * x), p.y + p.height - (t.y + t.height * y))
-  }
-
   // Animation libraries (Motion) write SVG attributes (`d`, `cx`, `transform`) on each frame of a hero animation.
   test("comma does not measure the pinned element on each frame, and pins still follow layout changes", async ({
     page,
@@ -634,6 +634,82 @@ test.describe("an SVG that changes on each frame", () => {
     await expect(pins(page)).toHaveCount(1)
     await page.evaluate(() => document.querySelector('[data-testid="plan"] image')?.setAttribute("href", "/pro.png"))
     await expect(pins(page)).toHaveCount(0)
+  })
+})
+
+test.describe("closed comma", () => {
+  // comma watches the page with a MutationObserver on the body. bodyWatchers(): how many watch it now.
+  const countWatchers = (page: Page) =>
+    page.addInitScript(() => {
+      const watchers = new Set<MutationObserver>()
+      const { observe, disconnect } = MutationObserver.prototype
+      MutationObserver.prototype.observe = function (target, options) {
+        if (target === document.body && options?.subtree) watchers.add(this)
+        return observe.call(this, target, options)
+      }
+      MutationObserver.prototype.disconnect = function () {
+        watchers.delete(this)
+        return disconnect.call(this)
+      }
+      Object.assign(window, { bodyWatchers: () => watchers.size })
+    })
+  const watchers = (page: Page) =>
+    page.evaluate(() => (window as unknown as { bodyWatchers: () => number }).bodyWatchers())
+
+  test("with comments hidden, comma does not watch the page; shown again, the pins are at their elements", async ({
+    page,
+  }) => {
+    await countWatchers(page)
+    await signIn(page, await guestSession("Quiet"))
+    await openTestPage(page, "quiet")
+    const lead = page.getByTestId("lead")
+    await addComment(page, lead, "On the lead")
+    await endCommentMode(page)
+    await expect(pins(page)).toHaveCount(1)
+    expect(await watchers(page)).toBe(1)
+    await page.keyboard.press("Shift+C")
+    await expect(pins(page)).toHaveCount(0)
+    await expect.poll(() => watchers(page)).toBe(0)
+    // The page changes while comma does not watch it.
+    await page.evaluate(() => {
+      const block = document.createElement("div")
+      block.style.height = "80px"
+      document.querySelector(".hero")?.prepend(block)
+    })
+    await page.keyboard.press("Shift+C")
+    await expect(pins(page)).toHaveCount(1)
+    await expect.poll(() => distance(pins(page).first(), lead, 0.2, 0.5)).toBeLessThan(1)
+    expect(await watchers(page)).toBe(1)
+  })
+
+  test("on a page without comments, comma watches the page only in comment mode", async ({ page }) => {
+    await countWatchers(page)
+    await signIn(page, await guestSession("Empty"))
+    await openTestPage(page, "quiet-empty")
+    await expect.poll(() => watchers(page)).toBe(0)
+    const commentMode = toolbar(page).getByRole("button", { name: "Comment mode" })
+    await page.keyboard.press("c")
+    await expect(commentMode).toHaveAttribute("aria-pressed", "true")
+    expect(await watchers(page)).toBe(1)
+    await page.keyboard.press("Escape")
+    await expect(commentMode).toHaveAttribute("aria-pressed", "false")
+    await expect.poll(() => watchers(page)).toBe(0)
+  })
+
+  test("with comments hidden, a link opens the thread at its pin", async ({ page }) => {
+    await signIn(page, await guestSession("Linked"))
+    await openTestPage(page, "quiet-link")
+    await addComment(page, page.getByTestId("title"), "Linked here")
+    await endCommentMode(page)
+    const id = await pins(page).first().getAttribute("data-thread")
+    await page.keyboard.press("Shift+C")
+    await expect(pins(page)).toHaveCount(0)
+    const path = new URL(page.url()).pathname
+    await page.goto("about:blank")
+    await page.goto(`${path}#comma=${id}`)
+    await expect(threadPopover(page)).toContainText("Linked here")
+    await expect(pins(page)).toHaveCount(1)
+    await expect(panel(page)).toBeHidden()
   })
 })
 
