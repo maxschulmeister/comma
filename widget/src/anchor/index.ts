@@ -317,7 +317,7 @@ function lookAlikesOf(anchor: Anchor) {
 
 // Attributes that say what an element is or where it goes. Not `title` or `value`: they change often.
 const OWN_IDENTITY = ["href", "src", "srcset", "alt", "aria-label", "name", "data-testid"]
-const CHILD_IDENTITY = ["href", "src", "srcset"]
+export const CHILD_IDENTITY = ["href", "src", "srcset"]
 // Query parameters that do not change what a URL points to.
 const TRACKING = /^(utm_\w+|fbclid|gclid|msclkid|mc_cid|mc_eid|_ga|ref)$/i
 // For images also: size, format, cache and signature parameters (image services, signed storage URLs).

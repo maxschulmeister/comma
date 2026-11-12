@@ -1,6 +1,6 @@
 // Keeps thread anchors attached to page elements and tells the UI when the layout changes.
 import { useSyncExternalStore } from "react"
-import { type Anchor, anchorBox, type Box, resolveAnchor } from "./anchor"
+import { type Anchor, anchorBox, type Box, CHILD_IDENTITY, resolveAnchor } from "./anchor"
 import { getState, subscribe } from "./store"
 import type { Thread } from "./types"
 
@@ -86,8 +86,33 @@ export function useLayoutTick() {
   )
 }
 
+/**
+ * True when all changes only redraw the inside of an SVG. Animations change `d`, `cx` or `transform` in an SVG on each
+ * frame. Such a change does not move other elements, and does not change what an anchor finds. Not when a pin or the
+ * unsent comment is on an element in that SVG, and not links and images (they are part of an anchor).
+ */
+function onlySvgRedraws(records: MutationRecord[]) {
+  // The quick test first: on an animated page, a batch often also has a change outside SVGs.
+  for (const { type, target, attributeName } of records) {
+    if (type !== "attributes" || !(target instanceof SVGElement) || CHILD_IDENTITY.includes(attributeName ?? "")) {
+      return false
+    }
+  }
+  // Pins and the unsent comment on elements in an SVG.
+  const { draft, draftMove } = getState()
+  const placed = [...resolved.values(), draft?.element, draftMove?.element].filter(
+    (el): el is SVGElement => el instanceof SVGElement && !!el.ownerSVGElement,
+  )
+  // Not a change to the outer <svg> element itself: its size is part of the page layout.
+  return records.every(({ target }) => {
+    const svg = (target as SVGElement).ownerSVGElement
+    return !!svg && !placed.some((el) => el !== svg && svg.contains(el))
+  })
+}
+
 export function startTracking() {
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver((records) => {
+    if (onlySvgRedraws(records)) return
     invalidateClipping()
     scheduleResolve()
     requestLayout()
