@@ -11,17 +11,25 @@ const FONTS = [
   ],
 ]
 
+let fontStyle: HTMLStyleElement | null = null
+
+/**
+ * Adds comma's font to the page, when someone uses comma. A new font makes the browser style and lay out the whole
+ * page again (10 to 20 ms on a large page): at page load, that stops the page's animations for a frame.
+ */
+export function loadFonts() {
+  if (fontStyle && !fontStyle.isConnected) document.head.append(fontStyle)
+}
+
 // Creates the widget host on <html> with an open shadow root.
-// `@font-face` does not work inside a shadow root in Chromium, so it goes into the page document.
+// `@font-face` does not work inside a shadow root in Chromium, so it goes into the page document (see loadFonts).
 export function createShadowHost(assetBase: string) {
-  const fontCss = FONTS.map(
+  fontStyle = document.createElement("style")
+  fontStyle.dataset.comma = "fonts"
+  fontStyle.textContent = FONTS.map(
     ([file, range]) =>
       `@font-face{font-family:'Public Sans Variable';font-style:normal;font-display:swap;font-weight:100 900;src:url(${new URL(`fonts/${file}`, assetBase)}) format('woff2-variations');unicode-range:${range}}`,
   ).join("")
-  const fontStyle = document.createElement("style")
-  fontStyle.dataset.comma = "fonts"
-  fontStyle.textContent = fontCss
-  document.head.append(fontStyle)
 
   const host = document.createElement("comma-widget")
   host.style.cssText = "all:initial;position:absolute;top:0;left:0;width:0;height:0;z-index:2147483647"

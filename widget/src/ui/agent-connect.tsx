@@ -1,7 +1,7 @@
 // A coding agent asks to work on the comments as the person: it opened this site with #comma-connect=<code> (through
 // comma's /connect page). The person checks the code that the agent shows, and allows it or not.
 // A chunk of its own: only that link loads it.
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { answerAgent } from "@/client"
 import {
   AlertDialog,
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
+import { loadFonts } from "@/shadow"
 import { setState, useStore } from "@/store"
 import { notify } from "./notices"
 import { SignInForm } from "./sign-in"
@@ -23,6 +24,7 @@ export function AgentConnect({ code }: { code: string }) {
   const [busy, setBusy] = useState<"allow" | "deny" | null>(null)
   const [error, setError] = useState<string | null>(null)
   const close = () => setState({ agentCode: null })
+  useEffect(loadFonts, [])
 
   const answer = async (allow: boolean) => {
     setBusy(allow ? "allow" : "deny")

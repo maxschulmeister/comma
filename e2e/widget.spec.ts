@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test"
 import {
   addComment,
+  COMMA,
   clickAt,
   closeThread,
   endCommentMode,
@@ -694,6 +695,24 @@ test.describe("closed comma", () => {
     await page.keyboard.press("Escape")
     await expect(commentMode).toHaveAttribute("aria-pressed", "false")
     await expect.poll(() => watchers(page)).toBe(0)
+  })
+
+  test("closed, comma loads no pins, panel, editor or font; comment mode loads them", async ({ page }) => {
+    const loaded: string[] = []
+    page.on("request", (request) => {
+      if (request.url().startsWith(COMMA)) loaded.push(new URL(request.url()).pathname)
+    })
+    const pageUi = (path: string) => /\/w\/chunks\/(page-ui|panel|editor)-/.test(path)
+    await signIn(page, await guestSession("Light"))
+    await openTestPage(page, "light")
+    // Idle time: comma loads nothing more while it is closed.
+    await page.waitForTimeout(1500)
+    expect(loaded.filter(pageUi)).toEqual([])
+    await expect(page.locator("style[data-comma=fonts]")).toHaveCount(0)
+    await page.keyboard.press("c")
+    await expect(overlay(page)).toBeAttached()
+    await expect.poll(() => loaded.some(pageUi)).toBe(true)
+    await expect(page.locator("style[data-comma=fonts]")).toHaveCount(1)
   })
 
   test("with comments hidden, a link opens the thread at its pin", async ({ page }) => {

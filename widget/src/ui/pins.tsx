@@ -23,14 +23,14 @@ import { type Draft, getState, type State, setState, threadTakesFocus, useStore 
 import type { Thread } from "@/types"
 import { Composer } from "./composer"
 import { focusOpenItem } from "./details-state"
+import { takeFocusOnClose } from "./focus-on-close"
 import { tellMoveFailed } from "./notices"
 import { movedAnchor } from "./overlay"
-import { panelLeftEdge, panelRightEdge } from "./panel"
 import { SignInForm } from "./sign-in"
-import { type Placement, ThreadView, takeFocusOnClose } from "./thread"
+import { type Placement, ThreadView } from "./thread"
 import { UserAvatar } from "./user-avatar"
 import { nameOf, UserName } from "./user-name"
-import { arrowKeys, detailsMode, panelSide } from "./view"
+import { arrowKeys, detailsMode, panelLeftEdge, panelRightEdge, panelSide } from "./view"
 
 /** Elements a thread popover can attach to: pins and clusters on the page, items in the panel. */
 export const pinElements = new Map<string, HTMLElement>()

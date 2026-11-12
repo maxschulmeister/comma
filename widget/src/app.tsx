@@ -1,13 +1,13 @@
-import { lazy, Suspense, useEffect } from "react"
+import { lazy, Suspense, useEffect, useRef } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { pageBox, resolvedElement, useResolved } from "./live"
+import { pageBox, resolvedElement, showsOnPage, useResolved } from "./live"
 import { getState, setState, useStore, widgetVisible } from "./store"
+import { loadPageUi } from "./ui/load-page-ui"
 import { CommentOverlay } from "./ui/overlay"
-import { Panel } from "./ui/panel"
-import { PinsLayer } from "./ui/pins"
 import { Toolbar } from "./ui/toolbar"
 import { detailsMode } from "./ui/view"
 
+const PageUi = lazy(() => loadPageUi().then((m) => ({ default: m.PageUi })))
 const DetailsDialog = lazy(() => import("./ui/details").then((m) => ({ default: m.DetailsDialog })))
 const AgentConnect = lazy(() => import("./ui/agent-connect").then((m) => ({ default: m.AgentConnect })))
 
@@ -67,6 +67,10 @@ function useDeepLink() {
 
 export function App() {
   const placing = useStore((s) => s.commentMode || !!s.moving)
+  // Loaded once, the page UI stays: it closes with its animations, and keeps its state.
+  const shows = useStore(showsOnPage)
+  const pageUi = useRef(false)
+  if (shows) pageUi.current = true
   const visible = useStore(widgetVisible)
   const dialog = useStore((s) => s.detailsOpen && detailsMode(s) === "dialog")
   const agentCode = useStore((s) => s.agentCode)
@@ -75,8 +79,11 @@ export function App() {
   return (
     <TooltipProvider delay={400}>
       {placing && <CommentOverlay />}
-      <PinsLayer />
-      <Panel />
+      {pageUi.current && (
+        <Suspense fallback={null}>
+          <PageUi />
+        </Suspense>
+      )}
       {visible && <Toolbar />}
       {dialog && (
         <Suspense fallback={null}>

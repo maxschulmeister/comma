@@ -50,6 +50,22 @@ export const panelMode = (s: State): PanelMode => s.panelMode ?? s.projectInfo?.
 export const panelSide = (s: State): PanelSide => s.panelSide ?? "right"
 export const detailsMode = (s: State): DetailsMode => s.detailsMode ?? s.projectInfo?.details ?? "panel"
 
+export const PANEL_WIDTH = 360
+/** The overlay panel's space to the window edges: it floats over the page, and this shows it. */
+const PANEL_MARGIN = 8
+/** The space the open panel takes at each edge of the window. Toolbar, notices and threads stay out of it. */
+function panelInsets(s: State) {
+  const width = !s.panelOpen ? 0 : panelMode(s) === "overlay" ? PANEL_WIDTH + PANEL_MARGIN : PANEL_WIDTH
+  return panelSide(s) === "left" ? { left: width, right: 0 } : { left: 0, right: width }
+}
+/**
+ * With the panel open, the toolbar row spans the panel's bottom: as far from the panel's inner edge as the toolbar is
+ * from its outer edge (the toolbar is 16 px from the window edge).
+ */
+export const panelRowWidth = (s: State) => PANEL_WIDTH - 2 * (16 - (panelMode(s) === "overlay" ? PANEL_MARGIN : 0))
+export const panelRightEdge = (s: State) => panelInsets(s).right
+export const panelLeftEdge = (s: State) => panelInsets(s).left
+
 /**
  * The arrow keys follow the screen. Toward the page: into the thread, or back from the details. Away from it:
  * deeper into the panel (the details), or from the thread back to the list.

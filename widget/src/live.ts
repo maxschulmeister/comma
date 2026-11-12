@@ -125,7 +125,7 @@ export const showsPin = (s: Pick<State, "page" | "pinsVisible" | "openThreadId">
   thread.page === s.page && (thread.id === s.openThreadId || (s.pinsVisible && thread.status === "open"))
 
 /** comma shows something that needs the elements of the comments: pins, the panel, comment mode, a draft. */
-const showsOnPage = (s: State) =>
+export const showsOnPage = (s: State) =>
   s.panelOpen ||
   s.commentMode ||
   !!s.moving ||
