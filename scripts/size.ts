@@ -1,10 +1,20 @@
 // Checks the gzip size of the built widget against the budget. Run after `bun run build`.
 import { readdirSync, readFileSync } from "node:fs"
-import { join } from "node:path"
+import { dirname, join, normalize } from "node:path"
 import { gzipSync } from "node:zlib"
 
 const dist = join(import.meta.dir, "../widget/dist")
 const gzip = (file: string) => gzipSync(readFileSync(join(dist, file)), { level: 9 }).length
+// The file and the chunks it imports statically: they load with it. Not `import()`: those load on demand.
+const withImports = (file: string, seen = new Set<string>()): Set<string> => {
+  if (seen.has(file)) return seen
+  seen.add(file)
+  for (const [, path] of readFileSync(join(dist, file), "utf8").matchAll(/(?:from|import)\s*"(\.\/[^"]+)"/g)) {
+    withImports(normalize(join(dirname(file), path as string)), seen)
+  }
+  return seen
+}
+const sum = (files: Iterable<string>) => [...files].reduce((total, file) => total + gzip(file), 0)
 const chunk = (prefix: string) => {
   const name = readdirSync(join(dist, "chunks")).find((f) => f.startsWith(prefix))
   if (!name) throw new Error(`No chunk ${prefix}`)
@@ -14,7 +24,11 @@ const chunk = (prefix: string) => {
 const KB = 1024
 const checks = [
   // comma runs on previews and staging, not for site visitors: a larger widget is fine.
-  { name: "c.js + main.js (loads on every page)", size: gzip("c.js") + gzip("main.js"), budget: 150 * KB },
+  {
+    name: "c.js + main.js and its chunks (loads on every page)",
+    size: gzip("c.js") + sum(withImports("main.js")),
+    budget: 150 * KB,
+  },
   { name: "editor chunk (loads on demand)", size: chunk("editor-"), budget: 135 * KB },
   { name: "emoji picker chunk (loads on demand)", size: chunk("emoji-picker-"), budget: 15 * KB },
   { name: "screenshot chunk (loads on demand)", size: chunk("screenshot-"), budget: 15 * KB },
