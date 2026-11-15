@@ -77,9 +77,10 @@ export const ConfigSchema = z.object({ projects: z.array(ProjectSchema).min(1) }
 export type Project = z.output<typeof ProjectSchema>
 export type Config = z.input<typeof ConfigSchema>
 
-export async function loadConfig(path: string) {
+/** The config as it is in the file. createApp checks it: a parsed config cannot go through the schema again. */
+export async function loadConfig(path: string): Promise<Config> {
   const mod = await import(path)
-  return ConfigSchema.parse(mod.default)
+  return mod.default
 }
 
 /** `*` matches one label: `https://*.example.com` matches `https://a.example.com`, not `https://a.b.example.com`. */
