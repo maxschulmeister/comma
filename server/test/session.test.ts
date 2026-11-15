@@ -1,5 +1,6 @@
 import { describe, expect, setSystemTime, test } from "bun:test"
 import { sign } from "hono/jwt"
+import type { Config } from "../src/config"
 import { ACME, appToken_, CLOSED, OPEN, OTHER, setup } from "./helpers"
 
 describe("guest session", () => {
@@ -40,6 +41,58 @@ describe("guest session", () => {
     expect(closed.json.error).toBe("Sign in with your account to comment on this site")
     const open = await request("POST", "/api/session/guest", { origin: OPEN, body: { project: "open", name: "Ada" } })
     expect(open.status).toBe(200)
+  })
+})
+
+describe("guest password and gate", () => {
+  const SITE = "https://gated.test"
+  const gated = (project: object): Config => ({ projects: [{ id: "gated", origins: [SITE], ...project }] })
+  const guestSignIn = (t: Awaited<ReturnType<typeof setup>>, body: object) =>
+    t.request("POST", "/api/session/guest", { origin: SITE, body: { project: "gated", name: "Ada", ...body } })
+
+  test("a gate with guests needs a guest password", async () => {
+    for (const project of [
+      { gate: true },
+      { gate: true, guests: true },
+      { gate: true, appSecret: "s", guests: true },
+    ]) {
+      await expect(setup({ config: gated(project) })).rejects.toThrow("guests: { password }")
+    }
+    await setup({ config: gated({ gate: true, guests: { password: "open sesame" } }) })
+    await setup({ config: gated({ gate: true, appSecret: "s" }) })
+  })
+
+  test("a guest password cannot be empty", async () => {
+    await expect(setup({ config: gated({ guests: { password: "" } }) })).rejects.toThrow()
+    await expect(setup({ config: gated({ guests: { password: undefined } }) })).rejects.toThrow()
+  })
+
+  test("guests sign in only with the right password", async () => {
+    const t = await setup({ config: gated({ guests: { password: "open sesame" } }) })
+    const none = await guestSignIn(t, {})
+    expect(none.status).toBe(403)
+    expect(none.json.error).toBe("Wrong password")
+    expect((await guestSignIn(t, { password: "open" })).status).toBe(403)
+    const ok = await guestSignIn(t, { password: "open sesame" })
+    expect(ok.status).toBe(200)
+    expect(ok.json.user).toMatchObject({ name: "Ada", kind: "guest" })
+  })
+
+  test("wrong passwords count against the guest limit", async () => {
+    const t = await setup({ config: gated({ guests: { password: "open sesame" }, limits: { guestsPerHour: 2 } }) })
+    expect((await guestSignIn(t, { password: "a" })).status).toBe(403)
+    expect((await guestSignIn(t, { password: "b" })).status).toBe(403)
+    expect((await guestSignIn(t, { password: "open sesame" })).status).toBe(429)
+  })
+
+  test("project info tells the widget about the gate and the guest password", async () => {
+    const t = await setup({ config: gated({ gate: true, guests: { password: "open sesame" } }) })
+    const info = await t.request("GET", "/api/projects/gated", { origin: SITE })
+    expect(info.json).toMatchObject({ gate: true, guests: true, guestPassword: true })
+    expect(info.text).not.toContain("open sesame")
+    const open = await setup({ config: gated({}) })
+    const plain = await open.request("GET", "/api/projects/gated", { origin: SITE })
+    expect(plain.json).toMatchObject({ gate: false, guests: true, guestPassword: false })
   })
 })
 
@@ -196,6 +249,8 @@ describe("project info", () => {
       popupSignIn: true,
       slack: false,
       guests: true,
+      guestPassword: false,
+      gate: false,
       toolbar: "always",
       details: "panel",
       panel: "overlay",
@@ -206,6 +261,8 @@ describe("project info", () => {
       popupSignIn: false,
       slack: false,
       guests: true,
+      guestPassword: false,
+      gate: false,
       toolbar: "always",
       details: "panel",
       panel: "overlay",
@@ -216,6 +273,8 @@ describe("project info", () => {
       popupSignIn: false,
       slack: false,
       guests: false,
+      guestPassword: false,
+      gate: false,
       toolbar: "signed-in",
       details: "dialog",
       panel: "push",

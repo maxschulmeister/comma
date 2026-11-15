@@ -38,7 +38,9 @@ function saveSession(session: Session | null) {
 }
 
 // The composer keeps drafts per person: another person sees their own (see Composer).
+// Behind the gate, a sign-in or sign-out loads the page again: c.js then shows it, or takes its content out.
 function applySession(session: Session | null) {
+  if (getState().gated && !!session !== !!getState().session) return location.reload()
   etag = null
   setState({
     session,
@@ -114,6 +116,8 @@ export async function loadProject() {
       appUrl: typeof info.appUrl === "string" && /^https?:\/\//.test(info.appUrl) ? info.appUrl : undefined,
       slack: info.slack === true,
       guests: info.guests,
+      guestPassword: info.guestPassword === true,
+      gate: info.gate === true,
       toolbar: info.toolbar === "signed-in" ? "signed-in" : "always",
       details: info.details === "dialog" ? "dialog" : "panel",
       panel: info.panel === "push" ? "push" : "overlay",
@@ -127,13 +131,13 @@ export async function loadProject() {
 // a sign-out cancels a sign-in that is still on its way, and a newer sign-in wins over an older one.
 let authAttempt = 0
 
-async function signIn(path: string, body: Record<string, string>) {
+async function signIn(path: string, body: Record<string, string | undefined>) {
   const attempt = ++authAttempt
   const session = await request<Session>("POST", path, { project: getState().project, ...body }, false)
   if (attempt === authAttempt) saveSession(session)
 }
 
-export const signInAsGuest = (name: string) => signIn("/api/session/guest", { name })
+export const signInAsGuest = (name: string, password?: string) => signIn("/api/session/guest", { name, password })
 
 export const identify = (appToken: string) => signIn("/api/session/app", { appToken })
 
@@ -166,18 +170,19 @@ export function followAppToken(token: string | null | false) {
   identify(token).catch(() => {})
 }
 
-export function signOut() {
+export async function signOut() {
   authAttempt++
   // The next person on this tab must not see the drafts.
   const { server, session } = getState()
   if (session) clearDrafts(session.user.id)
   setState({ draft: null, draftMove: null })
+  // End the session on the server too, so a copy of the token stops working.
+  const headers = { authorization: `Bearer ${session?.token}` }
+  const ended =
+    session && fetch(`${server}/api/session`, { method: "DELETE", headers, credentials: "omit" }).catch(() => {})
+  // Behind the gate, the sign-out loads the page again: that can stop the request before it goes out.
+  if (getState().gated) await ended
   saveSession(null)
-  // End the session on the server too, so a copy of the token stops working. The tab is signed out already.
-  if (session) {
-    const headers = { authorization: `Bearer ${session.token}` }
-    void fetch(`${server}/api/session`, { method: "DELETE", headers, credentials: "omit" }).catch(() => {})
-  }
 }
 
 /**

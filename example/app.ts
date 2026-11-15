@@ -111,7 +111,7 @@ Bun.serve({
     }
 
     // Test pages: any /t/<name> path serves the same page, so each test has its own page.
-    // `?project=<id>`, `?shortcut=<key>`, `?token-from=<origin>` and `?token-key=<key>` change the script tag.
+    // `?project=<id>`, `?shortcut=<key>`, `?token-from=<origin>`, `?token-key=<key>` and `?gate` change the script tag.
     if (url.pathname.startsWith("/t/")) {
       const attr = (name: string) => url.searchParams.get(name)?.replace(/[^\w-]/g, "")
       const page = await Bun.file(resolve(pages, "fixtures/test.html")).text()
@@ -119,13 +119,17 @@ Bun.serve({
       const shortcut = attr("shortcut")
       const tokenFrom = url.searchParams.get("token-from")?.replace(/[^\w:/.-]/g, "")
       const tokenKey = attr("token-key")
+      const attrs = `data-project="${project}"${shortcut === undefined ? "" : ` data-shortcut="${shortcut}"`}${
+        tokenFrom === undefined ? "" : ` data-token-from="${tokenFrom}"`
+      }${tokenKey === undefined ? "" : ` data-token-key="${tokenKey}"`}`
+      const tag = '<script src="{{COMMA_URL}}/c.js" data-project="example" defer></script>'
+      if (!page.includes(tag)) return html("<h1>The test page has no comma tag</h1>", 500)
+      // `?gate`: the tag goes into <head> with data-gate and without defer, so it hides the page before it shows.
+      if (!url.searchParams.has("gate")) return html(page.replace('data-project="example"', attrs))
       return html(
-        page.replace(
-          'data-project="example"',
-          `data-project="${project}"${shortcut === undefined ? "" : ` data-shortcut="${shortcut}"`}${
-            tokenFrom === undefined ? "" : ` data-token-from="${tokenFrom}"`
-          }${tokenKey === undefined ? "" : ` data-token-key="${tokenKey}"`}`,
-        ),
+        page
+          .replace(tag, "")
+          .replace("</head>", `<script src="{{COMMA_URL}}/c.js" ${attrs} data-gate></script></head>`),
       )
     }
 

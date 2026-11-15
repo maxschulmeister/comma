@@ -14,9 +14,11 @@ import { useStore } from "@/store"
 export function SignInForm({ title = "Sign in to comment" }: { title?: string | null }) {
   const info = useStore((s) => s.projectInfo)
   const [name, setName] = useState("")
+  const [password, setPassword] = useState("")
   const [busy, setBusy] = useState<"guest" | "popup" | "slack" | null>(null)
   const [error, setError] = useState<string | null>(null)
   const id = useId()
+  const passwordId = useId()
 
   const run = async (kind: "guest" | "popup" | "slack", action: () => Promise<void>) => {
     setBusy(kind)
@@ -36,7 +38,11 @@ export function SignInForm({ title = "Sign in to comment" }: { title?: string | 
       setError("Enter your name.")
       return
     }
-    void run("guest", () => signInAsGuest(name.trim()))
+    if (info?.guestPassword && !password) {
+      setError("Enter the password.")
+      return
+    }
+    void run("guest", () => signInAsGuest(name.trim(), password || undefined))
   }
 
   if (!info) {
@@ -89,6 +95,19 @@ export function SignInForm({ title = "Sign in to comment" }: { title?: string | 
               onChange={(e) => setName(e.currentTarget.value)}
             />
           </div>
+          {info.guestPassword && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={passwordId}>Password</Label>
+              <Input
+                id={passwordId}
+                type="password"
+                value={password}
+                maxLength={200}
+                autoComplete="current-password"
+                onChange={(e) => setPassword(e.currentTarget.value)}
+              />
+            </div>
+          )}
           <Button type="submit" variant={popups ? "outline" : "default"} disabled={!!busy}>
             {busy === "guest" && <Spinner />}
             Continue as guest

@@ -37,8 +37,16 @@ export const ProjectSchema = z
         team: z.string().regex(/^T[A-Z0-9]+$/, "Set slack.team to the workspace id, for example T0123ABCD"),
       })
       .optional(),
-    /** Guests sign in with only a name. Default: on without app sign-in, off with it. */
-    guests: z.boolean().optional(),
+    /**
+     * Guests sign in with only a name. Default: on without app sign-in, off with it.
+     * `{ password }`: guests also type this shared password.
+     */
+    guests: z.union([z.boolean(), z.object({ password: z.string().min(1).max(200) })]).optional(),
+    /**
+     * The page shows only to people who are signed in. The widget covers it and takes its content out, and adds
+     * noindex. A curtain, not a lock: the HTML still goes to everyone.
+     */
+    gate: z.boolean().default(false),
     /** Limits per hour. Comments and images: per user. Guests: new guest sign-ins, for all people together. */
     limits: z
       .object({
@@ -69,7 +77,12 @@ export const ProjectSchema = z
   )
   .transform((p) => {
     const appSignIn = !!(p.appSecret || p.userUrl)
-    return { ...p, appSignIn, guests: p.guests ?? !appSignIn }
+    const guestPassword = typeof p.guests === "object" ? p.guests.password : undefined
+    return { ...p, appSignIn, guests: p.guests === undefined ? !appSignIn : !!p.guests, guestPassword }
+  })
+  .refine((p) => !(p.gate && p.guests && !p.guestPassword), {
+    message: "With gate, guests need a password: guests: { password }. Or turn guests off.",
+    path: ["guests"],
   })
 
 export const ConfigSchema = z.object({ projects: z.array(ProjectSchema).min(1) })
@@ -77,9 +90,10 @@ export const ConfigSchema = z.object({ projects: z.array(ProjectSchema).min(1) }
 export type Project = z.output<typeof ProjectSchema>
 export type Config = z.input<typeof ConfigSchema>
 
-export async function loadConfig(path: string) {
+/** The config as it is in the file. createApp checks it: a parsed config cannot go through the schema again. */
+export async function loadConfig(path: string): Promise<Config> {
   const mod = await import(path)
-  return ConfigSchema.parse(mod.default)
+  return mod.default
 }
 
 /** `*` matches one label: `https://*.example.com` matches `https://a.example.com`, not `https://a.b.example.com`. */

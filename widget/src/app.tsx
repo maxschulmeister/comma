@@ -2,6 +2,7 @@ import { type ComponentType, lazy, Suspense, useEffect, useRef } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { pageBox, resolvedElement, showsOnPage } from "./live"
 import { getState, setState, useStore, widgetVisible } from "./store"
+import { Gate } from "./ui/gate"
 import { loadPageUi } from "./ui/load-page-ui"
 import { notify } from "./ui/notices"
 import { CommentOverlay } from "./ui/overlay"
@@ -97,26 +98,33 @@ export function App() {
   const visible = useStore(widgetVisible)
   const dialog = useStore((s) => s.detailsOpen && detailsMode(s) === "dialog")
   const agentCode = useStore((s) => s.agentCode)
+  const gatedOut = useStore((s) => s.gated && !s.session)
   useDeepLink()
   useAgentLink()
   return (
     <TooltipProvider delay={400}>
-      {placing && <CommentOverlay />}
-      {pageUi.current && (
-        <Suspense fallback={null}>
-          <PageUi />
-        </Suspense>
-      )}
-      {visible && <Toolbar />}
-      {dialog && (
-        <Suspense fallback={null}>
-          <DetailsDialog />
-        </Suspense>
-      )}
-      {agentCode && (
-        <Suspense fallback={null}>
-          <AgentConnect key={agentCode} code={agentCode} />
-        </Suspense>
+      {gatedOut ? (
+        <Gate />
+      ) : (
+        <>
+          {placing && <CommentOverlay />}
+          {pageUi.current && (
+            <Suspense fallback={null}>
+              <PageUi />
+            </Suspense>
+          )}
+          {visible && <Toolbar />}
+          {dialog && (
+            <Suspense fallback={null}>
+              <DetailsDialog />
+            </Suspense>
+          )}
+          {agentCode && (
+            <Suspense fallback={null}>
+              <AgentConnect key={agentCode} code={agentCode} />
+            </Suspense>
+          )}
+        </>
       )}
     </TooltipProvider>
   )
