@@ -7,9 +7,14 @@ export const SITE = "http://localhost:4900"
 type Session = { token: string; user: { id: string; name: string } }
 
 /** A guest session made with the API. */
-export async function guestSession(name: string, origin = SITE, project = "example"): Promise<Session> {
+export async function guestSession(
+  name: string,
+  origin = SITE,
+  project = "example",
+  password?: string,
+): Promise<Session> {
   const api = await request.newContext()
-  const res = await api.post(`${COMMA}/api/session/guest`, { headers: { origin }, data: { project, name } })
+  const res = await api.post(`${COMMA}/api/session/guest`, { headers: { origin }, data: { project, name, password } })
   expect(res.ok()).toBe(true)
   const session = await res.json()
   await api.dispose()

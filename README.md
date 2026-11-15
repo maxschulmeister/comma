@@ -66,24 +66,25 @@ To try comma on your computer first, see [Run it locally](#run-it-locally).
 
 ### Project settings
 
-| Setting     |                                                                                                                                                                                                                  |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`        | Required. Lowercase letters, digits, `-` and `_`.                                                                                                                                                                |
-| `origins`   | Required. The sites that may use the project. `*` matches one subdomain label: `https://*.preview.acme.com`.                                                                                                     |
-| `scope`     | `"project"` (default): all origins share the comments. `"origin"`: each origin has its own comments, for example one per preview deploy.                                                                         |
-| `name`      | The name of your app, on the sign-in button: "Sign in with Acme".                                                                                                                                                |
-| `appSecret` | Sign in with your app: your backend signs a token (see below).                                                                                                                                                   |
-| `userUrl`   | Sign in with your app: comma checks your app's own access token with your API (see below). Use `appSecret` or `userUrl`, not both.                                                                               |
-| `user`      | With `userUrl`: a function that reads the user from the answer. Default: the answer itself.                                                                                                                      |
-| `appUrl`    | Sign-in through your app, on sites outside it: a page of your app that runs comma with `identify()` (see below).                                                                                                 |
-| `signInUrl` | Popup sign-in on sites outside your app (see below).                                                                                                                                                             |
-| `slack`     | Sign in with Slack, for the people of one workspace (see below).                                                                                                                                                 |
-| `guests`    | `true`: people can sign in as guests with only a name. Anyone can use any name. Default: `true` without app sign-in, `false` with it. Guests show as "Guest" next to their name.                                 |
-| `limits`    | Per hour. `commentsPerHour` (default `100`) and `imagesPerHour` (default `100`) per user, `guestsPerHour` (default `30`): new guest sign-ins for all people together. Example: `limits: { guestsPerHour: 100 }`. |
-| `toolbar`   | `"always"` (default) or `"signed-in"`: visitors see no toolbar until they sign in. To sign in, open a page with `?comma` in the URL (`https://www.acme.com/?comma`). Links to a thread also ask to sign in.      |
-| `details`   | Default place of a thread's details (screenshot, page, device): `"panel"` (default, a layer of the side panel) or `"dialog"` (a window over the page). Each person can change it in the panel's view menu.       |
-| `panel`     | Default of the side panel: `"overlay"` (default) floats over the page and keeps its width; `"push"` makes the page narrower and covers nothing. Each person can change it in the panel's view menu.              |
-| `tags`      | Tags of the threads, instead of the defaults (Bug, Change, Content, Design, Question, Idea): `[{ name: "Perf", color: "teal" }]`. `[]`: only the tags that people make. See below the table.                     |
+| Setting     |                                                                                                                                                                                                                                                                      |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`        | Required. Lowercase letters, digits, `-` and `_`.                                                                                                                                                                                                                    |
+| `origins`   | Required. The sites that may use the project. `*` matches one subdomain label: `https://*.preview.acme.com`.                                                                                                                                                         |
+| `scope`     | `"project"` (default): all origins share the comments. `"origin"`: each origin has its own comments, for example one per preview deploy.                                                                                                                             |
+| `name`      | The name of your app, on the sign-in button: "Sign in with Acme".                                                                                                                                                                                                    |
+| `appSecret` | Sign in with your app: your backend signs a token (see below).                                                                                                                                                                                                       |
+| `userUrl`   | Sign in with your app: comma checks your app's own access token with your API (see below). Use `appSecret` or `userUrl`, not both.                                                                                                                                   |
+| `user`      | With `userUrl`: a function that reads the user from the answer. Default: the answer itself.                                                                                                                                                                          |
+| `appUrl`    | Sign-in through your app, on sites outside it: a page of your app that runs comma with `identify()` (see below).                                                                                                                                                     |
+| `signInUrl` | Popup sign-in on sites outside your app (see below).                                                                                                                                                                                                                 |
+| `slack`     | Sign in with Slack, for the people of one workspace (see below).                                                                                                                                                                                                     |
+| `guests`    | `true`: people can sign in as guests with only a name. Anyone can use any name. `{ password: process.env.GUESTS_PASSWORD }`: guests also type this shared password. Default: `true` without app sign-in, `false` with it. Guests show as "Guest" next to their name. |
+| `limits`    | Per hour. `commentsPerHour` (default `100`) and `imagesPerHour` (default `100`) per user, `guestsPerHour` (default `30`): new guest sign-ins for all people together. Example: `limits: { guestsPerHour: 100 }`.                                                     |
+| `gate`      | `true`: only people who are signed in see the site. Others see only comma's sign-in. With guests, set a guest password. See [Gate](#gate).                                                                                                                           |
+| `toolbar`   | `"always"` (default) or `"signed-in"`: visitors see no toolbar until they sign in. To sign in, open a page with `?comma` in the URL (`https://www.acme.com/?comma`). Links to a thread also ask to sign in.                                                          |
+| `details`   | Default place of a thread's details (screenshot, page, device): `"panel"` (default, a layer of the side panel) or `"dialog"` (a window over the page). Each person can change it in the panel's view menu.                                                           |
+| `panel`     | Default of the side panel: `"overlay"` (default) floats over the page and keeps its width; `"push"` makes the page narrower and covers nothing. Each person can change it in the panel's view menu.                                                                  |
+| `tags`      | Tags of the threads, instead of the defaults (Bug, Change, Content, Design, Question, Idea): `[{ name: "Perf", color: "teal" }]`. `[]`: only the tags that people make. See below the table.                                                                         |
 
 `guests` is a change for projects with `appSecret` that used guests before: set `guests: true` to keep them.
 
@@ -95,12 +96,33 @@ Tag colors: `gray`, `red`, `orange`, `amber`, `green`, `teal`, `blue`, `violet`,
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `data-project`    | Required. The project id.                                                                                                                                       |
 | `data-shortcut`   | The key for comment mode, one letter. Default: `c`. `none`: no shortcut, for apps that use the letter themselves.                                               |
+| `data-gate`       | With the project's `gate`: comma hides the page before it shows. Put the tag in `<head>`, without `defer`.                                                      |
 | `data-token-key`  | With `data-token-from`: the storage key of your app's token. comma signs out when your app removes it.                                                          |
 | `data-token-from` | With `userUrl`: the address of your API (`https://api.acme.com`). comma signs in with the token of your app's own requests to it, with no app code (see below). |
 
 comma can run behind a proxy, also on the same origin as the site. Set `COMMA_URL` to its public address. If the proxy changes the `Host` header, it must send `X-Forwarded-Host`.
 
 Add `data-comment-anchor="pricing"` to an element to give it a very stable anchor. Comments on it find it again, also when its text changes or it moves.
+
+### Gate
+
+`gate: true` replaces basic auth on a preview or staging site: comma's sign-in is the only sign-in.
+
+```ts
+{ id: "acme", origins: ["https://preview.acme.com"], gate: true, guests: { password: process.env.ACME_GUESTS_PASSWORD } }
+```
+
+```html
+<head>
+  <script src="https://comma.example.com/c.js" data-project="acme" data-gate></script>
+</head>
+```
+
+- A person who is not signed in sees only comma's sign-in. comma hides the page and takes its content out of the document. After sign-in, the page loads again.
+- The pages get `<meta name="robots" content="noindex, nofollow">`. Google reads it. For crawlers that do not run JavaScript, also send the header `X-Robots-Tag: noindex` from your host.
+- The gate is a curtain, not a lock. The HTML, scripts and images still go to anyone who asks for them (view-source, curl). Use it to keep the public and search engines out, not for secret content.
+- Without `data-gate`, the page shows until comma loads, then comma covers it.
+- Wrong guest passwords count against `guestsPerHour`, for all people together. Someone who sends many wrong passwords can stop new guests for up to an hour. Set a higher `guestsPerHour` if this is a risk.
 
 ## Sign in with your app
 

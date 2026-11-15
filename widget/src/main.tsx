@@ -22,7 +22,8 @@ import { keepReview, loadReview, loadView } from "./ui/view"
 
 type Loader = {
   __queue: [string, unknown[]][]
-  __script: { src: string; project: string; shortcut?: string; tokenFrom?: string }
+  __gate: (signedIn: boolean) => void
+  __script: { src: string; project: string; shortcut?: string; tokenFrom?: string; gate: boolean }
 }
 
 // `data-shortcut` on the script tag: one letter, or "none". Default: C.
@@ -38,7 +39,7 @@ if (loader?.__script) start(loader)
 // outside and closes too.
 options.debounceRendering = (render) => setTimeout(render, 0)
 
-function start({ __queue: queue, __script: script }: Loader) {
+function start({ __queue: queue, __gate: gate, __script: script }: Loader) {
   const server = new URL(script.src).origin
   initStore({
     server,
@@ -71,6 +72,7 @@ function start({ __queue: queue, __script: script }: Loader) {
     shortcut: parseShortcut(script.shortcut),
     appAccount: !!script.tokenFrom,
     detailsOpen: false,
+    gated: script.gate,
   })
   setState({ session: loadSession(), ...loadReview() })
   keepReview()
@@ -120,7 +122,14 @@ function start({ __queue: queue, __script: script }: Loader) {
   startTracking()
   startShortcuts()
   startPolling()
-  void loadProjectUntilItWorks()
+  void loadProjectUntilItWorks().then(() => {
+    if (script.gate && !getState().projectInfo?.gate)
+      console.warn("comma: data-gate is on the tag, but the project has no gate.")
+    if (!getState().projectInfo?.gate || getState().gated) return
+    console.warn("comma: add data-gate to the script tag, so that the page does not show before comma loads.")
+    gate(!!getState().session)
+    setState({ gated: true })
+  })
   void refresh()
 }
 

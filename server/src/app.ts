@@ -2,6 +2,7 @@ import { type Context, Hono } from "hono"
 import { createMiddleware } from "hono/factory"
 import { HTTPException } from "hono/http-exception"
 import { sign, verify } from "hono/jwt"
+import { timingSafeEqual } from "hono/utils/buffer"
 import { z } from "zod"
 import { connectLink, connectPage, llmsTxt, newCode, textBody, threadsMarkdown, usersMarkdown } from "./agent"
 import {
@@ -405,6 +406,8 @@ export function createApp(options: AppOptions) {
       ...(project.appUrl && { appUrl: project.appUrl }),
       slack: !!project.slack,
       guests: project.guests,
+      guestPassword: !!project.guestPassword,
+      gate: project.gate,
       toolbar: project.toolbar,
       details: project.details,
       panel: project.panel,
@@ -412,11 +415,21 @@ export function createApp(options: AppOptions) {
   })
 
   app.post("/api/session/guest", async (c) => {
-    const input = parse(z.object({ project: z.string(), name: z.string().trim().min(1).max(60) }), await json(c))
+    const input = parse(
+      z.object({
+        project: z.string(),
+        name: z.string().trim().min(1).max(60),
+        password: z.string().max(200).optional(),
+      }),
+      await json(c),
+    )
     const project = projectFor(input.project, c)
     if (!project.guests) throw new HTTPException(403, { message: "Sign in with your account to comment on this site" })
+    // Before the password check: wrong passwords use the same limit, so nobody can try many passwords.
     if (!(await limitOk(`guests:${project.id}`, project.limits.guestsPerHour)))
       throw new HTTPException(429, { message: "Too many new guests. Try again later." })
+    if (project.guestPassword && !(await timingSafeEqual(input.password ?? "", project.guestPassword)))
+      throw new HTTPException(403, { message: "Wrong password" })
     return c.json(await sessionOf(await createGuest(db, project, input.name, now())))
   })
 

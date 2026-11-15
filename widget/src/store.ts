@@ -28,6 +28,10 @@ export type ProjectInfo = {
   appUrl?: string
   slack: boolean
   guests: boolean
+  /** Guests also type the project's password. */
+  guestPassword: boolean
+  /** Only people who are signed in see the page. */
+  gate: boolean
   toolbar: "always" | "signed-in"
   details: DetailsMode
   panel: PanelMode
@@ -93,6 +97,8 @@ export type State = {
   shortcut: string | null
   /** The app decides who is signed in (`data-token-from`): comma has no sign-out of its own. */
   appAccount: boolean
+  /** Only people who are signed in see the page: `data-gate` on the script tag, or the project's `gate`. */
+  gated: boolean
 }
 
 export type HiddenView = { panelOpen: boolean; threadId: string | null; details: boolean }

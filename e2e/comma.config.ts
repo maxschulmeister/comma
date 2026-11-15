@@ -60,5 +60,14 @@ export default {
       slack: { clientId: "e2e-client", clientSecret: "e2e-secret", team: "T0E2E" },
       guests: false,
     },
+    // Only people who are signed in see the page. Guests need a password. Test pages use it with `?project=gated`.
+    {
+      id: "gated",
+      name: "Example",
+      origins: ["http://localhost:4900", "http://127.0.0.1:4900"],
+      gate: true,
+      guests: { password: "e2e-password" },
+      limits: { guestsPerHour: 10_000 },
+    },
   ],
 }
